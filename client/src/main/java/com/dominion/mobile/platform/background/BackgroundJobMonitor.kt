@@ -63,9 +63,12 @@ class BackgroundJobWorker(context: Context, params: WorkerParameters) : Coroutin
         val jobId = inputData.getString(BackgroundJobMonitor.JOB) ?: return Result.failure()
         if (expected.length != 64 || roomId.isBlank() || jobId.isBlank()) return Result.failure()
 
-        val engine = (applicationContext as DominionApplication).container.engine ?: return Result.success()
+        val engine = (applicationContext as DominionApplication).container.engine
         // Never use a new engine's owner token to fetch the previous engine's job.
-        if (BackgroundJobMonitor.originKey(engine.origin) != expected) return Result.success()
+        if (engine == null || BackgroundJobMonitor.originKey(engine.origin) != expected) {
+            WorkManager.getInstance(applicationContext).cancelWorkById(id)
+            return Result.success()
+        }
         val api = ApiFactory.create(engine)
         val job = try { api.engineJob(jobId) }
             catch (cancelled: CancellationException) { throw cancelled }
@@ -123,6 +126,7 @@ class BackgroundJobWorker(context: Context, params: WorkerParameters) : Coroutin
             NotificationManager.IMPORTANCE_DEFAULT))
         val open = Intent(applicationContext, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra("dominion_notification_room", inputData.getString(BackgroundJobMonitor.ROOM))
         }
         val id = key.hashCode() and 0x7fffffff
         val destination = PendingIntent.getActivity(applicationContext, id, open,

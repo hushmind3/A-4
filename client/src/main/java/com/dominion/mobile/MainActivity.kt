@@ -54,6 +54,11 @@ class MainActivity : ComponentActivity() {
 
     private fun handleIntent(intent: Intent?) {
         if (intent == null) return
+        intent.getStringExtra("dominion_notification_room")?.let { roomId ->
+            intent.removeExtra("dominion_notification_room")
+            viewModel.openRoomFromNotification(roomId)
+            return
+        }
         val shared = when (intent.action) {
             Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)
             Intent.ACTION_SEND_MULTIPLE ->

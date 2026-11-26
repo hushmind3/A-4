@@ -82,6 +82,15 @@ fun DominionAppRoot(vm: AppViewModel) {
 
     DominionTheme(darkTheme = dark, lang = state.settings.lang) {
         val nav = rememberNavController()
+        val notificationRoom by vm.notificationRoom.collectAsStateWithLifecycle()
+        LaunchedEffect(notificationRoom, state.conversations) {
+            val roomId = notificationRoom
+            // Await server room sync after process restart, not fabricated navigation.
+            if (roomId != null && state.conversation(roomId) != null) {
+                nav.navigate(Routes.chat(roomId)) { launchSingleTop = true }
+                vm.consumeNotificationRoom()
+            }
+        }
         var appUnlocked by remember { mutableStateOf(!state.settings.appLock) }
         LaunchedEffect(state.settings.appLock) {
             if (!state.settings.appLock) appUnlocked = true

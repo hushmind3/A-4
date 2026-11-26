@@ -41,6 +41,8 @@ import com.dominion.mobile.data.model.VaultType
 import com.dominion.mobile.data.model.VoiceTone
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -53,6 +55,13 @@ class AppViewModel(
     val state: StateFlow<AppState> = repo.state
 
     val connection = repo.connection
+
+    private val _notificationRoom = MutableStateFlow<String?>(null)
+    val notificationRoom = _notificationRoom.asStateFlow()
+    fun openRoomFromNotification(roomId: String) {
+        if (roomId.matches(Regex("[A-Za-z0-9_-]{1,160}"))) _notificationRoom.value = roomId
+    }
+    fun consumeNotificationRoom() { _notificationRoom.value = null }
 
     suspend fun refreshServer() = repo.refresh()
 

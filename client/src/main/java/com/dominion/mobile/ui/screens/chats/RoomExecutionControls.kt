@@ -110,11 +110,6 @@ fun RoomExecutionControls(vm: AppViewModel, roomId: String) {
             if (approvals.isNotEmpty()) Text(tr(lang, "승인 대기 ", "Pending approvals ") + approvals.size,
                 color = p.blue, style = MaterialTheme.typography.labelSmall)
         }
-        if (!notificationsAllowed) {
-            TextButton(onClick = { permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) }) {
-                Text(tr(lang, "작업 알림 켜기", "Enable job alerts"))
-            }
-        }
         TextButton(onClick = { open = true; scope.launch { refresh() } }) {
             Text(tr(lang, "작업·도구 실행", "Jobs and tools"))
         }
@@ -126,6 +121,9 @@ fun RoomExecutionControls(vm: AppViewModel, roomId: String) {
             Text(if (failure) tr(lang, "연결 실패 · 표시된 정보는 이전 조회 결과입니다.", "Connection failed · last retrieved data")
                 else statusLabel(current?.status))
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+            if (!notificationsAllowed) OutlinedButton(
+                onClick = { permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) }
+            ) { Text(tr(lang, "작업 알림 허용", "Enable background job alerts")) }
             OutlinedButton(enabled = !busy, onClick = { scope.launch { refresh() } }) { Text(tr(lang, "새로고침", "Refresh")) }
             if (resultNotice.isNotBlank()) Text(resultNotice)
             Text(tr(lang, "사용자 승인", "User approvals"), style = MaterialTheme.typography.titleMedium)
