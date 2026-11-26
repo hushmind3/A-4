@@ -30,6 +30,8 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -84,6 +86,8 @@ fun MemoriesScreen(
     var selectedCharacter by remember { mutableStateOf(state.myCharacter()?.id ?: state.characters.firstOrNull()?.id) }
     var deleteTarget by remember { mutableStateOf<String?>(null) }
     val filtered = state.memories.filter { it.text.contains(query, true) }
+    val syncStatus by vm.memoryStatus.collectAsStateWithLifecycle()
+    LaunchedEffect(vm) { vm.refreshMemories() }
 
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding().background(p.screen)) {
         ScreenTopBar(
@@ -94,6 +98,8 @@ fun MemoriesScreen(
         )
         Column(Modifier.padding(horizontal = 16.dp)) {
             SearchField(query, { query = it }, tr(lang, "기억 검색", "Search memories"))
+            TextButton(onClick = vm::refreshMemories) { Text(tr(lang, "본체 기억 새로고침", "Refresh engine memories")) }
+            syncStatus?.let { Text(it, color = p.textSecondary, style = MaterialTheme.typography.bodySmall) }
         }
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 30.dp)) {
             item {
@@ -144,6 +150,14 @@ fun MemoriesScreen(
                     Text(memory.text, style = MaterialTheme.typography.bodyLarge, color = p.textPrimary)
                     Spacer(Modifier.height(5.dp))
                     Text(memory.source, style = MaterialTheme.typography.labelSmall, color = p.textTertiary)
+                    if (memory.serverBacked != true) {
+                        Text(tr(lang, "기기 보관 · 본체 미동기화", "On device · not synced"), color = p.textSecondary)
+                        TextButton(onClick = { vm.syncMemory(memory.id) }) { Text(tr(lang, "본체 기억으로 저장", "Sync to engine")) }
+                    } else {
+                        Text(if (memory.retrievalEligible == true) tr(lang, "본체 저장 · 검색 대상", "Engine · eligible for retrieval")
+                            else tr(lang, "본체 저장 · 검색 상태 확인 필요", "Engine · check retrieval status"),
+                            style = MaterialTheme.typography.labelSmall, color = p.textSecondary)
+                    }
                 }
             }
             if (filtered.isEmpty()) {
@@ -213,7 +227,7 @@ fun MemoriesScreen(
     deleteTarget?.let { id ->
         PrimaryDialog(
             title = tr(lang, "이 기억을 삭제할까요?", "Delete this memory?"),
-            body = tr(lang, "도미니온이 더 이상 이 내용을 기억하지 않아요.", "Your Dominion will no longer remember it."),
+            body = tr(lang, "선택한 기억 기록을 삭제합니다. 원본 대화는 유지됩니다.", "Delete this memory record. Original conversations are retained."),
             confirmLabel = tr(lang, "삭제", "Delete"),
             onConfirm = { vm.deleteMemory(id); deleteTarget = null },
             dismissLabel = tr(lang, "취소", "Cancel"),

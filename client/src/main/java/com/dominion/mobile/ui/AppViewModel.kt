@@ -331,8 +331,12 @@ class AppViewModel(
         s.withConversation(conversationId) { it.copy(muted = muted) }
     }
 
-    fun renameConversation(conversationId: String, title: String) = mutate { s ->
-        s.withConversation(conversationId) { it.copy(titleOverride = title) }
+    fun renameConversation(conversationId: String, title: String) {
+        viewModelScope.launch {
+            try { repo.renameRoom(conversationId, title) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { _notice.value = "본체 대화방 이름 변경을 확인하지 못했습니다." }
+        }
     }
 
     fun clearConversation(conversationId: String) = mutate { s ->
@@ -499,19 +503,41 @@ class AppViewModel(
         s.copy(schedules = s.schedules.filterNot { it.id == id })
     }
 
-    fun addMemory(characterId: String, text: String) {
-        if (text.isBlank()) return
-        mutate {
-            it.copy(
-                memories = listOf(
-                    MemoryItem(id = id("mem"), characterId = characterId, text = text.trim())
-                ) + it.memories
-            )
+    private val _memoryStatus = MutableStateFlow<String?>(null)
+    val memoryStatus = _memoryStatus.asStateFlow()
+
+    fun refreshMemories() {
+        viewModelScope.launch {
+            try { repo.refreshMemories(); _memoryStatus.value = null }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { _memoryStatus.value = "본체 기억 조회 실패 · 기기에 저장된 기록을 표시합니다." }
         }
     }
 
-    fun deleteMemory(id: String) = mutate { s ->
-        s.copy(memories = s.memories.filterNot { it.id == id })
+    fun addMemory(characterId: String, text: String) {
+        if (text.isBlank()) return
+        val memory = MemoryItem(id = id("mem"), characterId = characterId, text = text.trim(),
+            serverBacked = false)
+        mutate { it.copy(memories = listOf(memory) + it.memories) }
+        syncMemory(memory.id)
+    }
+
+    fun syncMemory(id: String) {
+        viewModelScope.launch {
+            try {
+                repo.syncMemory(id)
+                _notice.value = "본체 기억 저장 및 조회 확인 완료"
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { _notice.value = "기기에 기억을 보관했습니다. 기억 메뉴에서 본체 동기화를 다시 시도하세요." }
+        }
+    }
+
+    fun deleteMemory(id: String) {
+        viewModelScope.launch {
+            try { repo.deleteMemory(id) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { _notice.value = "기억 삭제를 확인하지 못했습니다. 기록을 유지합니다." }
+        }
     }
 
     // ------------------------------------------------------------------ friends

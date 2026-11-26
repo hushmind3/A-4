@@ -41,6 +41,15 @@ data class NotificationDto(
 
 /** Existing DOMINION mobile and native engine contracts. */
 interface DominionApi {
+    @GET("api/memories")
+    suspend fun engineMemories(): List<EngineMemory>
+    @POST("api/memories")
+    suspend fun saveEngineMemory(@Body body: MemoryWrite): EngineMemory
+    @retrofit2.http.DELETE("api/memories/{id}")
+    suspend fun deleteEngineMemory(@Path("id") id: String): com.google.gson.JsonObject
+    @POST("api/rooms/{id}")
+    suspend fun renameEngineRoom(@Path("id") id: String, @Body body: RoomNameUpdate): EngineRoom
+
     @GET("api/settings/owner-profile")
     suspend fun ownerProfile(): OwnerProfile
     @POST("api/settings/owner-profile")

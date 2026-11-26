@@ -522,8 +522,7 @@ fun ChatRoomScreen(
             }
             SheetRow(tr(lang, "기억에 저장", "Save to memories"), Glyph.MEMORY) {
                 vm.addMemory(character.id, message.text.ifBlank { message.card?.title.orEmpty() })
-                context.toast(tr(lang, "기억에 저장했어요", "Saved to memories"))
-                messageMenu = null
+                 messageMenu = null
             }
             SheetRow(tr(lang, "이 메시지에서 할 일 만들기", "Create a task"), Glyph.TASK) {
                 vm.addTask(

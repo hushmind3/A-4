@@ -44,3 +44,7 @@ After the native room submit returns an actual job ID, the Android WorkManager w
 ## Native shared owner profile
 
 The Android account name reads and writes the actual native GET/POST /api/settings/owner-profile contract. The client preserves the existing avatar, requires the global profile ID and verifies the saved name by reading it back. Branch1's /v1/me legacy profile projection is not authoritative for this name. The existing server has no birthday field, so birthday and character appearance remain explicitly local personalization. An unconfigured app saves local personalization only. No server login or phone-number change is simulated.
+
+## Native memory and room names
+
+The mobile memories screen uses the existing native GET/POST /api/memories and DELETE /api/memories/{id} collection, not the empty /v1/memories stub. Explicit owner saves are scoped to the chosen agent, permitted in rooms but not external channels. The client verifies identity, text, scope and retrieval eligibility with a read-back. Existing local entries remain available and can be explicitly synced using their stable ID. The room rename request sends only name and checks the native room record afterward. No deployed records were modified by development.

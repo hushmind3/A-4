@@ -172,7 +172,9 @@ data class MemoryItem(
     val characterId: Id,
     val text: String,
     val createdAt: Long = System.currentTimeMillis(),
-    val source: String = "대화에서 저장"
+    val source: String = "대화에서 저장",
+    val serverBacked: Boolean? = null,
+    val retrievalEligible: Boolean? = null
 )
 
 data class Friend(

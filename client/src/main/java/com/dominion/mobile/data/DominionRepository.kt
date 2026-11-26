@@ -54,6 +54,11 @@ interface DominionRepository {
         error("Profile storage unavailable")
     }
 
+    suspend fun refreshMemories(): Unit = error("Engine not connected")
+    suspend fun syncMemory(id: String): Unit = error("Engine not connected")
+    suspend fun deleteMemory(id: String): Unit = error("Memory storage unavailable")
+    suspend fun renameRoom(id: String, title: String): Unit = error("Engine not connected")
+
     fun update(transform: (AppState) -> AppState)
     suspend fun refresh() = Unit
     fun reset()

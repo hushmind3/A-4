@@ -57,6 +57,59 @@ class RemoteBackedRepository(
 
     override suspend fun searchMessages(query: String): List<Message> = store.searchMessages(query)
 
+    private val memoryLock = Mutex()
+    private val renameLock = Mutex()
+
+    override suspend fun refreshMemories() = memoryLock.withLock {
+        val rows = api.engineMemories().mapNotNull(EngineMemory::toDomain)
+        update { current -> current.copy(memories = mergeMemories(current.memories, rows)) }
+    }
+
+    override suspend fun syncMemory(id: String) = memoryLock.withLock {
+        val item = state.value.memories.firstOrNull { it.id == id } ?: error("Memory not found")
+        if (item.serverBacked == true) return@withLock
+        require(state.value.character(item.characterId) != null)
+        val request = MemoryWrite.from(item)
+        // Reconcile a lost POST response with the same durable ID; never overwrite
+        // a different record that happens to have the same ID.
+        val previous = api.engineMemories().firstOrNull { it.id == id }
+        if (previous != null) check(request.matches(previous))
+        else check(request.matches(api.saveEngineMemory(request)))
+        val verified = api.engineMemories().firstOrNull { it.id == id }
+        check(verified != null && request.matches(verified) && verified.retrievalEligible == true)
+        val row = requireNotNull(verified.toDomain())
+        update { current -> current.copy(memories = current.memories.map { if (it.id == id) row else it }) }
+    }
+
+    override suspend fun deleteMemory(id: String) = memoryLock.withLock {
+        val item = state.value.memories.firstOrNull { it.id == id } ?: return@withLock
+        if (item.serverBacked == true) {
+            check(api.deleteEngineMemory(id).get("ok")?.asBoolean == true)
+            check(api.engineMemories().none { it.id == id })
+        } else if (endpoint != null) {
+            // A prior save might have reached the server without its response.
+            val existing = api.engineMemories().firstOrNull { it.id == id }
+            if (existing != null) {
+                check(MemoryWrite.from(item).matches(existing))
+                check(api.deleteEngineMemory(id).get("ok")?.asBoolean == true)
+                check(api.engineMemories().none { it.id == id })
+            }
+        }
+        update { current -> current.copy(memories = current.memories.filterNot { it.id == id }) }
+    }
+
+    override suspend fun renameRoom(id: String, title: String) = renameLock.withLock {
+        val clean = title.trim()
+        require(clean.isNotBlank() && clean.codePointCount(0, clean.length) <= 160)
+        val result = api.renameEngineRoom(id, RoomNameUpdate(clean))
+        check(result.id == id && result.name == clean)
+        val confirmed = api.engineRoom(id)
+        check(confirmed.id == id && confirmed.name == clean)
+        update { current -> current.copy(conversations = current.conversations.map {
+            if (it.id == id) it.copy(titleOverride = confirmed.name) else it
+        }) }
+    }
+
     override suspend fun saveOwnerProfile(name: String, birthday: String): Boolean = refreshLock.withLock {
         val clean = name.trim()
         require(clean.isNotBlank() && clean.codePointCount(0, clean.length) <= 60)
