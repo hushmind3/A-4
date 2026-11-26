@@ -99,4 +99,8 @@ Open Settings → DOMINION Cloud → Connect shared account. Approve the existin
 
 ### Local data storage
 
-Each execution origin has its own private Room/SQLite database with WAL, separate conversation/message rows and local task, schedule, memory, vault, archive and activity records. Legacy preference snapshots migrate transactionally and are removed only after commit. Authentication credentials remain separate. Database reads/writes run off the UI thread. The UI currently hydrates the existing conversation state at startup; pagination, FTS and durable background execution synchronization remain follow-up work. A disconnected engine does not prevent reading the local history. Direct Cloud conversation execution and runtime engine configuration are not yet implemented.
+Each execution origin has its own private Room/SQLite database with WAL, separate conversation/message rows and local task, schedule, memory, vault, archive and activity records. Legacy preference snapshots migrate transactionally and are removed only after commit. Authentication credentials remain separate. Database reads/writes run off the UI thread. The UI currently hydrates the existing conversation state at startup; pagination, FTS and durable background execution synchronization remain follow-up work. A disconnected engine does not prevent reading the local history. Standalone Cloud text chat uses the existing free-inference gateway; runtime engine configuration remains pending.
+
+### Cloud chat without the engine
+
+Settings → DOMINION Cloud → Cloud chat uses the existing approved account's free inference API with the server's `dominion/free-auto` default or a listed free model. History is stored in an account-specific local Room database. It does not execute engine tools or tasks. The server currently grants app sessions for seven days, without a refresh endpoint. Live Google approval and inference remain unverified.

@@ -28,7 +28,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
-fun CloudAccountScreen(onBack: () -> Unit) {
+fun CloudAccountScreen(onBack: () -> Unit, onChat: () -> Unit) {
     val context = LocalContext.current
     val repo = remember(context.applicationContext) {
         (context.applicationContext as DominionApplication).container.cloudAccount
@@ -128,7 +128,8 @@ fun CloudAccountScreen(onBack: () -> Unit) {
                     Text(tr(lang, "클라우드 제공 모델 (목록 조회)", "Available cloud models (read only)"),
                         style = MaterialTheme.typography.titleMedium)
                     current.models.forEach { Text(it.name.ifBlank { it.id }) }
-                    Text(tr(lang, "이 목록은 실행 모델을 변경하지 않습니다.", "This list does not change the execution model."))
+                    Text(tr(lang, "이 목록은 본체 실행 모델을 변경하지 않습니다.", "This list does not change the engine model."))
+                    Button(onClick = onChat, enabled = !busy) { Text(tr(lang, "Cloud 일반 대화 시작", "Start Cloud chat")) }
                     OutlinedButton(onClick = { runAction(repo::disconnect) }, enabled = !busy) {
                         Text(tr(lang, "클라우드 연결 해제", "Disconnect cloud account"))
                     }

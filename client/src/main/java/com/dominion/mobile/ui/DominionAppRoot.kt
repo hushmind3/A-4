@@ -55,6 +55,7 @@ import com.dominion.mobile.ui.screens.profile.TasksScreen
 import com.dominion.mobile.ui.screens.profile.VaultScreen
 import com.dominion.mobile.ui.screens.settings.AccountScreen
 import com.dominion.mobile.ui.screens.settings.CloudAccountScreen
+import com.dominion.mobile.ui.screens.chats.CloudChatScreen
 import com.dominion.mobile.ui.screens.settings.AppearanceScreen
 import com.dominion.mobile.ui.screens.settings.BlockedUsersScreen
 import com.dominion.mobile.ui.screens.settings.EditProfileScreen
@@ -237,8 +238,11 @@ fun DominionAppRoot(vm: AppViewModel) {
                     onNavigate = { nav.navigate(it) }
                 )
             }
+            composable(Routes.CLOUD_CHAT) {
+                CloudChatScreen(onBack = { nav.popBackStack() }, onAccount = { nav.navigate(Routes.CLOUD_ACCOUNT) })
+            }
             composable(Routes.CLOUD_ACCOUNT) {
-                CloudAccountScreen(onBack = { nav.popBackStack() })
+                CloudAccountScreen(onBack = { nav.popBackStack() }, onChat = { nav.navigate(Routes.CLOUD_CHAT) })
             }
             composable(Routes.ACCOUNT) {
                 AccountScreen(

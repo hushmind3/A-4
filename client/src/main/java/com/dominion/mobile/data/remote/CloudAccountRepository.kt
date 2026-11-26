@@ -39,12 +39,18 @@ internal object CloudPairingProtocol {
     }
 }
 
-data class CloudPairing(val id: String, val token: String, val verificationUrl: String)
+data class CloudPairing(val id: String, val token: String, val verificationUrl: String, val verifiedAccountId: String? = null)
 data class CloudStatus(val id: String, val status: String, val expires_at: Long)
 data class CloudIdentity(val account_id: String, val scope: String, val app_session_id: String)
 data class CloudBilling(val plan: String, val free_daily_remaining: Int, val free_daily_limit: Int)
 data class CloudModel(val id: String, val name: String, val free: Boolean)
 data class CloudModels(val data: List<CloudModel>)
+internal data class CloudChatMessage(val role: String, val content: String)
+private data class CloudChatRequest(val model: String, val messages: List<CloudChatMessage>,
+    val max_tokens: Int = 1024, val stream: Boolean = false)
+private data class CloudChatChoice(val message: CloudChatMessage?)
+private data class CloudChatResponse(val choices: List<CloudChatChoice>, val model: String? = null)
+internal data class CloudReply(val content: String, val model: String?)
 private data class PairRequest(val app_name: String, val token_hash: String)
 private data class PairResponse(val id: String, val expires_in: Int, val status: String, val verification_uri: String)
 private data class DisconnectResponse(val status: String)
@@ -54,6 +60,7 @@ private interface CloudApi {
     @GET("v1/me") suspend fun me(@Header("Authorization") auth: String): CloudIdentity
     @GET("v1/billing") suspend fun billing(@Header("Authorization") auth: String): CloudBilling
     @GET("v1/models") suspend fun models(@Header("Authorization") auth: String): CloudModels
+    @POST("v1/chat/completions") suspend fun complete(@Header("Authorization") auth: String, @Body request: CloudChatRequest): CloudChatResponse
     @POST("v1/apps/disconnect") suspend fun disconnect(@Header("Authorization") auth: String, @Body body: Map<String, String>): DisconnectResponse
 }
 
@@ -104,7 +111,9 @@ data class CloudAccountSnapshot(
 )
 
 class CloudAccountRepository(context: Context) {
-    private val store = CloudCredentialStore(context.applicationContext)
+    private val appContext = context.applicationContext
+    private val store = CloudCredentialStore(appContext)
+    private val chatSessions = mutableMapOf<String, CloudChatSession>()
     private val lock = Mutex()
     private val api = Retrofit.Builder().baseUrl("$CLOUD_ORIGIN/")
         .client(OkHttpClient.Builder().followRedirects(false).followSslRedirects(false)
@@ -140,6 +149,7 @@ class CloudAccountRepository(context: Context) {
                 "approved" -> {
                     val identity = api.me(auth)
                     require(identity.app_session_id == pair.id && identity.scope == "free_inference")
+                    if (pair.verifiedAccountId != identity.account_id) store.save(pair.copy(verifiedAccountId = identity.account_id))
                     CloudAccountSnapshot(pair.id, status = "approved", expiresAt = status.expires_at,
                         accountId = identity.account_id, billing = api.billing(auth),
                         models = api.models(auth).data.filter { it.free })
@@ -152,6 +162,37 @@ class CloudAccountRepository(context: Context) {
             }
         }
     }
+
+    /** Cached account identity is only used to unlock that account's local history.
+     * All new requests re-check live account authorization. */
+    suspend fun openChat(): CloudChatSession? = withContext(Dispatchers.IO) {
+        lock.withLock {
+            val pair = store.load() ?: return@withLock null
+            val id = pair.verifiedAccountId ?: return@withLock null
+            chatSessions.getOrPut(id) { CloudChatSession(appContext, id, this@CloudAccountRepository) }
+        }
+    }
+
+    internal suspend fun completeChat(accountId: String, model: String, history: List<CloudChatMessage>): CloudReply =
+        withContext(Dispatchers.IO) {
+            lock.withLock {
+                val pair = requireNotNull(store.load()) { "Cloud sign-in required" }
+                require(pair.verifiedAccountId == accountId)
+                val auth = "Bearer ${pair.token}"
+                val status = api.status(auth)
+                if (status.status in setOf("expired", "revoked")) store.clear()
+                require(status.id == pair.id && status.status == "approved" &&
+                    status.expires_at > System.currentTimeMillis() / 1000) { "Cloud authorization expired" }
+                val identity = api.me(auth)
+                require(identity.account_id == accountId && identity.app_session_id == pair.id &&
+                    identity.scope == "free_inference")
+                require(model == "dominion/free-auto" || api.models(auth).data.any { it.free && it.id == model })
+                val result = api.complete(auth, CloudChatRequest(model, history))
+                val content = requireNotNull(result.choices.firstOrNull()?.message?.content).trim()
+                require(content.isNotBlank()) { "Empty model response" }
+                CloudReply(content, result.model)
+            }
+        }
 
     suspend fun disconnect(): CloudAccountSnapshot = withContext(Dispatchers.IO) {
         lock.withLock {

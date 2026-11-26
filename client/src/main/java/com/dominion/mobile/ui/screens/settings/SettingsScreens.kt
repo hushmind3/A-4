@@ -127,6 +127,10 @@ fun SettingsScreen(
                     leading = { GlyphIcon(Glyph.GLOBE, p.textPrimary, size = 18.dp) },
                     onClick = { onNavigate(Routes.CLOUD_ACCOUNT) }
                 )
+                Hairline()
+                SettingsRow(title = tr(lang, "Cloud 일반 대화", "Cloud chat"),
+                    subtitle = tr(lang, "본체 없이 무료 모델 사용", "Use free models without engine"),
+                    onClick = { onNavigate(Routes.CLOUD_CHAT) })
             }
 
             SectionLabel(tr(lang, "앱", "App"), Modifier.padding(horizontal = 20.dp, vertical = 8.dp))

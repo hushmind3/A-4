@@ -16,6 +16,7 @@ object Routes {
     const val SETTINGS = "settings"
     const val ACCOUNT = "account"
     const val CLOUD_ACCOUNT = "cloud-account"
+    const val CLOUD_CHAT = "cloud-chat"
     const val NOTIFICATIONS = "notifications"
     const val APPEARANCE = "appearance"
     const val LANGUAGE = "language"

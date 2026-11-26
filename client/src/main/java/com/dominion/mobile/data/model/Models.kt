@@ -95,7 +95,8 @@ data class Message(
     val status: MessageStatus = MessageStatus.SENT,
     val replyTo: Id? = null,
     val reactions: List<String> = emptyList(),
-    val clientMessageId: String? = null
+    val clientMessageId: String? = null,
+    val modelId: String? = null
 )
 
 enum class ConversationKind { DIRECT, EXTRA, GROUP, TASK }

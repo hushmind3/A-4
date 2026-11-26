@@ -145,6 +145,11 @@ class LocalStore(context: Context, scope: String = "demo") {
         persisted = next
     }
 
+    suspend fun saveStateNow(state: AppState) = withContext(writerDispatcher) {
+        pending.getAndSet(null)?.let { persist(it.state) }
+        persist(clean(state))
+    }
+
     suspend fun searchMessages(query: String): List<Message> = withContext(writerDispatcher) {
         pending.getAndSet(null)?.let { persist(it.state) }
         if (query.isBlank()) emptyList() else dao.searchMessages(query.trim(), 30)
