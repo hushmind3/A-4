@@ -117,6 +117,10 @@ fun SettingsScreen(
                 )
             }
 
+            SettingsGroup {
+                SettingsRow(title = tr(lang, "초기 개인 설정", "Initial personalization"),
+                    onClick = { onNavigate(Routes.ONBOARDING) })
+            }
             SectionLabel(tr(lang, "실행 서버", "Execution server"), Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
             SettingsGroup {
                 SettingsRow(title = tr(lang, "본체 연결 및 모델·도구", "Engine, models and tools"), onClick = { onNavigate(Routes.ENGINE_SETTINGS) })
@@ -215,6 +219,15 @@ fun SettingsScreen(
                 )
             }
 
+            Spacer(Modifier.height(16.dp))
+            SettingsGroup {
+                SettingsRow(title = tr(lang, "로그아웃 및 계정 연결 관리", "Sign out and account connections"),
+                    onClick = { onNavigate(Routes.CLOUD_ACCOUNT) })
+                Hairline()
+                SettingsRow(title = tr(lang, "계정 삭제", "Delete account"),
+                    subtitle = tr(lang, "서버 계정 삭제 기능 연동 필요", "Server account deletion not connected"),
+                    showChevron = false, onClick = null)
+            }
             Spacer(Modifier.height(26.dp))
             Text(
                 "DOMINION Mobile ${com.dominion.mobile.BuildConfig.VERSION_NAME} · ${state.settings.legalVersion}",

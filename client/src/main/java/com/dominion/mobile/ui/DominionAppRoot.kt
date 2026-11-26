@@ -106,6 +106,11 @@ fun DominionAppRoot(vm: AppViewModel) {
         }
 
         NavHost(navController = nav, startDestination = Routes.MAIN) {
+            composable(Routes.ONBOARDING) {
+                com.dominion.mobile.ui.screens.onboarding.OnboardingScreen(
+                    state = state, vm = vm, onDone = { nav.popBackStack() },
+                    onCloudAccount = { nav.navigate(Routes.CLOUD_ACCOUNT) })
+            }
             composable(Routes.MAIN) {
                 MainScreen(state = state, vm = vm, onNavigate = { nav.navigate(it) })
             }

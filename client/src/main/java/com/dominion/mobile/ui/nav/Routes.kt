@@ -2,6 +2,7 @@ package com.dominion.mobile.ui.nav
 
 object Routes {
     const val MAIN = "main"
+    const val ONBOARDING = "onboarding"
     fun chat(id: String) = "chat/$id"
     fun character(id: String) = "character/$id"
     fun customize(id: String) = "customize/$id"
