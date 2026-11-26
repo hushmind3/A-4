@@ -67,6 +67,69 @@ class RemoteBackedRepository(
 
     override suspend fun searchMessages(query: String): List<Message> = store.searchMessages(query)
 
+    private val taskLock = Mutex()
+
+    private suspend fun saveTaskLink(item: com.dominion.mobile.data.model.TaskItem) {
+        update { current -> current.copy(tasks = current.tasks.map { existing ->
+            if (existing.id != item.id) existing else existing.copy(
+                engineRoomId = item.engineRoomId, engineJobId = item.engineJobId,
+                engineSessionId = item.engineSessionId, engineMessageId = item.engineMessageId,
+                engineStatus = item.engineStatus, enginePrompt = item.enginePrompt,
+                engineLanguage = item.engineLanguage)
+        }) }
+        store.saveStateNow(state.value)
+    }
+
+    override suspend fun submitTask(id: String) = taskLock.withLock {
+        var task = state.value.tasks.firstOrNull { it.id == id } ?: error("Task not found")
+        if (task.engineJobId != null) {
+            verifyTask(task)
+            return@withLock
+        }
+        require(state.value.character(task.characterId) != null)
+        // A dedicated one-agent room avoids assigning a personal task to a group.
+        // The deterministic room ID also survives a lost create response.
+        val roomId = task.engineRoomId ?: TaskDispatch.roomId(id)
+        if (task.enginePrompt == null || task.engineRoomId == null) {
+            task = task.copy(engineRoomId = roomId, enginePrompt = TaskDispatch.prompt(task),
+                engineLanguage = if (state.value.settings.lang == com.dominion.mobile.data.model.Lang.KO) "ko" else "default",
+                engineStatus = "submitting")
+            saveTaskLink(task)
+        }
+        val existing = api.engineRooms().firstOrNull { it.id == roomId }
+        val room = existing ?: api.createRoom(RoomCreate(roomId, task.title.take(160),
+            listOf(task.characterId), models = api.engineRooms().firstOrNull { it.id == "assistant" }?.models.orEmpty()))
+        check(room.id == roomId && room.toolsEnabled && room.agentIds == listOf(task.characterId))
+        update { current ->
+            if (current.conversation(roomId) != null) current
+            else current.copy(conversations = listOf(com.dominion.mobile.data.model.Conversation(
+                roomId, task.characterId, titleOverride = room.name,
+                kind = com.dominion.mobile.data.model.ConversationKind.TASK)) + current.conversations)
+        }
+        val submitted = api.submitRoomMessage(roomId, RoomInput(requireNotNull(task.enginePrompt),
+            TaskDispatch.messageNonce(id), requireNotNull(task.engineLanguage)))
+        val session = requireNotNull(submitted.sessionId).also { require(it.isNotBlank()) }
+        val messageId = requireNotNull(submitted.message?.id).also { require(it.isNotBlank()) }
+        require(submitted.jobId.isNotBlank())
+        task = task.copy(engineJobId = submitted.jobId, engineSessionId = session,
+            engineMessageId = messageId, engineStatus = submitted.status)
+        // Save the receipt before any read-back, so a failed GET cannot replay the request.
+        saveTaskLink(task)
+        runCatching { onJobAccepted(roomId, submitted.jobId) }
+        verifyTask(task)
+    }
+
+    override suspend fun refreshTask(id: String) = taskLock.withLock {
+        val task = state.value.tasks.firstOrNull { it.id == id } ?: return@withLock
+        if (task.engineJobId != null) verifyTask(task)
+    }
+
+    private suspend fun verifyTask(task: com.dominion.mobile.data.model.TaskItem) {
+        val job = api.engineJob(requireNotNull(task.engineJobId))
+        check(TaskDispatch.matches(task, job)) { "Task receipt mismatch" }
+        saveTaskLink(task.copy(engineStatus = requireNotNull(job.status)))
+    }
+
     private val memoryLock = Mutex()
     private val renameLock = Mutex()
 

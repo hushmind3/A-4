@@ -146,7 +146,14 @@ data class TaskItem(
     val steps: List<CardStep> = emptyList(),
     val due: String = "",
     val createdAt: Long = System.currentTimeMillis(),
-    val done: Boolean = false
+    val done: Boolean = false,
+    val engineRoomId: String? = null,
+    val engineJobId: String? = null,
+    val engineSessionId: String? = null,
+    val engineMessageId: String? = null,
+    val engineStatus: String? = null,
+    val enginePrompt: String? = null,
+    val engineLanguage: String? = null
 ) {
     val progress: Float
         get() = if (steps.isEmpty()) (if (done) 1f else 0f)

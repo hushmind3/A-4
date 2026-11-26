@@ -303,7 +303,7 @@ fun DominionAppRoot(vm: AppViewModel) {
                 MemoriesScreen(state = state, vm = vm, onBack = { nav.popBackStack() })
             }
             composable(Routes.TASKS) {
-                TasksScreen(state = state, vm = vm, onBack = { nav.popBackStack() })
+                TasksScreen(state = state, vm = vm, onBack = { nav.popBackStack() }, onOpenChat = { nav.navigate(Routes.chat(it)) })
             }
             composable(Routes.SCHEDULES) {
                 SchedulesScreen(state = state, vm = vm, onBack = { nav.popBackStack() })

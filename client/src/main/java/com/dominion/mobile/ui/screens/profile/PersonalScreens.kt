@@ -45,6 +45,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -255,13 +256,24 @@ fun MemoriesScreen(
 fun TasksScreen(
     state: AppState,
     vm: AppViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onOpenChat: (String) -> Unit = {}
 ) {
     val p = LocalDominionPalette.current
     val lang = LocalLang.current
     var filter by remember { mutableIntStateOf(0) }
     var showAdd by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<String?>(null) }
+    val busyTasks by vm.taskBusy.collectAsStateWithLifecycle()
+    val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    LaunchedEffect(owner, vm) {
+        owner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            while (true) {
+                vm.refreshDispatchedTasks()
+                kotlinx.coroutines.delay(5000)
+            }
+        }
+    }
     val tabs = listOf(tr(lang, "진행 중", "Active"), tr(lang, "완료", "Done"), tr(lang, "전체", "All"))
     val filtered = when (filter) {
         1 -> state.tasks.filter { it.done }
@@ -288,7 +300,10 @@ fun TasksScreen(
                     task,
                     onToggleStep = { index -> vm.toggleTaskStep(task.id, index) },
                     onToggleDone = { vm.toggleTaskDone(task.id) },
-                    onDelete = { deleteTarget = task.id }
+                    onDelete = { deleteTarget = task.id },
+                    onDispatch = { vm.dispatchTask(task.id) },
+                    onOpenChat = { task.engineRoomId?.let(onOpenChat) },
+                    busy = task.id in busyTasks
                 )
             }
             if (filtered.isEmpty()) {
@@ -319,7 +334,7 @@ fun TasksScreen(
     deleteTarget?.let { id ->
         PrimaryDialog(
             title = tr(lang, "이 할 일을 삭제할까요?", "Delete this task?"),
-            body = tr(lang, "단계와 진행률도 함께 사라져요.", "Its steps and progress will be removed."),
+            body = tr(lang, "기기 체크리스트만 삭제합니다. 본체에서 실행 중인 작업은 작업 대화에서 중단할 수 있습니다.", "Delete the device checklist only. Cancel running engine work in its chat."),
             confirmLabel = tr(lang, "삭제", "Delete"),
             onConfirm = { vm.deleteTask(id); deleteTarget = null },
             dismissLabel = tr(lang, "취소", "Cancel"),
@@ -335,7 +350,10 @@ private fun TaskCard(
     task: TaskItem,
     onToggleStep: (Int) -> Unit,
     onToggleDone: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onDispatch: () -> Unit,
+    onOpenChat: () -> Unit,
+    busy: Boolean
 ) {
     val p = LocalDominionPalette.current
     val lang = LocalLang.current
@@ -367,6 +385,30 @@ private fun TaskCard(
                 modifier = Modifier.clickable(onClick = onDelete).padding(horizontal = 6.dp, vertical = 4.dp)
             )
             CheckCircle(task.done, onClick = onToggleDone)
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(tr(lang, "체크리스트는 직접 관리 · AI 실행은 본체 상태로 표시", "Manual checklist · engine execution status shown separately"),
+            style = MaterialTheme.typography.labelSmall, color = p.textTertiary)
+        task.engineStatus?.let { status ->
+            val label = when (status) {
+                "submitting" -> tr(lang, "접수 확인 필요", "Submission needs verification")
+                "queued" -> tr(lang, "작업 대기", "Queued")
+                "running" -> tr(lang, "실행 중", "Running")
+                "completed" -> tr(lang, "본체 작업 완료", "Engine completed")
+                "failed" -> tr(lang, "본체 작업 실패", "Engine failed")
+                "cancelled" -> tr(lang, "작업 중단", "Cancelled")
+                else -> status
+            }
+            Text(label + " · " + tr(lang, "마지막 조회 상태", "Last known status"), color = p.textSecondary)
+        }
+        Row {
+            TextButton(enabled = !busy, onClick = onDispatch) {
+                Text(if (busy) tr(lang, "확인 중…", "Checking…")
+                    else if (task.engineJobId != null) tr(lang, "상태 확인", "Check status")
+                    else if (task.engineRoomId != null) tr(lang, "접수 재확인", "Recheck submission")
+                    else tr(lang, "AI에게 맡기기", "Assign to AI"))
+            }
+            if (task.engineRoomId != null) TextButton(onClick = onOpenChat) { Text(tr(lang, "작업 대화 열기", "Open job chat")) }
         }
         if (task.steps.isNotEmpty()) {
             Spacer(Modifier.height(10.dp))

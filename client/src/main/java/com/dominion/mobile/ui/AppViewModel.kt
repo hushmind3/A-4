@@ -422,6 +422,30 @@ class AppViewModel(
         mutate { it.copy(tasks = listOf(task) + it.tasks) }
     }
 
+    private val _taskBusy = MutableStateFlow<Set<String>>(emptySet())
+    val taskBusy = _taskBusy.asStateFlow()
+
+    fun dispatchTask(taskId: String) {
+        if (taskId in _taskBusy.value) return
+        _taskBusy.value = _taskBusy.value + taskId
+        viewModelScope.launch {
+            try {
+                repo.submitTask(taskId)
+                _notice.value = "본체 작업 접수와 상태 조회를 확인했습니다."
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { _notice.value = "접수 결과를 확인하지 못했습니다. 같은 할 일에서 다시 확인하세요." }
+            finally { _taskBusy.value = _taskBusy.value - taskId }
+        }
+    }
+
+    suspend fun refreshDispatchedTasks() {
+        state.value.tasks.filter { it.engineJobId != null }.forEach { task ->
+            try { repo.refreshTask(task.id) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { /* Preserve the last confirmed receipt. */ }
+        }
+    }
+
     fun toggleTaskStep(taskId: String, index: Int) = mutate { s ->
         s.copy(tasks = s.tasks.map { task ->
             if (task.id != taskId) task else {

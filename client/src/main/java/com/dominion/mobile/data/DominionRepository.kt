@@ -61,6 +61,9 @@ interface DominionRepository {
     suspend fun deleteMemory(id: String): Unit = error("Memory storage unavailable")
     suspend fun renameRoom(id: String, title: String): Unit = error("Engine not connected")
 
+    suspend fun submitTask(id: String): Unit = error("Engine not connected")
+    suspend fun refreshTask(id: String): Unit = error("Engine not connected")
+
     suspend fun changeSchedules(transform: (List<com.dominion.mobile.data.model.ScheduleItem>) ->
         List<com.dominion.mobile.data.model.ScheduleItem>): Unit = error("Reminder storage unavailable")
 
