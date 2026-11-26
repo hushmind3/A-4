@@ -169,7 +169,10 @@ data class ScheduleItem(
     val whenText: String,
     val repeat: Repeat = Repeat.NONE,
     val enabled: Boolean = true,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val scheduledAt: Long? = null,
+    val timeZone: String? = null,
+    val lastNotifiedAt: Long? = null
 )
 
 data class MemoryItem(

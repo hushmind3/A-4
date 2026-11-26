@@ -1,5 +1,19 @@
 package com.dominion.mobile.ui.screens.profile
 
+import android.Manifest
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.app.NotificationManagerCompat
+import androidx.compose.ui.platform.LocalContext
+import com.dominion.mobile.data.model.ScheduleItem
+import com.dominion.mobile.data.ReminderTiming
+import java.time.Instant
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -459,15 +473,41 @@ fun SchedulesScreen(
     val lang = LocalLang.current
     var showAdd by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<String?>(null) }
+    var editTarget by remember { mutableStateOf<ScheduleItem?>(null) }
+    val context = LocalContext.current
+    var permission by remember { mutableStateOf(NotificationManagerCompat.from(context).areNotificationsEnabled()) }
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        permission = NotificationManagerCompat.from(context).areNotificationsEnabled()
+    }
+    val upcoming = state.schedules.filter { it.enabled && it.scheduledAt != null }
+        .mapNotNull { item -> ReminderTiming.nextUndelivered(item, System.currentTimeMillis())?.let { item to it } }
+        .sortedBy { it.second }
 
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding().background(p.screen)) {
         ScreenTopBar(
             title = tr(lang, "일정", "Schedules"),
-            subtitle = tr(lang, "${state.schedules.count { it.enabled }}개 알림이 켜져 있어요", "${state.schedules.count { it.enabled }} reminders on"),
+            subtitle = tr(lang, "기기 예약 " + upcoming.size + "개", upcoming.size.toString() + " device reminders"),
             onBack = onBack,
             actions = { GlyphButton(Glyph.PLUS, onClick = { showAdd = true }) }
         )
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 30.dp)) {
+            item {
+                Text(tr(lang, "기기에서 알림을 예약합니다. 배터리 정책으로 시간이 늦어질 수 있습니다.", "Device reminders may be delayed by Android battery policies."),
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 6.dp), color = p.textTertiary)
+                if (!permission || !state.settings.notifications) {
+                    Text(tr(lang, "알림이 꺼져 있습니다. 예약을 유지하지만 알림은 표시되지 않습니다.", "Notifications are off; reminders remain saved."),
+                        modifier = Modifier.padding(horizontal = 18.dp), color = p.textSecondary)
+                    TextButton(onClick = {
+                        vm.setNotifications(true)
+                        if (Build.VERSION.SDK_INT >= 33 && !permission)
+                            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        else {
+                            runCatching { context.startActivity(android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                                .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)) }
+                        }
+                    }) { Text(tr(lang, "알림 설정", "Enable notifications")) }
+                }
+            }
             item {
                 Box(
                     Modifier
@@ -480,17 +520,17 @@ fun SchedulesScreen(
                     Column {
                         Text(tr(lang, "다가오는 일정", "Coming up"), style = MaterialTheme.typography.labelMedium, color = p.textTertiary)
                         Spacer(Modifier.height(8.dp))
-                        state.schedules.filter { it.enabled }.take(2).forEach { schedule ->
+                        upcoming.take(2).forEach { (schedule, due) ->
                             Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                                 GlyphIcon(Glyph.CALENDAR, p.blue, size = 16.dp)
                                 Spacer(Modifier.width(8.dp))
                                 Column {
                                     Text(schedule.title, style = MaterialTheme.typography.titleSmall, color = p.textPrimary)
-                                    Text(schedule.whenText, style = MaterialTheme.typography.labelSmall, color = p.textTertiary)
+                                    Text(ReminderTiming.format(due, schedule.timeZone), style = MaterialTheme.typography.labelSmall, color = p.textTertiary)
                                 }
                             }
                         }
-                        if (state.schedules.none { it.enabled }) {
+                        if (upcoming.isEmpty()) {
                             Text(tr(lang, "켜져 있는 일정이 없어요.", "No active reminders."), style = MaterialTheme.typography.bodySmall, color = p.textTertiary)
                         }
                     }
@@ -505,7 +545,7 @@ fun SchedulesScreen(
                         .clip(RoundedCornerShape(18.dp))
                         .background(p.card)
                         .border(0.5.dp, p.hairline, RoundedCornerShape(18.dp))
-                        .clickable { deleteTarget = schedule.id }
+                        .clickable { editTarget = schedule; showAdd = true }
                         .padding(14.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -514,14 +554,19 @@ fun SchedulesScreen(
                     Column(Modifier.weight(1f)) {
                         Text(schedule.title, style = MaterialTheme.typography.titleSmall, color = p.textPrimary)
                         Text(
-                            "${schedule.whenText} · ${schedule.repeat.label(lang)}",
+                            (schedule.scheduledAt?.let { ReminderTiming.format(it, schedule.timeZone) }
+                                ?: schedule.whenText + " · " + tr(lang, "시간 지정 필요", "Choose time")) + " · " + schedule.repeat.label(lang),
                             style = MaterialTheme.typography.bodySmall,
                             color = p.textTertiary
                         )
                     }
+                    TextButton(onClick = { deleteTarget = schedule.id }) { Text("⋯") }
                     Switch(
-                        checked = schedule.enabled,
-                        onCheckedChange = { vm.toggleSchedule(schedule.id) },
+                        checked = schedule.enabled && schedule.scheduledAt != null,
+                        onCheckedChange = {
+                            if (schedule.scheduledAt == null) { editTarget = schedule; showAdd = true }
+                            else vm.toggleSchedule(schedule.id)
+                        },
                         colors = com.dominion.mobile.ui.components.appSwitchColors()
                     )
                 }
@@ -542,11 +587,12 @@ fun SchedulesScreen(
 
     if (showAdd) {
         AddScheduleDialog(
-            state = state,
-            onDismiss = { showAdd = false },
-            onAdd = { title, whenText, characterId, repeat ->
-                vm.addSchedule(title, whenText, characterId, repeat)
-                showAdd = false
+            state = state, existing = editTarget,
+            onDismiss = { showAdd = false; editTarget = null },
+            onAdd = { title, whenText, characterId, repeat, due, zone ->
+                vm.saveSchedule(editTarget?.id, title, whenText, characterId, repeat, due, zone) {
+                    showAdd = false; editTarget = null
+                }
             }
         )
     }
@@ -568,14 +614,19 @@ fun SchedulesScreen(
 private fun AddScheduleDialog(
     state: AppState,
     onDismiss: () -> Unit,
-    onAdd: (String, String, String, Repeat) -> Unit
+    existing: ScheduleItem?,
+    onAdd: (String, String, String, Repeat, Long, String) -> Unit
 ) {
     val p = LocalDominionPalette.current
     val lang = LocalLang.current
-    var title by remember { mutableStateOf("") }
-    var whenText by remember { mutableStateOf("") }
-    var repeat by remember { mutableStateOf(Repeat.NONE) }
-    var characterId by remember { mutableStateOf(state.myCharacter()?.id ?: state.characters.firstOrNull()?.id.orEmpty()) }
+    val context = LocalContext.current
+    var title by remember(existing?.id) { mutableStateOf(existing?.title.orEmpty()) }
+    var whenText by remember(existing?.id) { mutableStateOf(existing?.whenText.orEmpty()) }
+    var repeat by remember(existing?.id) { mutableStateOf(existing?.repeat ?: Repeat.NONE) }
+    val zone = remember(existing?.id) { runCatching { ZoneId.of(existing?.timeZone ?: ZoneId.systemDefault().id) }.getOrDefault(ZoneId.systemDefault()) }
+    var due by remember(existing?.id) { mutableStateOf(existing?.let { ReminderTiming.nextUndelivered(it, System.currentTimeMillis()) }
+        ?.takeIf { it > System.currentTimeMillis() } ?: ZonedDateTime.now(zone).plusHours(1).withSecond(0).withNano(0).toInstant().toEpochMilli()) }
+    var characterId by remember(existing?.id) { mutableStateOf(existing?.characterId ?: state.myCharacter()?.id ?: state.characters.firstOrNull()?.id.orEmpty()) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -585,7 +636,18 @@ private fun AddScheduleDialog(
             Column {
                 AppTextField(title, { title = it }, placeholder = tr(lang, "무엇을 알려줄까요?", "What should we remind you about?"))
                 Spacer(Modifier.height(8.dp))
-                AppTextField(whenText, { whenText = it }, placeholder = tr(lang, "예: 내일 오후 3시", "e.g. tomorrow 3pm"))
+                AppTextField(whenText, { whenText = it }, placeholder = tr(lang, "메모 (선택)", "Note (optional)"))
+                TextButton(onClick = {
+                    val local = Instant.ofEpochMilli(due).atZone(zone)
+                    DatePickerDialog(context, { _, year, month, day ->
+                        val chosen = java.time.LocalDate.of(year, month + 1, day)
+                        TimePickerDialog(context, { _, hour, minute ->
+                            due = chosen.atTime(hour, minute).atZone(zone).toInstant().toEpochMilli()
+                        }, local.hour, local.minute, true).show()
+                    }, local.year, local.monthValue - 1, local.dayOfMonth).apply {
+                        datePicker.minDate = System.currentTimeMillis()
+                    }.show()
+                }) { Text(ReminderTiming.format(due, zone.id)) }
                 Spacer(Modifier.height(10.dp))
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(Repeat.entries) { option ->
@@ -615,8 +677,9 @@ private fun AddScheduleDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { onAdd(title, whenText.ifBlank { tr(lang, "오늘", "Today") }, characterId, repeat) }
-            ) { Text(tr(lang, "추가", "Add"), color = if (title.isNotBlank()) p.blue else p.textDisabled) }
+                enabled = title.isNotBlank() && due > System.currentTimeMillis(),
+                onClick = { onAdd(title, whenText.ifBlank { ReminderTiming.format(due, zone.id) }, characterId, repeat, due, zone.id) }
+            ) { Text(tr(lang, "예약 저장", "Save reminder"), color = if (title.isNotBlank()) p.blue else p.textDisabled) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(tr(lang, "취소", "Cancel"), color = p.textSecondary) } }
     )

@@ -444,29 +444,50 @@ class AppViewModel(
         s.copy(tasks = s.tasks.filterNot { it.id == taskId })
     }
 
-    fun addSchedule(title: String, whenText: String, characterId: String, repeat: Repeat) {
-        if (title.isBlank()) return
-        mutate {
-            it.copy(
-                schedules = listOf(
-                    ScheduleItem(
-                        id = id("sch"),
-                        title = title.trim(),
-                        whenText = whenText,
-                        characterId = characterId,
-                        repeat = repeat
-                    )
-                ) + it.schedules
-            )
+    fun saveSchedule(existingId: String?, title: String, whenText: String, characterId: String,
+        repeat: Repeat, scheduledAt: Long, zoneId: String, onSaved: () -> Unit = {}) {
+        if (title.isBlank() || scheduledAt <= System.currentTimeMillis()) {
+            _notice.value = "제목과 미래 날짜·시간을 지정하세요."
+            return
+        }
+        viewModelScope.launch {
+            try {
+                val previous = state.value.schedules.firstOrNull { it.id == existingId }
+                val item = ScheduleItem(previous?.id ?: id("sch"), title.trim(), characterId, whenText,
+                    repeat, enabled = true, createdAt = previous?.createdAt ?: System.currentTimeMillis(),
+                    scheduledAt = scheduledAt, timeZone = zoneId, lastNotifiedAt = null)
+                repo.changeSchedules { listOf(item) + it.filterNot { old -> old.id == item.id } }
+                onSaved()
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { _notice.value = "일정 예약을 저장하지 못했습니다." }
         }
     }
 
-    fun toggleSchedule(id: String) = mutate { s ->
-        s.copy(schedules = s.schedules.map { if (it.id == id) it.copy(enabled = !it.enabled) else it })
+    fun toggleSchedule(id: String) {
+        viewModelScope.launch {
+            try {
+                val item = state.value.schedules.firstOrNull { it.id == id } ?: return@launch
+                if (!item.enabled && item.scheduledAt == null) {
+                    _notice.value = "날짜와 시간을 먼저 지정하세요."
+                    return@launch
+                }
+                if (!item.enabled && item.repeat == Repeat.NONE &&
+                    (item.scheduledAt ?: 0) <= System.currentTimeMillis()) {
+                    _notice.value = "지난 일회성 일정은 날짜와 시간을 다시 지정하세요."
+                    return@launch
+                }
+                repo.changeSchedules { rows -> rows.map { if (it.id == id) it.copy(enabled = !it.enabled) else it } }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { _notice.value = "알림 설정을 저장하지 못했습니다." }
+        }
     }
 
-    fun deleteSchedule(id: String) = mutate { s ->
-        s.copy(schedules = s.schedules.filterNot { it.id == id })
+    fun deleteSchedule(id: String) {
+        viewModelScope.launch {
+            try { repo.changeSchedules { rows -> rows.filterNot { it.id == id } } }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { _notice.value = "일정을 삭제하지 못했습니다." }
+        }
     }
 
     private val _memoryStatus = MutableStateFlow<String?>(null)

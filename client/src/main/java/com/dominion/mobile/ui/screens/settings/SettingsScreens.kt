@@ -339,7 +339,7 @@ fun NotificationsSettingsScreen(
                     vm.setNotifications(enabled)
                     if (!enabled) {
                         val manager = context.getSystemService(android.app.NotificationManager::class.java)
-                        manager.activeNotifications.filter { it.notification.channelId == "dominion_job_updates" }
+                        manager.activeNotifications.filter { it.notification.channelId in setOf("dominion_job_updates", "dominion_reminders") }
                             .forEach { manager.cancel(it.tag, it.id) }
                     }
                     if (enabled && android.os.Build.VERSION.SDK_INT >= 33 &&

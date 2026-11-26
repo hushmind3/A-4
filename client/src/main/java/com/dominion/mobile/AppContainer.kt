@@ -21,6 +21,14 @@ class AppContainer(context: Context) {
     @Volatile var repository: DominionRepository = buildRepository(engine)
         private set
 
+    init {
+        com.dominion.mobile.platform.background.ReminderMonitor.install(app)
+        com.dominion.mobile.platform.background.ReminderMonitor.schedule(app,
+            reminderScope(), repository.state.value.schedules)
+    }
+
+    fun reminderScope(): String = engine?.origin?.let(BackgroundJobMonitor::originKey) ?: "unconfigured"
+
     private fun buildRepository(connection: EngineConnection?): DominionRepository {
         val scope = connection?.let {
             java.security.MessageDigest.getInstance("SHA-256")
@@ -28,7 +36,10 @@ class AppContainer(context: Context) {
                 .joinToString("") { b -> "%02x".format(b.toInt() and 255) }
         } ?: "unconfigured"
         val store = stores.getOrPut(scope) { LocalStore(app, scope) }
-        return RemoteBackedRepository(connection?.let(ApiFactory::create), store) { roomId, jobId ->
+        return RemoteBackedRepository(connection?.let(ApiFactory::create), store,
+            onRemindersChanged = { items ->
+                com.dominion.mobile.platform.background.ReminderMonitor.schedule(app, scope, items)
+            }) { roomId, jobId ->
             connection?.let { BackgroundJobMonitor.enqueue(app, it.origin, roomId, jobId) }
         }
     }
@@ -41,5 +52,7 @@ class AppContainer(context: Context) {
         if (connection == null) credentials.clear() else credentials.save(connection)
         engine = connection
         repository = next
+        com.dominion.mobile.platform.background.ReminderMonitor.schedule(app,
+            reminderScope(), next.state.value.schedules)
     }
 }

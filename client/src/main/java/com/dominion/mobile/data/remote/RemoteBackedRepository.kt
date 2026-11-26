@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.update
 class RemoteBackedRepository(
     private val endpoint: DominionApi?,
     private val store: LocalStore,
+    private val onRemindersChanged: (List<com.dominion.mobile.data.model.ScheduleItem>) -> Unit = {},
     private val onJobAccepted: (String, String) -> Unit = { _, _ -> }
 ) : DominionRepository {
 
@@ -54,6 +55,15 @@ class RemoteBackedRepository(
     private val refreshLock = Mutex()
 
     init { store.saveState(_state.value) }
+
+    private val remindersLock = Mutex()
+
+    override suspend fun changeSchedules(transform: (List<com.dominion.mobile.data.model.ScheduleItem>) ->
+        List<com.dominion.mobile.data.model.ScheduleItem>) = remindersLock.withLock {
+        _state.update { current -> current.copy(schedules = transform(current.schedules)) }
+        store.saveStateNow(_state.value)
+        onRemindersChanged(state.value.schedules)
+    }
 
     override suspend fun searchMessages(query: String): List<Message> = store.searchMessages(query)
 
