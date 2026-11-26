@@ -161,6 +161,7 @@ class AppViewModel(
 
     suspend fun engineTools() = repo.engineTools()
     suspend fun roomExecution(roomId: String) = repo.roomExecution(roomId)
+    fun roomSignals(roomId: String, sessionId: String) = repo.roomSignals(roomId, sessionId)
     suspend fun decideApproval(roomId: String, approval: com.dominion.mobile.data.remote.EngineApproval,
         allow: Boolean) = repo.decideApproval(roomId, approval, allow)
     suspend fun cancelJob(roomId: String, jobId: String) = repo.cancelJob(roomId, jobId)
@@ -240,17 +241,22 @@ class AppViewModel(
     }
 
     /** Refresh when entering a room, including messages received while the app was closed. */
+    private val historyLocks = mutableMapOf<String, kotlinx.coroutines.sync.Mutex>()
+
     fun refreshConversation(conversationId: String) {
-        viewModelScope.launch {
-            val messages = try {
-                repo.loadMessages(conversationId)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                null
-            }
-            if (messages != null) applyServerMessages(conversationId, messages)
-        }
+        viewModelScope.launch { refreshConversationNow(conversationId) }
+    }
+
+    suspend fun refreshConversationNow(conversationId: String): Boolean {
+        val lock = historyLocks.getOrPut(conversationId) { kotlinx.coroutines.sync.Mutex() }
+        if (!lock.tryLock()) return false
+        try {
+            val messages = repo.loadMessages(conversationId) ?: return false
+            applyServerMessages(conversationId, messages)
+            return true
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { return false }
+        finally { lock.unlock() }
     }
 
     fun addCardToConversation(conversationId: String, card: MessageCard, intro: String = "") {

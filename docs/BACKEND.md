@@ -50,3 +50,7 @@ The Android account name reads and writes the actual native GET/POST /api/settin
 The mobile memories screen uses the existing native GET/POST /api/memories and DELETE /api/memories/{id} collection, not the empty /v1/memories stub. Explicit owner saves are scoped to the chosen agent, permitted in rooms but not external channels. The client verifies identity, text, scope and retrieval eligibility with a read-back. Existing local entries remain available and can be explicitly synced using their stable ID. The room rename request sends only name and checks the native room record afterward. No deployed records were modified by development.
 
 Native room transcript metadata now retains agent_id and replyToMessageId. Room state job input.messageId/sourceMessageId and sessionId are used to associate work with the originating user message, not inferred from response timing.
+
+## Server event delivery
+
+The native authenticated GET /api/events SSE journal is now consumed while a room is foregrounded. Its global sequence is retained in memory per room/session and used on reconnect. Only exact room/session events invalidate the native transcript/job/approval snapshot. Global event payloads never appear directly in the UI. Lifecycle cancellation closes the HTTP call, reconnect uses capped backoff, and independent periodic polling remains available after connection loss or journal reset. This is committed-message delivery, not model-token streaming.

@@ -21,7 +21,7 @@ object ApiFactory {
             .readTimeout(60, TimeUnit.SECONDS)
             .addInterceptor { chain ->
                 val request = chain.request().newBuilder().apply {
-                    header("Accept", "application/json")
+                    if (chain.request().header("Accept") == null) header("Accept", "application/json")
                     header("X-Client-Version", BuildConfig.VERSION_NAME)
                     header("X-Client-Platform", "android")
                     header("X-Dominion-Token", connection.ownerToken)

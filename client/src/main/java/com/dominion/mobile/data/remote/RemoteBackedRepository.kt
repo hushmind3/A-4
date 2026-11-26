@@ -150,6 +150,12 @@ class RemoteBackedRepository(
             jobStatus = submitted.status)
     }
 
+    private val roomEventCursor = java.util.concurrent.ConcurrentHashMap<Pair<String, String>, Long>()
+
+    override fun roomSignals(roomId: String, sessionId: String): kotlinx.coroutines.flow.Flow<Unit> =
+        if (endpoint == null) kotlinx.coroutines.flow.emptyFlow()
+        else roomEventSignals(api, roomId, sessionId, roomEventCursor)
+
     override suspend fun engineTools(): List<EngineTool> = api.engineTools()
 
     override suspend fun roomExecution(roomId: String): RoomExecution = coroutineScope {

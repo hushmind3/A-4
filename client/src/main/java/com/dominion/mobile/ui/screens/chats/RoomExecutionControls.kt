@@ -29,6 +29,7 @@ import com.dominion.mobile.ui.tr
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -48,6 +49,7 @@ fun RoomExecutionControls(vm: AppViewModel, roomId: String) {
     val gate = remember(roomId) { Mutex() }
     var snapshot by remember(roomId) { mutableStateOf<RoomExecution?>(null) }
     var failure by remember(roomId) { mutableStateOf(false) }
+    var streamConnected by remember(roomId) { mutableStateOf(false) }
     var resultNotice by remember(roomId) { mutableStateOf("") }
     var open by remember(roomId) { mutableStateOf(false) }
     var busy by remember(roomId) { mutableStateOf(false) }
@@ -56,7 +58,12 @@ fun RoomExecutionControls(vm: AppViewModel, roomId: String) {
 
     suspend fun refresh() {
         gate.withLock {
-            try { snapshot = vm.roomExecution(roomId); failure = false }
+            try {
+                // Read the actual transcript before matching the job's message ID.
+                vm.refreshConversationNow(roomId)
+                snapshot = vm.roomExecution(roomId)
+                failure = false
+            }
             catch (e: CancellationException) { throw e }
             catch (_: Exception) { failure = true }
         }
@@ -80,10 +87,33 @@ fun RoomExecutionControls(vm: AppViewModel, roomId: String) {
         lifecycle.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
                 refresh()
-                if (!failure) vm.refreshConversation(roomId)
+                // Independent periodic reconciliation covers dropped events and older engines.
                 delay(if (snapshot?.status in setOf("queued", "running") ||
                     snapshot?.approvals.orEmpty().isNotEmpty()) 4000L else 15000L)
             }
+        }
+    }
+    val session = snapshot?.sessionId
+    LaunchedEffect(roomId, session, lifecycle) {
+        if (session.isNullOrBlank()) return@LaunchedEffect
+        lifecycle.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            var reconnectMs = 1000L
+            try {
+                while (true) {
+                    try {
+                        vm.roomSignals(roomId, session).collect {
+                            streamConnected = true
+                            reconnectMs = 1000L
+                            refresh()
+                            delay(250L) // coalesce a burst of committed events
+                        }
+                    } catch (e: CancellationException) { throw e }
+                    catch (_: Exception) { /* polling remains active */ }
+                    streamConnected = false
+                    delay(reconnectMs)
+                    reconnectMs = (reconnectMs * 2).coerceAtMost(30000L)
+                }
+            } finally { streamConnected = false }
         }
     }
     val current = snapshot
@@ -107,6 +137,9 @@ fun RoomExecutionControls(vm: AppViewModel, roomId: String) {
         Column(Modifier.weight(1f)) {
             Text(if (failure) tr(lang, "실행 상태 조회 실패", "Execution status unavailable")
                 else statusLabel(current?.status), color = p.textPrimary, style = MaterialTheme.typography.labelMedium)
+            if (!failure) Text(if (streamConnected) tr(lang, "실시간 서버 이벤트", "Live server events")
+                else tr(lang, "주기적 상태 확인", "Periodic status sync"),
+                color = p.textSecondary, style = MaterialTheme.typography.labelSmall)
             if (approvals.isNotEmpty()) Text(tr(lang, "승인 대기 ", "Pending approvals ") + approvals.size,
                 color = p.blue, style = MaterialTheme.typography.labelSmall)
         }

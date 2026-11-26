@@ -41,6 +41,11 @@ data class NotificationDto(
 
 /** Existing DOMINION mobile and native engine contracts. */
 interface DominionApi {
+    @retrofit2.http.Streaming
+    @retrofit2.http.Headers("Accept: text/event-stream")
+    @GET("api/events")
+    fun eventStream(@Query("after") after: Long): retrofit2.Call<okhttp3.ResponseBody>
+
     @GET("api/memories")
     suspend fun engineMemories(): List<EngineMemory>
     @POST("api/memories")
