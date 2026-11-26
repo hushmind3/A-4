@@ -345,8 +345,10 @@ data class EngineRoom(val id: String, val name: String, val toolsEnabled: Boolea
     val autoModels: Boolean = false, val models: List<RoomModel> = emptyList())
 data class RoomConfigUpdate(val toolsEnabled: Boolean = true, val autoModels: Boolean? = null,
     val models: List<RoomModel>? = null)
-data class RoomInput(val input: String, val clientMessageId: String, val reasoningLanguage: String)
+data class RoomInput(val input: String, val clientMessageId: String, val reasoningLanguage: String,
+    val attachmentIds: List<String> = emptyList())
 data class RoomMessage(val id: String)
 data class RoomSubmission(val jobId: String, val message: RoomMessage?)
-data class EngineTool(val name: String, val description: String? = null, val approval: Boolean = false)
+data class EngineTool(val name: String, val description: String? = null, val approval: Boolean = false,
+    val source: String? = null, val parameters: com.google.gson.JsonElement? = null)
 data class SkillImportResult(val added: Int, val skills: List<String>)

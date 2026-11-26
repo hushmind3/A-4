@@ -65,12 +65,73 @@ class RemoteBackedRepository(
             room = api.engineRoom(conversationId)
         }
         check(room.toolsEnabled) { "대화방 설정에서 도구를 활성화하세요." }
-        val submitted = api.submitRoomMessage(conversationId, RoomInput(message.text, message.id,
-            if (state.value.settings.lang == com.dominion.mobile.data.model.Lang.KO) "ko" else "default"))
+        val submitted = api.submitRoomMessage(conversationId, RoomInput(message.text, message.clientMessageId ?: message.id,
+            if (state.value.settings.lang == com.dominion.mobile.data.model.Lang.KO) "ko" else "default",
+            message.attachmentIds.orEmpty()))
         val row = requireNotNull(submitted.message)
         require(row.id.isNotBlank() && submitted.jobId.isNotBlank())
-        return message.copy(id = row.id, clientMessageId = message.id,
+        return message.copy(id = row.id, clientMessageId = message.clientMessageId ?: message.id,
             status = com.dominion.mobile.data.model.MessageStatus.SENT, jobId = submitted.jobId)
+    }
+
+    override suspend fun engineTools(): List<EngineTool> = api.engineTools()
+
+    override suspend fun roomExecution(roomId: String): RoomExecution = coroutineScope {
+        val snapshot = api.roomExecution(roomId)
+        require(snapshot.room?.id == roomId)
+        val session = requireNotNull(snapshot.sessionId).also { require(it.isNotBlank()) }
+        // The room state includes a bounded historical approval list. Read the
+        // live pending queue separately and never show another room's requests.
+        val pending = api.pendingApprovals().filter { it.sessionId == session }
+        snapshot.copy(approvals = pending,
+            jobs = snapshot.jobs.orEmpty().filter { it.sessionId == session && it.input?.roomId == roomId })
+    }
+
+    override suspend fun decideApproval(roomId: String, approval: EngineApproval,
+        allow: Boolean): ApprovalResult {
+        val current = roomExecution(roomId)
+        val session = requireNotNull(current.sessionId)
+        require(approval.actionableIn(session))
+        val latest = current.approvals.orEmpty().firstOrNull { it.id == approval.id }
+            ?: error("Approval no longer pending")
+        require(latest.actionableIn(session) && latest.argsDigest == approval.argsDigest &&
+            latest.tool == approval.tool && latest.args == approval.args && latest.status == approval.status)
+        val result = api.decideApproval(ApprovalDecision(requireNotNull(latest.id), allow))
+        check(result.resolved && result.status == if (allow) "approved" else "denied")
+        return result
+    }
+
+    override suspend fun cancelJob(roomId: String, jobId: String): EngineJob {
+        val current = roomExecution(roomId)
+        val job = current.jobs.orEmpty().firstOrNull { it.id == jobId }
+            ?: error("Job does not belong to this room")
+        check(job.status in setOf("queued", "running"))
+        val result = api.cancelEngineJob(jobId)
+        require(result.id == jobId)
+        return result
+    }
+
+    override suspend fun uploadAttachment(roomId: String, name: String, mimeType: String, bytes: ByteArray): EngineAttachment {
+        require(bytes.isNotEmpty() && bytes.size <= 8 * 1024 * 1024)
+        require(name.isNotBlank() && name.length <= 240 && name.none { it.isISOControl() })
+        require(state.value.conversation(roomId) != null)
+        val uploaded = api.uploadAttachment(AttachmentUpload(roomId, name, mimeType,
+            java.util.Base64.getEncoder().encodeToString(bytes)))
+        require(uploaded.roomId == roomId && uploaded.size == bytes.size.toLong())
+        java.util.UUID.fromString(requireNotNull(uploaded.id))
+        return uploaded
+    }
+
+    override suspend fun downloadAttachment(roomId: String, id: String): ByteArray {
+        java.util.UUID.fromString(id)
+        require(state.value.conversation(roomId)?.messages?.any { id in it.attachmentIds.orEmpty() } == true)
+        val body = api.attachmentContent(id)
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            body.use { response ->
+                require(response.contentLength() <= com.dominion.mobile.platform.attachments.LocalAttachment.MAX_BYTES)
+                response.byteStream().use(com.dominion.mobile.platform.attachments.LocalAttachment.Companion::readBounded)
+            }
+        }
     }
 
     override suspend fun createConversation(title: String, characterId: String): String {
@@ -96,7 +157,7 @@ class RemoteBackedRepository(
         }.requireUsable()
 
     override suspend fun loadMessages(conversationId: String): List<Message> =
-        api.messages(conversationId).data.map { it.toDomain() }
+        api.nativeRoomMessages(conversationId).mapNotNull { it.toDomain(conversationId) }
 
     override suspend fun pollForReply(conversationId: String, knownIds: Set<String>): List<Message> {
         // Progressive polling: roughly one minute in total, no duplicate POST.

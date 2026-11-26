@@ -1,6 +1,21 @@
 package com.dominion.mobile.ui.screens.chats
 
 import android.widget.Toast
+import android.Manifest
+import android.app.Activity
+import android.content.Intent
+import android.speech.RecognizerIntent
+import android.content.pm.PackageManager
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import androidx.compose.runtime.rememberCoroutineScope
+import com.dominion.mobile.platform.attachments.LocalAttachment
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -118,6 +133,74 @@ fun ChatRoomScreen(
     var confirmRewind by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
 
+    val scope = rememberCoroutineScope()
+    var selectedAttachment by remember(conversationId) { mutableStateOf<LocalAttachment?>(null) }
+    var attachmentBusy by remember(conversationId) { mutableStateOf(false) }
+    var saveId by remember(conversationId) { mutableStateOf<String?>(null) }
+
+    fun prepareAttachment(uri: Uri) {
+        if (attachmentBusy) return
+        attachmentBusy = true
+        scope.launch {
+            try { selectedAttachment = LocalAttachment.fromUri(context.applicationContext, uri) }
+            catch (e: CancellationException) { throw e }
+            catch (_: Exception) { context.toast(tr(lang, "파일을 읽을 수 없습니다. 최대 8MiB입니다.", "Could not read file. Maximum 8 MiB.")) }
+            finally { attachmentBusy = false }
+        }
+    }
+    val speechInput = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val spoken = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+            if (!spoken.isNullOrBlank()) {
+                draft = listOf(draft, spoken).filter { it.isNotBlank() }.joinToString(" ")
+                vm.setDraft(conversationId, draft)
+            }
+        }
+    }
+    fun startSpeechInput() {
+        runCatching {
+            speechInput.launch(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, if (lang == com.dominion.mobile.data.model.Lang.KO) "ko-KR" else "en-US")
+                putExtra(RecognizerIntent.EXTRA_PROMPT, tr(lang, "메시지를 말해 주세요", "Speak your message"))
+            })
+        }.onFailure { context.toast(tr(lang, "기기의 음성 인식 서비스를 사용할 수 없습니다.", "Speech recognition unavailable")) }
+    }
+    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let(::prepareAttachment)
+    }
+    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let(::prepareAttachment)
+    }
+    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap ->
+        if (bitmap != null && !attachmentBusy) {
+            attachmentBusy = true
+            scope.launch {
+                try { selectedAttachment = LocalAttachment.fromCameraPreview(bitmap) }
+                catch (e: CancellationException) { throw e }
+                catch (_: Exception) { context.toast(tr(lang, "사진을 읽을 수 없습니다.", "Could not read photo.")) }
+                finally { attachmentBusy = false }
+            }
+        }
+    }
+    val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) runCatching { camera.launch(null) }.onFailure {
+            context.toast(tr(lang, "카메라 앱을 열 수 없습니다.", "Camera unavailable"))
+        } else context.toast(tr(lang, "카메라 권한이 필요합니다.", "Camera permission required"))
+    }
+    val saveDocument = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        val id = saveId
+        saveId = null
+        if (id != null && uri != null) scope.launch {
+            try {
+                val bytes = vm.downloadAttachment(conversationId, id)
+                withContext(Dispatchers.IO) { requireNotNull(context.contentResolver.openOutputStream(uri, "w")).use { it.write(bytes) } }
+                context.toast(tr(lang, "원본 파일을 저장했습니다.", "Original file saved"))
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) { context.toast(tr(lang, "파일 다운로드 또는 저장 실패", "File download or save failed")) }
+        }
+    }
+
     val entries = remember(conversation.messages, state.typingConversationId, lang) {
         buildList {
             var lastDay = ""
@@ -138,6 +221,24 @@ fun ChatRoomScreen(
     }
 
     fun send() {
+        if (attachmentBusy) return
+        val attachment = selectedAttachment
+        if (attachment != null) {
+            val prompt = draft
+            attachmentBusy = true
+            scope.launch {
+                try {
+                    vm.sendAttachment(conversationId, prompt, attachment.name, attachment.mimeType, attachment.bytes)
+                    selectedAttachment = null
+                    draft = ""
+                    vm.setDraft(conversationId, "")
+                } catch (e: CancellationException) { throw e }
+                catch (_: Exception) {
+                    context.toast(tr(lang, "본체 첨부 실패 · 파일을 다시 전송할 수 있습니다.", "Attachment upload failed · retry sending"))
+                } finally { attachmentBusy = false }
+            }
+            return
+        }
         if (draft.isBlank()) return
         vm.sendMessage(conversationId, draft)
         draft = ""
@@ -200,6 +301,8 @@ fun ChatRoomScreen(
             }
         }
 
+        RoomExecutionControls(vm, conversationId)
+
         LazyColumn(
             state = listState,
             modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -216,8 +319,28 @@ fun ChatRoomScreen(
                             onCardAction = {
                                 when (entry.message.card?.kind) {
                                     CardKind.TASK -> onNavigate(com.dominion.mobile.ui.nav.Routes.TASKS)
-                                    CardKind.LINK -> context.toast(tr(lang, "링크를 열었어요 (데모)", "Opened link (demo)"))
-                                    CardKind.FILE -> context.toast(tr(lang, "파일을 열었어요 (데모)", "Opened file (demo)"))
+                                    CardKind.LINK -> {
+                                        val link = entry.message.card?.let { card ->
+                                            listOf(card.subtitle, card.meta, card.title, entry.message.text)
+                                                .firstOrNull { value ->
+                                                    runCatching {
+                                                        val uri = java.net.URI(value.trim())
+                                                        uri.scheme in setOf("https", "http") && !uri.host.isNullOrBlank() && uri.userInfo == null
+                                                    }.getOrDefault(false)
+                                                }
+                                        }
+                                        if (link == null) context.toast(tr(lang, "유효한 웹 링크가 없습니다.", "No valid web link"))
+                                        else runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link.trim()))) }
+                                            .onFailure { context.toast(tr(lang, "링크 열기 실패", "Cannot open link")) }
+                                    }
+                                    CardKind.FILE, CardKind.IMAGE -> {
+                                        val id = entry.message.attachmentIds.orEmpty().firstOrNull()
+                                        if (id == null) context.toast(tr(lang, "원본 파일 정보 없음", "No original attachment"))
+                                        else {
+                                            saveId = id
+                                            runCatching { saveDocument.launch(entry.message.card?.title ?: "attachment") }.onFailure { saveId = null }
+                                        }
+                                    }
                                     else -> onNavigate(com.dominion.mobile.ui.nav.Routes.TASKS)
                                 }
                             }
@@ -244,6 +367,19 @@ fun ChatRoomScreen(
                 }
             }
         }
+
+        selectedAttachment?.let { attachment ->
+            Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                GlyphIcon(Glyph.FILE, p.blue, size = 18.dp)
+                Text(attachment.name, modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                    color = p.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                androidx.compose.material3.TextButton(enabled = !attachmentBusy, onClick = { selectedAttachment = null }) {
+                    Text(tr(lang, "취소", "Remove"))
+                }
+            }
+        }
+        if (attachmentBusy) androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
 
         Row(
             modifier = Modifier
@@ -274,6 +410,7 @@ fun ChatRoomScreen(
             ) {
                 BasicTextField(
                     value = draft,
+                    enabled = !attachmentBusy,
                     onValueChange = {
                         draft = it
                         if (it.length % 8 == 0) vm.setDraft(conversationId, it)
@@ -303,14 +440,14 @@ fun ChatRoomScreen(
                 Modifier
                     .size(42.dp)
                     .clip(CircleShape)
-                    .background(if (draft.isBlank()) p.raised else p.blue)
+                    .background(if (draft.isBlank() && selectedAttachment == null) p.raised else p.blue)
                     .clickable {
-                        if (draft.isBlank()) context.toast(tr(lang, "음성 입력은 데모에서 지원하지 않아요", "Voice input is not wired in the demo"))
+                        if (draft.isBlank() && selectedAttachment == null) startSpeechInput()
                         else send()
                     },
                 contentAlignment = Alignment.Center
             ) {
-                if (draft.isBlank()) GlyphIcon(Glyph.MIC, p.textSecondary, size = 20.dp)
+                if (draft.isBlank() && selectedAttachment == null) GlyphIcon(Glyph.MIC, p.textSecondary, size = 20.dp)
                 else GlyphIcon(Glyph.SEND, Color.White, size = 19.dp)
             }
         }
@@ -320,28 +457,24 @@ fun ChatRoomScreen(
         AppBottomSheet(onDismiss = { showAttach = false }) {
             SheetTitle(tr(lang, "무엇을 보낼까요?", "What would you like to send?"))
             SheetRow(tr(lang, "사진", "Photo"), Glyph.IMAGE) {
-                vm.addCardToConversation(
-                    conversationId,
-                    MessageCard(CardKind.IMAGE, "사진", "데모 이미지가 첨부됐어요", "오늘"),
-                    ""
-                )
                 showAttach = false
+                if (!attachmentBusy) runCatching { photoPicker.launch("image/*") }.onFailure {
+                    context.toast(tr(lang, "사진 선택기를 열 수 없습니다.", "Photo picker unavailable"))
+                }
             }
-            SheetRow(tr(lang, "카메라", "Camera"), Glyph.CAMERA) {
-                vm.addCardToConversation(
-                    conversationId,
-                    MessageCard(CardKind.IMAGE, "카메라로 찍은 사진", "카메라 권한은 연결 후 사용할 수 있어요", "오늘"),
-                    ""
-                )
+            SheetRow(tr(lang, "카메라 (미리보기)", "Camera preview"), Glyph.CAMERA) {
                 showAttach = false
+                if (!attachmentBusy) {
+                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
+                        runCatching { camera.launch(null) }.onFailure { context.toast(tr(lang, "카메라 앱을 열 수 없습니다.", "Camera unavailable")) }
+                    else cameraPermission.launch(Manifest.permission.CAMERA)
+                }
             }
             SheetRow(tr(lang, "파일", "File"), Glyph.FILE) {
-                vm.addCardToConversation(
-                    conversationId,
-                    MessageCard(CardKind.FILE, "공유한 파일.pdf", "PDF · 1.2 MB", "방금"),
-                    ""
-                )
                 showAttach = false
+                if (!attachmentBusy) runCatching { filePicker.launch("*/*") }.onFailure {
+                    context.toast(tr(lang, "파일 선택기를 열 수 없습니다.", "File picker unavailable"))
+                }
             }
             SheetRow(tr(lang, "할 일", "Task"), Glyph.TASK) { showAttach = false; onNavigate(com.dominion.mobile.ui.nav.Routes.TASKS) }
             SheetRow(tr(lang, "일정", "Schedule"), Glyph.CALENDAR) { showAttach = false; onNavigate(com.dominion.mobile.ui.nav.Routes.SCHEDULES) }

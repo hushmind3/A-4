@@ -103,7 +103,8 @@ class AppViewModel(
 
     // -------------------------------------------------------------------- chats
 
-    fun sendMessage(conversationId: String, text: String, card: MessageCard? = null) {
+    fun sendMessage(conversationId: String, text: String, card: MessageCard? = null,
+        attachmentIds: List<String> = emptyList()) {
         val trimmed = text.trim()
         if (trimmed.isEmpty() && card == null) return
         if (repo.state.value.conversation(conversationId) == null) return
@@ -124,6 +125,7 @@ class AppViewModel(
             },
             createdAt = now,
             card = card,
+            attachmentIds = attachmentIds,
             status = MessageStatus.SENDING
         )
         mutate { s ->
@@ -133,6 +135,31 @@ class AppViewModel(
         }
 
         deliverRemoteMessage(message)
+    }
+
+    suspend fun engineTools() = repo.engineTools()
+    suspend fun roomExecution(roomId: String) = repo.roomExecution(roomId)
+    suspend fun decideApproval(roomId: String, approval: com.dominion.mobile.data.remote.EngineApproval,
+        allow: Boolean) = repo.decideApproval(roomId, approval, allow)
+    suspend fun cancelJob(roomId: String, jobId: String) = repo.cancelJob(roomId, jobId)
+
+    suspend fun downloadAttachment(roomId: String, attachmentId: String) = repo.downloadAttachment(roomId, attachmentId)
+
+    suspend fun sendAttachment(roomId: String, text: String,
+        name: String, mimeType: String, bytes: ByteArray) {
+        val file = repo.uploadAttachment(roomId, name, mimeType, bytes)
+        val card = MessageCard(
+            kind = if (file.mimeType?.startsWith("image/") == true) CardKind.IMAGE else CardKind.FILE,
+            title = file.name ?: name,
+            subtitle = when (file.supportedForModel) {
+                "image" -> "이미지"
+                "text" -> "텍스트 문서"
+                else -> "파일 · 모델 직접 읽기 미지원"
+            },
+            meta = "${file.size} bytes"
+        )
+        require(repo.state.value.conversation(roomId) != null)
+        sendMessage(roomId, text, card, listOf(requireNotNull(file.id)))
     }
 
     fun retryMessage(conversationId: String, messageId: String) {

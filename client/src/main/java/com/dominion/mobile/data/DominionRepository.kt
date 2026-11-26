@@ -30,6 +30,16 @@ interface DominionRepository {
 
     suspend fun createConversation(title: String, characterId: String): String = error("Execution server not connected")
 
+    suspend fun engineTools(): List<com.dominion.mobile.data.remote.EngineTool> = error("Engine not connected")
+    suspend fun roomExecution(roomId: String): com.dominion.mobile.data.remote.RoomExecution = error("Engine not connected")
+    suspend fun decideApproval(roomId: String, approval: com.dominion.mobile.data.remote.EngineApproval,
+        allow: Boolean): com.dominion.mobile.data.remote.ApprovalResult = error("Engine not connected")
+    suspend fun cancelJob(roomId: String, jobId: String): com.dominion.mobile.data.remote.EngineJob = error("Engine not connected")
+    suspend fun uploadAttachment(roomId: String, name: String, mimeType: String, bytes: ByteArray):
+        com.dominion.mobile.data.remote.EngineAttachment = error("Engine not connected")
+
+    suspend fun downloadAttachment(roomId: String, id: String): ByteArray = error("Engine not connected")
+
     fun update(transform: (AppState) -> AppState)
     suspend fun refresh() = Unit
     fun reset()

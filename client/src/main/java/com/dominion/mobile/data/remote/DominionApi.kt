@@ -38,6 +38,19 @@ data class NotificationDto(
 
 /** Existing DOMINION mobile and native engine contracts. */
 interface DominionApi {
+    @GET("api/rooms/{id}/state")
+    suspend fun roomExecution(@Path("id") id: String): RoomExecution
+    @GET("api/approvals")
+    suspend fun pendingApprovals(): List<EngineApproval>
+    @POST("api/approvals")
+    suspend fun decideApproval(@Body body: ApprovalDecision): ApprovalResult
+    @POST("api/jobs/{id}/cancel")
+    suspend fun cancelEngineJob(@Path("id") id: String): EngineJob
+    @retrofit2.http.Streaming
+    @GET("api/attachments/{id}/content")
+    suspend fun attachmentContent(@Path("id") id: String): okhttp3.ResponseBody
+    @POST("api/attachments")
+    suspend fun uploadAttachment(@Body body: AttachmentUpload): EngineAttachment
     @GET("api/rooms")
     suspend fun engineRooms(): List<EngineRoom>
     @POST("api/rooms")
@@ -46,6 +59,8 @@ interface DominionApi {
     suspend fun engineRoom(@Path("id") id: String): EngineRoom
     @POST("api/rooms/{id}")
     suspend fun updateRoom(@Path("id") id: String, @Body body: RoomConfigUpdate): EngineRoom
+    @GET("api/rooms/{id}/messages")
+    suspend fun nativeRoomMessages(@Path("id") id: String): List<NativeRoomMessage>
     @POST("api/rooms/{id}/messages")
     suspend fun submitRoomMessage(@Path("id") id: String, @Body body: RoomInput): RoomSubmission
     @GET("api/providers")

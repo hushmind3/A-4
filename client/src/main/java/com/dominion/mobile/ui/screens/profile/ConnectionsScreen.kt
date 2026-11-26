@@ -12,6 +12,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.verticalScroll
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -70,6 +73,16 @@ fun ConnectionsScreen(
     val lang = LocalLang.current
     var filter by remember { mutableIntStateOf(0) }
     var query by remember { mutableStateOf("") }
+    var registeredTools by remember { mutableStateOf<List<com.dominion.mobile.data.remote.EngineTool>?>(null) }
+    var toolError by remember { mutableStateOf(false) }
+    var selectedTool by remember { mutableStateOf<com.dominion.mobile.data.remote.EngineTool?>(null) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    suspend fun loadTools() {
+        try { registeredTools = vm.engineTools(); toolError = false }
+        catch (e: kotlinx.coroutines.CancellationException) { throw e }
+        catch (_: Exception) { toolError = true }
+    }
+    androidx.compose.runtime.LaunchedEffect(Unit) { loadTools() }
     val categories = listOf(tr(lang, "전체", "All"), tr(lang, "연결됨", "Connected"), tr(lang, "기본 도구", "Built-in"))
     val filtered = when (filter) {
         1 -> state.connections.filter { it.connected && !it.builtIn }
@@ -120,6 +133,22 @@ fun ConnectionsScreen(
                 LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(categories.size) { index ->
                         FilterChipItem(categories[index], filter == index, onClick = { filter = index })
+                    }
+                }
+            }
+            item {
+                SectionLabel(tr(lang, "본체 등록 도구", "Registered engine tools"), Modifier.padding(horizontal = 20.dp, vertical = 10.dp))
+                Column(Modifier.padding(horizontal = 16.dp)) {
+                    Text(if (toolError) tr(lang, "본체 조회 실패 · 등록 상태 확인 필요", "Engine unavailable")
+                        else if (registeredTools == null) tr(lang, "조회 중", "Loading")
+                        else tr(lang, "등록된 도구 ", "Registered tools ") + registeredTools.orEmpty().size,
+                        color = p.textTertiary, style = MaterialTheme.typography.bodySmall)
+                    androidx.compose.material3.TextButton(onClick = { scope.launch { loadTools() } }) { Text(tr(lang, "실제 도구 다시 조회", "Refresh tools")) }
+                    registeredTools.orEmpty().filter { query.isBlank() || it.name.contains(query, true) ||
+                        it.description.orEmpty().contains(query, true) }.forEach { tool ->
+                        SettingsRow(title = tool.name,
+                            subtitle = if (tool.approval) tr(lang, "승인 필요", "Approval required") else tr(lang, "본체 등록됨", "Registered"),
+                            onClick = { selectedTool = tool })
                     }
                 }
             }
@@ -183,6 +212,21 @@ fun ConnectionsScreen(
             }
         }
     }
+    selectedTool?.let { tool ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { selectedTool = null },
+            title = { Text(tool.name) },
+            text = {
+                Column(Modifier.heightIn(max = 360.dp).verticalScroll(androidx.compose.foundation.rememberScrollState())) {
+                    Text(tool.description.orEmpty())
+                    Text(tr(lang, "대화에서 요청하면 본체가 적합한 도구를 선택합니다. 등록 여부는 방·모델 권한이나 서비스 인증을 보장하지 않습니다.",
+                        "Request tasks in chat. The engine selects tools; registration does not guarantee room permission or service authorization."))
+                    Text(tool.parameters?.toString().orEmpty(), style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { selectedTool = null }) { Text(tr(lang, "닫기", "Close")) } })
+    }
+
 }
 
 @Composable
