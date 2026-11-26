@@ -5,9 +5,6 @@ import com.pickle.client.data.PickleRepository
 import com.pickle.client.data.local.LocalStore
 import com.pickle.client.data.model.AppState
 import com.pickle.client.data.model.Message
-import com.pickle.client.data.model.MessageSender
-import com.pickle.client.data.model.Message
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -73,26 +70,6 @@ class RemoteBackedRepository(
             )
         }
         store.saveState(_state.value)
-    }
-
-    override suspend fun sendRemote(conversationId: String, text: String): List<Message> {
-        val beforeCount = _state.value.conversation(conversationId)?.messages?.size ?: 0
-        runCatching { api.sendMessage(conversationId, SendMessageRequest(text)) }
-        val deadline = System.currentTimeMillis() + 60_000
-        while (System.currentTimeMillis() < deadline) {
-            delay(1000)
-            val rows = runCatching { api.messages(conversationId).data.map { it.toDomain() } }.getOrNull()
-            if (rows != null && rows.size > beforeCount) {
-                _state.update { s ->
-                    s.copy(conversations = s.conversations.map { conv ->
-                        if (conv.id == conversationId) conv.copy(messages = rows, updatedAt = System.currentTimeMillis()) else conv
-                    })
-                }
-                store.saveState(_state.value)
-                return rows.drop(beforeCount).filter { msg -> msg.sender == com.pickle.client.data.model.MessageSender.CHARACTER }
-            }
-        }
-        return emptyList()
     }
 
     override fun reset() {
