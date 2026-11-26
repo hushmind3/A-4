@@ -5,6 +5,9 @@ import com.pickle.client.data.PickleRepository
 import com.pickle.client.data.local.LocalStore
 import com.pickle.client.data.model.AppState
 import com.pickle.client.data.model.Message
+import com.pickle.client.data.model.MessageSender
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -30,6 +33,24 @@ class RemoteBackedRepository(
 
     override suspend fun loadMessages(conversationId: String): List<Message> =
         api.messages(conversationId).data.map { it.toDomain() }
+
+    override suspend fun pollForReply(conversationId: String, knownIds: Set<String>): List<Message> {
+        // Progressive polling: roughly one minute in total, no duplicate POST.
+        for (waitMs in listOf(1500L, 2500L, 4000L, 6500L, 10000L, 15000L, 20000L)) {
+            delay(waitMs)
+            val rows = try {
+                loadMessages(conversationId)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+            if (rows != null && rows.any {
+                it.sender == MessageSender.CHARACTER && it.id.isNotBlank() && it.id !in knownIds
+            }) return rows
+        }
+        return emptyList()
+    }
 
     override fun update(transform: (AppState) -> AppState) {
         _state.update(transform)
