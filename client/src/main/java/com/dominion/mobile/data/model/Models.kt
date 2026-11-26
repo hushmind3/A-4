@@ -109,7 +109,9 @@ data class Message(
     val clientMessageId: String? = null,
     val modelId: String? = null,
     val jobId: String? = null,
-    val attachmentIds: List<String>? = null
+    val attachmentIds: List<String>? = null,
+    val authorAgentId: String? = null,
+    val jobStatus: String? = null
 )
 
 enum class ConversationKind { DIRECT, EXTRA, GROUP, TASK }

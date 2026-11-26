@@ -219,60 +219,13 @@ class AppViewModel(
                 return@launch
             }
 
-            mutate { s ->
-                val conversation = s.conversation(conversationId) ?: return@mutate s
-                if (conversation.messages.none { it.id == message.id }) return@mutate s
-                s.withConversation(conversationId) { conv ->
-                    val acknowledged = conv.messages.map { local ->
-                        if (local.id != message.id) local
-                        else if (acknowledgement.sender == MessageSender.USER && acknowledgement.id.isNotBlank()) {
-                            acknowledgement.copy(
-                                status = MessageStatus.SENT,
-                                card = acknowledgement.card ?: local.card
-                            )
-                        } else local.copy(status = MessageStatus.SENT)
-                    }
-                    val withReply = if (
-                        acknowledgement.sender != MessageSender.USER &&
-                        acknowledgement.id.isNotBlank() &&
-                        acknowledged.none { it.id == acknowledgement.id }
-                    ) acknowledged + acknowledgement else acknowledged
-                    conv.copy(messages = withReply, updatedAt = System.currentTimeMillis())
-                }
-            }
-
-            // Server may acknowledge a send before the assistant response is ready.
-            // Save the pre-fetch IDs so the reply watcher can recognize a new response.
-            if (acknowledgement.sender != MessageSender.USER &&
-                acknowledgement.id.isNotBlank()) return@launch
-            val knownIds = repo.state.value.conversation(conversationId)
-                ?.messages?.map { it.id }?.toSet() ?: return@launch
-            var replied = false
-            val latest = try {
-                repo.loadMessages(conversationId)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                null
-            }
-            if (latest != null) {
-                replied = latest.any {
-                    it.sender == MessageSender.ASSISTANT && it.id.isNotBlank() && it.id !in knownIds
-                }
-                applyServerMessages(conversationId, latest)
-            }
-            if (replied) return@launch
-
-            mutate { s -> s.copy(typingConversationId = conversationId) }
-            try {
-                val delayed = repo.pollForReply(conversationId, knownIds)
-                if (delayed.isNotEmpty()) applyServerMessages(conversationId, delayed)
-            } finally {
-                mutate { s ->
-                    if (s.typingConversationId == conversationId)
-                        s.copy(typingConversationId = null) else s
-                }
-            }
+            // A history refresh can win the race with POST acknowledgement.
+            // Merge the durable job ID into the already reconciled row as well.
+            applyServerMessages(conversationId, listOf(acknowledgement))
+            // The room execution controller tracks actual server job state and
+            // refreshes history. Never infer this job is complete from another
+            // assistant message, and never impose the old one-minute cutoff.
+            refreshConversation(conversationId)
         }
     }
 

@@ -16,7 +16,8 @@ data class RoomExecution(
 fun EngineJob.belongsToRoom(roomId: String, expectedJobId: String): Boolean =
     id == expectedJobId && input?.roomId == roomId && !sessionId.isNullOrBlank()
 
-data class EngineJobInput(val roomId: String? = null, val input: String? = null)
+data class EngineJobInput(val roomId: String? = null, val input: String? = null,
+    val messageId: String? = null, val sourceMessageId: String? = null)
 data class EngineJob(val id: String?, val status: String?, val sessionId: String?,
     val input: EngineJobInput?, val stepIndex: Int = 0, val stepTotal: Int = 0,
     val error: JsonElement? = null)
@@ -39,7 +40,8 @@ data class EngineAttachment(val id: String?, val roomId: String?, val name: Stri
 /** Full room transcript retains the attachment and idempotency metadata dropped by /v1/messages. */
 data class NativeRoomMessage(
     val id: String?, val role: String?, val content: String?, val created_at: String?,
-    val metadata: NativeRoomMetadata?
+    val metadata: NativeRoomMetadata?,
+    val agent_id: String? = null
 ) {
     fun toDomain(roomId: String): com.dominion.mobile.data.model.Message? {
         val identifier = id?.takeIf { it.isNotBlank() } ?: return null
@@ -72,7 +74,28 @@ data class NativeRoomMessage(
                 com.dominion.mobile.data.model.CardKind.FILE -> com.dominion.mobile.data.model.MessageKind.FILE
                 else -> com.dominion.mobile.data.model.MessageKind.TEXT
             },
-            clientMessageId = metadata?.clientMessageId, attachmentIds = attachments.mapNotNull { it.id }.takeIf { it.isNotEmpty() })
+            clientMessageId = metadata?.clientMessageId,
+            replyTo = metadata?.replyToMessageId,
+            authorAgentId = agent_id?.takeIf { sender == com.dominion.mobile.data.model.MessageSender.ASSISTANT },
+            attachmentIds = attachments.mapNotNull { it.id }.takeIf { it.isNotEmpty() })
     }
 }
-data class NativeRoomMetadata(val clientMessageId: String?, val attachments: List<EngineAttachment>?)
+data class NativeRoomMetadata(val clientMessageId: String?, val attachments: List<EngineAttachment>?,
+    val replyToMessageId: String? = null)
+
+/** Attach actual job status only to its originating owner message in this room. */
+fun correlateRoomJobs(messages: List<com.dominion.mobile.data.model.Message>,
+    roomId: String, sessionId: String, jobs: List<EngineJob>): List<com.dominion.mobile.data.model.Message> {
+    val valid = jobs.filter { !it.id.isNullOrBlank() && it.sessionId == sessionId &&
+        it.input?.roomId == roomId && !it.status.isNullOrBlank() }
+    return messages.map { message ->
+        if (message.sender != com.dominion.mobile.data.model.MessageSender.USER ||
+            message.conversationId != roomId) return@map message
+        val job = valid.firstOrNull {
+            val source = it.input?.messageId ?: it.input?.sourceMessageId
+            if (message.jobId != null) it.id == message.jobId && (source == null || source == message.id)
+            else source != null && source == message.id
+        } ?: return@map message
+        message.copy(jobId = job.id, jobStatus = job.status)
+    }
+}

@@ -14,7 +14,9 @@ object MessageSync {
             if (remote.id.isBlank()) continue
             val existingIndex = merged.indexOfFirst {
                 it.id == remote.id ||
-                    (!remote.clientMessageId.isNullOrBlank() && it.id == remote.clientMessageId)
+                    (!remote.clientMessageId.isNullOrBlank() &&
+                        it.sender == remote.sender && (it.id == remote.clientMessageId ||
+                        it.clientMessageId == remote.clientMessageId))
             }
             if (existingIndex >= 0) {
                 val original = merged[existingIndex]
@@ -26,7 +28,9 @@ object MessageSync {
                     replyTo = remote.replyTo ?: original.replyTo,
                     jobId = remote.jobId ?: original.jobId,
                     clientMessageId = remote.clientMessageId ?: original.clientMessageId,
-                    modelId = remote.modelId ?: original.modelId
+                    modelId = remote.modelId ?: original.modelId,
+                    authorAgentId = remote.authorAgentId ?: original.authorAgentId,
+                    jobStatus = remote.jobStatus ?: original.jobStatus
                 )
             } else {
                 merged.add(remote.copy(status = MessageStatus.SENT))

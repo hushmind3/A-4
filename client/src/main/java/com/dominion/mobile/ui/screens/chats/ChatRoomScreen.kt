@@ -279,7 +279,7 @@ fun ChatRoomScreen(
                     )
                     Text(
                         if (state.typingConversationId == conversationId) {
-                            tr(lang, "입력 중…", "typing…")
+                            tr(lang, "본체 작업 중…", "Engine working…")
                         } else if (character.online) {
                             tr(lang, "지금 대화 가능", "Available now")
                         } else {
@@ -312,9 +312,14 @@ fun ChatRoomScreen(
                 when (val entry = entries[index]) {
                     is ChatEntry.Day -> DateDivider(entry.label)
                     is ChatEntry.Item -> Column {
+                        if (entry.message.sender == MessageSender.ASSISTANT && entry.message.authorAgentId != null) {
+                            Text(state.character(entry.message.authorAgentId)?.name ?: entry.message.authorAgentId,
+                                style = MaterialTheme.typography.labelSmall, color = p.textSecondary,
+                                modifier = Modifier.padding(start = 40.dp, top = 5.dp))
+                        }
                         MessageBubble(
                             message = entry.message,
-                            character = character,
+                            character = state.character(entry.message.authorAgentId.orEmpty()) ?: character,
                             onLongPress = { messageMenu = entry.message },
                             onCardAction = {
                                 when (entry.message.card?.kind) {
@@ -345,6 +350,20 @@ fun ChatRoomScreen(
                                 }
                             }
                         )
+                        if (entry.message.sender == MessageSender.USER && entry.message.jobStatus != null &&
+                            entry.message.status == MessageStatus.SENT) {
+                            val jobLabel = when (entry.message.jobStatus) {
+                                "queued" -> tr(lang, "작업 대기", "Job queued")
+                                "running" -> tr(lang, "본체 실행 중", "Engine running")
+                                "completed" -> tr(lang, "작업 완료", "Job completed")
+                                "failed" -> tr(lang, "작업 실패", "Job failed")
+                                "cancelled" -> tr(lang, "작업 중단", "Job cancelled")
+                                "needs_review", "interrupted", "paused" -> tr(lang, "작업 확인 필요", "Job needs attention")
+                                else -> entry.message.jobStatus
+                            }
+                            Text(jobLabel.orEmpty(), style = MaterialTheme.typography.labelSmall,
+                                color = p.textSecondary, modifier = Modifier.align(Alignment.End).padding(end = 12.dp))
+                        }
                         if (entry.message.sender == MessageSender.USER &&
                             entry.message.status != MessageStatus.SENT) {
                             Text(

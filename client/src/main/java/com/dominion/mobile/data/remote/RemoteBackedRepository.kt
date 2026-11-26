@@ -146,7 +146,8 @@ class RemoteBackedRepository(
         // Local scheduling failure must not cause a duplicate server submission.
         runCatching { onJobAccepted(conversationId, submitted.jobId) }
         return message.copy(id = row.id, clientMessageId = message.clientMessageId ?: message.id,
-            status = com.dominion.mobile.data.model.MessageStatus.SENT, jobId = submitted.jobId)
+            status = com.dominion.mobile.data.model.MessageStatus.SENT, jobId = submitted.jobId,
+            jobStatus = submitted.status)
     }
 
     override suspend fun engineTools(): List<EngineTool> = api.engineTools()
@@ -158,8 +159,15 @@ class RemoteBackedRepository(
         // The room state includes a bounded historical approval list. Read the
         // live pending queue separately and never show another room's requests.
         val pending = api.pendingApprovals().filter { it.sessionId == session }
-        snapshot.copy(approvals = pending,
-            jobs = snapshot.jobs.orEmpty().filter { it.sessionId == session && it.input?.roomId == roomId })
+        val jobs = snapshot.jobs.orEmpty().filter { it.sessionId == session && it.input?.roomId == roomId }
+        update { current ->
+            current.copy(conversations = current.conversations.map { conversation ->
+                if (conversation.id == roomId)
+                    conversation.copy(messages = correlateRoomJobs(conversation.messages, roomId, session, jobs))
+                else conversation
+            })
+        }
+        snapshot.copy(approvals = pending, jobs = jobs)
     }
 
     override suspend fun decideApproval(roomId: String, approval: EngineApproval,
