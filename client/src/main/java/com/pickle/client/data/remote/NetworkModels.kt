@@ -310,7 +310,7 @@ data class ExploreDto(
     )
 }
 
-data class SendMessageRequest(val text: String)
+data class SendMessageRequest(val text: String, val client_message_id: String? = null)
 data class StartCallRequest(val video: Boolean)
 data class UpdateSettingsRequest(
     val theme: String? = null,
