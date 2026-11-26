@@ -3,7 +3,6 @@ package com.pickle.client.data
 import com.pickle.client.data.local.LocalStore
 import com.pickle.client.data.model.AppState
 import com.pickle.client.data.model.Message
-import com.pickle.client.data.model.Message
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,7 +24,6 @@ interface PickleRepository {
 
     fun update(transform: (AppState) -> AppState)
     suspend fun refresh() = Unit
-    suspend fun sendRemote(conversationId: String, text: String): List<Message> = emptyList()
     fun reset()
 }
 
