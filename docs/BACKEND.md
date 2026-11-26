@@ -112,7 +112,11 @@ DTO 필드는 [`client/src/main/java/com/pickle/client/data/remote/NetworkModels
 
 ## 4. 실시간 채팅
 
-현재 클라이언트는 전송 후 850ms 뒤 데모 응답을 넣습니다. 실제 서버에서는 다음 중 하나를 붙이세요.
+**데모 모드에서만** 전송 후 850ms 뒤 예시 응답을 넣습니다. 원격 모드는 `POST /v1/conversations/{id}/messages`로 실제 전송하며, 로컬 메시지를 `SENDING → SENT/FAILED`로 갱신합니다. 실패한 메시지는 같은 ID로 재시도할 수 있습니다.
+
+전송 시 본문은 `{ "text": "...", "client_message_id": "msg_..." }`이며, 서버는 `client_message_id`를 멱등 키로 사용해 중복 요청을 한 번만 처리하는 것이 좋습니다. 성공 응답의 `data`는 메시지 1개(보낸 사용자 메시지 또는 즉시 생성된 캐릭터 답변)일 수 있습니다. `GET /v1/conversations/{id}/messages`에서 응답의 `client_message_id`를 되돌려주면 앱이 임시 메시지를 서버 메시지로 교체합니다.
+
+응답이 비동기라면 앱은 처음 1회 기록을 가져온 뒤 약 60초 동안 간격을 늘리며 새 캐릭터 답변을 확인합니다. 대화방을 다시 열면 기록을 다시 동기화합니다. 실시간 토큰 단위 표시를 위해서는 추후 다음 중 하나를 연결할 수 있습니다.
 
 - **WebSocket**: `wss://api.../v1/stream?conversation_id=...`
 - **SSE**: `GET v1/conversations/{id}/events`
@@ -189,7 +193,7 @@ DTO 필드는 [`client/src/main/java/com/pickle/client/data/remote/NetworkModels
 - `RemoteBackedRepository.refresh()`는 각 요청을 `runCatching`으로 격리해 일부 실패가 전체 화면을 망가뜨리지 않게 합니다.
 - 마지막 성공 상태는 `LocalStore`에 저장됩니다.
 - 401 응답 시 토큰을 지우고 온보딩으로 보내는 인터셉터를 추가하는 것을 권장합니다.
-- 메시지 전송은 현재 전송 성공을 가정합니다. 실제 서버에서는 `MessageStatus.SENDING`으로 먼저 추가하고 실패 시 `FAILED`로 바꾸세요.
+- 원격 메시지는 낙관적으로 `SENDING`으로 추가하고, HTTP 오류 시 `FAILED`로 표시합니다. 화면에서 재시도가 가능합니다. 네트워크 상태로 전송 결과가 모호할 수 있으므로 서버에서 `client_message_id` 중복 처리가 필요합니다.
 
 ## 11. 서버 개발 체크리스트
 
