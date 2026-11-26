@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.pickle.client.data.DemoData
+import com.pickle.client.data.remote.RemoteBackedRepository
 import com.pickle.client.data.DemoReplies
 import com.pickle.client.data.PickleRepository
 import com.pickle.client.data.model.Account
@@ -233,22 +234,29 @@ class AppViewModel(
             }.copy(typingConversationId = conversationId)
         }
 
-        viewModelScope.launch {
-            delay(850)
-            mutate { s ->
-                val conv = s.conversation(conversationId) ?: return@mutate s
-                val character = s.character(conv.characterId) ?: return@mutate s
-                val reply = DemoReplies.replyTo(trimmed, character, lang = s.settings.lang)
-                val replyMessage = Message(
-                    id = id("msg"),
-                    conversationId = conversationId,
-                    sender = MessageSender.CHARACTER,
-                    text = reply,
-                    createdAt = System.currentTimeMillis()
-                )
-                s.withConversation(conversationId) {
-                    it.copy(messages = it.messages + replyMessage, updatedAt = System.currentTimeMillis())
-                }.copy(typingConversationId = null)
+        if (repo is RemoteBackedRepository) {
+            viewModelScope.launch {
+                runCatching { repo.sendRemote(conversationId, trimmed) }
+                mutate { s -> s.copy(typingConversationId = null) }
+            }
+        } else {
+            viewModelScope.launch {
+                delay(850)
+                mutate { s ->
+                    val conv = s.conversation(conversationId) ?: return@mutate s
+                    val character = s.character(conv.characterId) ?: return@mutate s
+                    val reply = DemoReplies.replyTo(trimmed, character, lang = s.settings.lang)
+                    val replyMessage = Message(
+                        id = id("msg"),
+                        conversationId = conversationId,
+                        sender = MessageSender.CHARACTER,
+                        text = reply,
+                        createdAt = System.currentTimeMillis()
+                    )
+                    s.withConversation(conversationId) {
+                        it.copy(messages = it.messages + replyMessage, updatedAt = System.currentTimeMillis())
+                    }.copy(typingConversationId = null)
+                }
             }
         }
     }
