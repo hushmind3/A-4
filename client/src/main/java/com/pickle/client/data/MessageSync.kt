@@ -1,0 +1,32 @@
+package com.pickle.client.data
+
+import com.pickle.client.data.model.Message
+import com.pickle.client.data.model.MessageStatus
+
+/**
+ * Merge server history into the local conversation without discarding in-flight
+ * messages. A server may replace a temporary id using client_message_id.
+ */
+object MessageSync {
+    fun reconcile(local: List<Message>, server: List<Message>): List<Message> {
+        val merged = local.toMutableList()
+        for (remote in server) {
+            if (remote.id.isBlank()) continue
+            val existingIndex = merged.indexOfFirst {
+                it.id == remote.id ||
+                    (!remote.clientMessageId.isNullOrBlank() && it.id == remote.clientMessageId)
+            }
+            if (existingIndex >= 0) {
+                val original = merged[existingIndex]
+                merged[existingIndex] = remote.copy(
+                    status = MessageStatus.SENT,
+                    card = remote.card ?: original.card,
+                    replyTo = remote.replyTo ?: original.replyTo
+                )
+            } else {
+                merged.add(remote.copy(status = MessageStatus.SENT))
+            }
+        }
+        return merged.sortedWith(compareBy<Message> { it.createdAt }.thenBy { it.id })
+    }
+}
