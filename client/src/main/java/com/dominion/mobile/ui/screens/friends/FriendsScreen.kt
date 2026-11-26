@@ -266,7 +266,7 @@ fun AddFriendScreen(
     }
 
     Column(Modifier.fillMaxSize().statusBarsPadding().background(p.screen).navigationBarsPadding()) {
-        com.dominion.mobile.ui.components.DominionTopBar(
+        com.dominion.mobile.ui.components.ScreenTopBar(
             title = tr(lang, "친구 추가", "Add friend"),
             onBack = onBack
         )
@@ -384,7 +384,7 @@ fun FriendProfileScreen(
     var confirmRemove by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize().statusBarsPadding().background(p.screen)) {
-        com.dominion.mobile.ui.components.DominionTopBar(
+        com.dominion.mobile.ui.components.ScreenTopBar(
             title = friend.name,
             subtitle = friend.handle,
             onBack = onBack

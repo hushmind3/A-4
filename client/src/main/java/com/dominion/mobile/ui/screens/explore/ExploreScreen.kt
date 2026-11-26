@@ -45,8 +45,8 @@ import com.dominion.mobile.ui.LocalLang
 import com.dominion.mobile.ui.components.Glyph
 import com.dominion.mobile.ui.components.GlyphIcon
 import com.dominion.mobile.ui.components.AssistantAvatar
-import com.dominion.mobile.ui.components.DominionBottomSheet
-import com.dominion.mobile.ui.components.DominionChip
+import com.dominion.mobile.ui.components.AppBottomSheet
+import com.dominion.mobile.ui.components.FilterChipItem
 import com.dominion.mobile.ui.components.PrimaryButton
 import com.dominion.mobile.ui.components.SectionLabel
 import com.dominion.mobile.ui.components.SheetTitle
@@ -166,7 +166,7 @@ fun ExploreScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(categories.size) { index ->
-                        DominionChip(
+                        FilterChipItem(
                             text = categories[index].label(lang),
                             selected = index == selectedCategory,
                             onClick = { selectedCategory = index }
@@ -222,7 +222,7 @@ fun ExploreScreen(
     }
 
     detail?.let { template ->
-        DominionBottomSheet(onDismiss = { detail = null }) {
+        AppBottomSheet(onDismiss = { detail = null }) {
             SheetTitle(template.title(lang), template.subtitle(lang))
             Column(Modifier.padding(horizontal = 24.dp)) {
                 Text(

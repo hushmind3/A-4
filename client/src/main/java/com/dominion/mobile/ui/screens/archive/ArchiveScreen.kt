@@ -45,8 +45,8 @@ import com.dominion.mobile.ui.LocalLang
 import com.dominion.mobile.ui.components.EmptyState
 import com.dominion.mobile.ui.components.Glyph
 import com.dominion.mobile.ui.components.GlyphIcon
-import com.dominion.mobile.ui.components.DominionBottomSheet
-import com.dominion.mobile.ui.components.DominionChip
+import com.dominion.mobile.ui.components.AppBottomSheet
+import com.dominion.mobile.ui.components.FilterChipItem
 import com.dominion.mobile.ui.components.SheetRow
 import com.dominion.mobile.ui.components.SheetTitle
 import com.dominion.mobile.ui.components.toast
@@ -102,7 +102,7 @@ fun ArchiveScreen(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(tabs.size) { index ->
-                DominionChip(tabs[index], selected == index, onClick = { selected = index })
+                FilterChipItem(tabs[index], selected == index, onClick = { selected = index })
             }
         }
         Spacer(Modifier.height(12.dp))
@@ -128,7 +128,7 @@ fun ArchiveScreen(
     }
 
     detail?.let { item ->
-        DominionBottomSheet(onDismiss = { detail = null }) {
+        AppBottomSheet(onDismiss = { detail = null }) {
             SheetTitle(item.title, item.meta)
             Box(
                 Modifier

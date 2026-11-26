@@ -120,7 +120,7 @@ class AppViewModel(
                                 Message(
                                     id = "welcome_1",
                                     conversationId = "conv_welcome",
-                                    sender = MessageSender.CHARACTER,
+                                    sender = MessageSender.ASSISTANT,
                                     text = "안녕하세요, ${profile.characterName}이에요. 오늘은 무엇을 함께 해볼까요?",
                                     createdAt = System.currentTimeMillis()
                                 )
@@ -148,7 +148,7 @@ class AppViewModel(
                                 Message(
                                     id = "welcome_1",
                                     conversationId = "conv_welcome",
-                                    sender = MessageSender.CHARACTER,
+                                    sender = MessageSender.ASSISTANT,
                                     text = "데모 모드예요. 채팅, 통화, 일정, 금고까지 자유롭게 둘러보세요.",
                                     createdAt = System.currentTimeMillis()
                                 )
@@ -218,7 +218,7 @@ class AppViewModel(
         val message = Message(
             id = id("msg"),
             conversationId = conversationId,
-            sender = MessageSender.ME,
+            sender = MessageSender.USER,
             text = trimmed,
             kind = when (card?.kind) {
                 CardKind.TASK -> MessageKind.TASK
@@ -253,7 +253,7 @@ class AppViewModel(
                 val replyMessage = Message(
                     id = id("msg"),
                     conversationId = conversationId,
-                    sender = MessageSender.CHARACTER,
+                    sender = MessageSender.ASSISTANT,
                     text = reply,
                     createdAt = System.currentTimeMillis()
                 )
@@ -268,7 +268,7 @@ class AppViewModel(
     fun retryMessage(conversationId: String, messageId: String) {
         if (repo.isDemo) return
         val message = repo.state.value.conversation(conversationId)?.messages?.firstOrNull {
-            it.id == messageId && it.sender == MessageSender.ME && it.status == MessageStatus.FAILED
+            it.id == messageId && it.sender == MessageSender.USER && it.status == MessageStatus.FAILED
         } ?: return
         mutate { s ->
             s.withConversation(conversationId) { conv ->
@@ -306,7 +306,7 @@ class AppViewModel(
                 s.withConversation(conversationId) { conv ->
                     val acknowledged = conv.messages.map { local ->
                         if (local.id != message.id) local
-                        else if (acknowledgement.sender == MessageSender.ME && acknowledgement.id.isNotBlank()) {
+                        else if (acknowledgement.sender == MessageSender.USER && acknowledgement.id.isNotBlank()) {
                             acknowledgement.copy(
                                 status = MessageStatus.SENT,
                                 card = acknowledgement.card ?: local.card
@@ -314,7 +314,7 @@ class AppViewModel(
                         } else local.copy(status = MessageStatus.SENT)
                     }
                     val withReply = if (
-                        acknowledgement.sender != MessageSender.ME &&
+                        acknowledgement.sender != MessageSender.USER &&
                         acknowledgement.id.isNotBlank() &&
                         acknowledged.none { it.id == acknowledgement.id }
                     ) acknowledged + acknowledgement else acknowledged
@@ -324,7 +324,7 @@ class AppViewModel(
 
             // Server may acknowledge a send before the assistant response is ready.
             // Save the pre-fetch IDs so the reply watcher can recognize a new response.
-            if (acknowledgement.sender != MessageSender.ME &&
+            if (acknowledgement.sender != MessageSender.USER &&
                 acknowledgement.id.isNotBlank()) return@launch
             val knownIds = repo.state.value.conversation(conversationId)
                 ?.messages?.map { it.id }?.toSet() ?: return@launch
@@ -338,7 +338,7 @@ class AppViewModel(
             }
             if (latest != null) {
                 replied = latest.any {
-                    it.sender == MessageSender.CHARACTER && it.id.isNotBlank() && it.id !in knownIds
+                    it.sender == MessageSender.ASSISTANT && it.id.isNotBlank() && it.id !in knownIds
                 }
                 applyServerMessages(conversationId, latest)
             }
@@ -434,7 +434,7 @@ class AppViewModel(
 
     fun rewindConversation(conversationId: String): Boolean {
         val conv = repo.state.value.conversation(conversationId) ?: return false
-        val keep = conv.messages.filter { it.sender == MessageSender.ME }.takeLast(2)
+        val keep = conv.messages.filter { it.sender == MessageSender.USER }.takeLast(2)
         mutate { s ->
             s.withConversation(conversationId) {
                 it.copy(messages = keep + Message(
@@ -494,7 +494,7 @@ class AppViewModel(
                             Message(
                                 id = id("msg"),
                                 conversationId = convId,
-                                sender = MessageSender.CHARACTER,
+                                sender = MessageSender.ASSISTANT,
                                 text = "안녕하세요! ${character.name}이에요. 무엇을 도와드릴까요?",
                                 createdAt = System.currentTimeMillis()
                             )
@@ -547,7 +547,7 @@ class AppViewModel(
         val message = Message(
             id = id("msg"),
             conversationId = call.conversationId,
-            sender = MessageSender.CHARACTER,
+            sender = MessageSender.ASSISTANT,
             kind = MessageKind.CALL,
             createdAt = System.currentTimeMillis(),
             card = card

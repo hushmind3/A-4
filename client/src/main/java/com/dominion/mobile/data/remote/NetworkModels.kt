@@ -131,9 +131,9 @@ data class MessageDto(
         id = id,
         conversationId = conversation_id,
         sender = when (sender.lowercase()) {
-            "me", "user" -> MessageSender.ME
+            "me", "user" -> MessageSender.USER
             "system" -> MessageSender.SYSTEM
-            else -> MessageSender.CHARACTER
+            else -> MessageSender.ASSISTANT
         },
         text = text,
         kind = runCatching { MessageKind.valueOf(kind.uppercase()) }.getOrDefault(MessageKind.TEXT),

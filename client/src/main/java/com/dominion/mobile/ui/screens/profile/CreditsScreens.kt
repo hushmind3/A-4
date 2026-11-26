@@ -60,9 +60,9 @@ import com.dominion.mobile.ui.components.CountPill
 import com.dominion.mobile.ui.components.Glyph
 import com.dominion.mobile.ui.components.GlyphIcon
 import com.dominion.mobile.ui.components.Hairline
-import com.dominion.mobile.ui.components.DominionBottomSheet
-import com.dominion.mobile.ui.components.DominionChip
-import com.dominion.mobile.ui.components.DominionTopBar
+import com.dominion.mobile.ui.components.AppBottomSheet
+import com.dominion.mobile.ui.components.FilterChipItem
+import com.dominion.mobile.ui.components.ScreenTopBar
 import com.dominion.mobile.ui.components.PrimaryButton
 import com.dominion.mobile.ui.components.SectionLabel
 import com.dominion.mobile.ui.components.SheetRow
@@ -87,7 +87,7 @@ fun CreditsScreen(
     val tabs = listOf(tr(lang, "젤리 충전", "Get jelly"), tr(lang, "이용 내역", "History"), tr(lang, "플랜", "Plans"))
 
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().background(p.screen)) {
-        DominionTopBar(
+        ScreenTopBar(
             title = tr(lang, "젤리와 플랜", "Jelly & plans"),
             subtitle = tr(lang, "대화와 통화에 사용하는 젤리와 에너지", "Jelly and energy for chats and calls"),
             onBack = onBack
@@ -157,7 +157,7 @@ fun CreditsScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(tabs.size) { index ->
-                        DominionChip(tabs[index], tab == index, onClick = { tab = index })
+                        FilterChipItem(tabs[index], tab == index, onClick = { tab = index })
                     }
                 }
             }
@@ -249,7 +249,7 @@ fun CreditsScreen(
     }
 
     buyTarget?.let { product ->
-        DominionBottomSheet(onDismiss = { buyTarget = null }) {
+        AppBottomSheet(onDismiss = { buyTarget = null }) {
             SheetTitle(product.title, product.subtitle)
             Column(Modifier.padding(horizontal = 24.dp)) {
                 Row(
@@ -295,7 +295,7 @@ fun CreditsScreen(
     }
 
     if (showPlans) {
-        DominionBottomSheet(onDismiss = { showPlans = false }) {
+        AppBottomSheet(onDismiss = { showPlans = false }) {
             SheetTitle(tr(lang, "플랜 비교", "Compare plans"), tr(lang, "언제든 바꿀 수 있어요.", "Change anytime."))
             Column(Modifier.padding(horizontal = 24.dp)) {
                 PlanCard(Plan.FREE, state.account.plan == Plan.FREE) {}
@@ -408,7 +408,7 @@ fun InviteScreen(
     val link = "dominion://u/${state.account.inviteCode.lowercase()}"
 
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().background(p.screen)) {
-        DominionTopBar(title = tr(lang, "친구 초대", "Invite friends"), onBack = onBack)
+        ScreenTopBar(title = tr(lang, "친구 초대", "Invite friends"), onBack = onBack)
         Column(Modifier.weight(1f)) {
             Column(
                 Modifier.fillMaxWidth().padding(24.dp),
@@ -525,7 +525,7 @@ fun InboxScreen(
     val lang = LocalLang.current
 
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().background(p.screen)) {
-        DominionTopBar(
+        ScreenTopBar(
             title = tr(lang, "받은 소식", "Inbox"),
             subtitle = tr(lang, "친구와 작업 소식", "Friends and task updates"),
             onBack = onBack,

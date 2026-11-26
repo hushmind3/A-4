@@ -52,7 +52,7 @@ import com.dominion.mobile.ui.components.Glyph
 import com.dominion.mobile.ui.components.GlyphButton
 import com.dominion.mobile.ui.components.GlyphIcon
 import com.dominion.mobile.ui.components.AssistantAvatar
-import com.dominion.mobile.ui.components.DominionBottomSheet
+import com.dominion.mobile.ui.components.AppBottomSheet
 import com.dominion.mobile.ui.components.PrimaryDialog
 import com.dominion.mobile.ui.components.SectionLabel
 import com.dominion.mobile.ui.components.SheetRow
@@ -207,7 +207,7 @@ fun ChatsScreen(
 
     actionTarget?.let { conv ->
         val character = state.character(conv.characterId)
-        DominionBottomSheet(onDismiss = { actionTarget = null }) {
+        AppBottomSheet(onDismiss = { actionTarget = null }) {
             SheetTitle(conv.title(state.characters), character?.tagline)
             SheetRow(
                 tr(lang, if (conv.pinned) "고정 해제" else "고정하기", if (conv.pinned) "Unpin" else "Pin"),
@@ -323,7 +323,7 @@ private fun ConversationRow(
         else -> last.text
     }
     val prefix = when {
-        last?.sender == MessageSender.ME -> tr(lang, "나: ", "Me: ")
+        last?.sender == MessageSender.USER -> tr(lang, "나: ", "Me: ")
         last?.card?.kind == CardKind.TASK -> tr(lang, "할 일 · ", "Task · ")
         last?.card?.kind == CardKind.CALL -> tr(lang, "통화 · ", "Call · ")
         else -> ""

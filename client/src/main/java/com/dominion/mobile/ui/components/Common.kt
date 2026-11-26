@@ -82,7 +82,7 @@ import com.dominion.mobile.ui.tr
 import kotlin.math.roundToInt
 
 @Composable
-fun DominionTopBar(
+fun ScreenTopBar(
     title: String,
     subtitle: String? = null,
     onBack: (() -> Unit)? = null,
@@ -221,7 +221,7 @@ fun SecondaryButton(
 }
 
 @Composable
-fun DominionCard(
+fun SurfaceCard(
     modifier: Modifier = Modifier,
     color: Color = LocalDominionPalette.current.card,
     content: @Composable ColumnScope.() -> Unit
@@ -307,7 +307,7 @@ fun SettingsRow(
 }
 
 @Composable
-fun dominionSwitchColors() = SwitchDefaults.colors(
+fun appSwitchColors() = SwitchDefaults.colors(
     checkedThumbColor = Color.White,
     checkedTrackColor = LocalDominionPalette.current.toggleOn,
     uncheckedThumbColor = if (LocalDominionPalette.current.dark) Color(0xFFB6BAC4) else Color.White,
@@ -344,7 +344,7 @@ fun SwitchRow(
         Switch(
             checked = checked,
             onCheckedChange = onCheckedChange,
-            colors = dominionSwitchColors()
+            colors = appSwitchColors()
         )
     }
 }
@@ -362,7 +362,7 @@ fun Hairline(modifier: Modifier = Modifier, start: Dp = 16.dp) {
 }
 
 @Composable
-fun DominionTextField(
+fun AppTextField(
     value: String,
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -448,7 +448,7 @@ fun SearchField(
 }
 
 @Composable
-fun DominionChip(
+fun FilterChipItem(
     text: String,
     selected: Boolean,
     onClick: () -> Unit,
@@ -487,7 +487,7 @@ fun ChipScroller(
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         itemsIndexed(items) { index, item ->
-            DominionChip(item, index == selectedIndex, onClick = { onSelect(index) })
+            FilterChipItem(item, index == selectedIndex, onClick = { onSelect(index) })
         }
     }
 }
@@ -640,7 +640,7 @@ fun TextPromptDialog(
         containerColor = p.sheet,
         title = { Text(title, style = MaterialTheme.typography.titleMedium, color = p.textPrimary) },
         text = {
-            DominionTextField(
+            AppTextField(
                 value = value,
                 onValueChange = { value = it },
                 label = label,
@@ -661,7 +661,7 @@ fun TextPromptDialog(
 }
 
 @Composable
-fun DominionBottomSheet(
+fun AppBottomSheet(
     onDismiss: () -> Unit,
     content: @Composable ColumnScope.() -> Unit
 ) {

@@ -44,7 +44,7 @@ import com.dominion.mobile.ui.components.FriendAvatar
 import com.dominion.mobile.ui.components.Glyph
 import com.dominion.mobile.ui.components.GlyphIcon
 import com.dominion.mobile.ui.components.AssistantAvatar
-import com.dominion.mobile.ui.components.DominionTopBar
+import com.dominion.mobile.ui.components.ScreenTopBar
 import com.dominion.mobile.ui.components.SearchField
 import com.dominion.mobile.ui.components.SectionLabel
 import com.dominion.mobile.ui.components.SettingsRow
@@ -72,7 +72,7 @@ fun SearchScreen(
     }.take(30)
 
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().background(p.screen)) {
-        DominionTopBar(title = tr(lang, "검색", "Search"), onBack = onBack)
+        ScreenTopBar(title = tr(lang, "검색", "Search"), onBack = onBack)
         Column(Modifier.padding(horizontal = 16.dp)) {
             SearchField(
                 value = query,
@@ -147,7 +147,7 @@ fun SearchScreen(
                             Column(Modifier.weight(1f)) {
                                 Row {
                                     Text(
-                                        if (message.sender == MessageSender.ME) tr(lang, "나", "Me") else character?.name ?: "",
+                                        if (message.sender == MessageSender.USER) tr(lang, "나", "Me") else character?.name ?: "",
                                         style = MaterialTheme.typography.labelMedium,
                                         color = p.textPrimary
                                     )
@@ -210,7 +210,7 @@ fun NewChatScreen(
     val own = state.myCharacter()
 
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().background(p.screen)) {
-        DominionTopBar(title = tr(lang, "새 대화", "New chat"), onBack = onBack)
+        ScreenTopBar(title = tr(lang, "새 대화", "New chat"), onBack = onBack)
         Column(Modifier.padding(horizontal = 16.dp)) {
             SearchField(query, { query = it }, tr(lang, "이름으로 찾기", "Search by name"))
         }

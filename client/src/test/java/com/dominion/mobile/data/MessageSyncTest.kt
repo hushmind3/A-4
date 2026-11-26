@@ -3,6 +3,7 @@ package com.dominion.mobile.data
 import com.dominion.mobile.data.model.Message
 import com.dominion.mobile.data.model.MessageSender
 import com.dominion.mobile.data.model.MessageStatus
+import com.google.gson.Gson
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -26,8 +27,8 @@ class MessageSyncTest {
     )
 
     @Test fun serverAcknowledgementReplacesOptimisticMessage() {
-        val optimistic = message("local_1", MessageSender.ME, "hello", status = MessageStatus.SENDING)
-        val accepted = message("server_9", MessageSender.ME, "hello", clientId = "local_1")
+        val optimistic = message("local_1", MessageSender.USER, "hello", status = MessageStatus.SENDING)
+        val accepted = message("server_9", MessageSender.USER, "hello", clientId = "local_1")
         val result = MessageSync.reconcile(listOf(optimistic), listOf(accepted, accepted))
         assertEquals(1, result.size)
         assertEquals("server_9", result.single().id)
@@ -35,9 +36,9 @@ class MessageSyncTest {
     }
 
     @Test fun unrelatedPendingMessageSurvivesHistorySync() {
-        val pending = message("local_2", MessageSender.ME, "next", createdAt = 4000L,
+        val pending = message("local_2", MessageSender.USER, "next", createdAt = 4000L,
             status = MessageStatus.FAILED)
-        val reply = message("server_reply", MessageSender.CHARACTER, "done", createdAt = 3000L)
+        val reply = message("server_reply", MessageSender.ASSISTANT, "done", createdAt = 3000L)
         val result = MessageSync.reconcile(listOf(pending), listOf(reply))
         assertEquals(2, result.size)
         assertEquals("server_reply", result.first().id)
@@ -45,8 +46,15 @@ class MessageSyncTest {
     }
 
     @Test fun emptyServerListPreservesLocalMessages() {
-        val local = listOf(message("m", MessageSender.ME, "hi"))
+        val local = listOf(message("m", MessageSender.USER, "hi"))
         assertEquals(local, MessageSync.reconcile(local, emptyList()))
         assertTrue(MessageSync.reconcile(emptyList(), emptyList()).isEmpty())
+    }
+    @Test fun messageRolesUseStandardNamesWithoutLosingStoredHistory() {
+        val gson = Gson()
+        assertEquals("\"USER\"", gson.toJson(MessageSender.USER))
+        assertEquals("\"ASSISTANT\"", gson.toJson(MessageSender.ASSISTANT))
+        assertEquals(MessageSender.USER, gson.fromJson("\"ME\"", MessageSender::class.java))
+        assertEquals(MessageSender.ASSISTANT, gson.fromJson("\"CHARACTER\"", MessageSender::class.java))
     }
 }

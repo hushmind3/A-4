@@ -48,8 +48,8 @@ import com.dominion.mobile.ui.components.GlyphIcon
 import com.dominion.mobile.ui.components.Hairline
 import com.dominion.mobile.ui.components.AssistantAvatar
 import com.dominion.mobile.ui.components.LevelBar
-import com.dominion.mobile.ui.components.DominionTextField
-import com.dominion.mobile.ui.components.DominionTopBar
+import com.dominion.mobile.ui.components.AppTextField
+import com.dominion.mobile.ui.components.ScreenTopBar
 import com.dominion.mobile.ui.components.PrimaryButton
 import com.dominion.mobile.ui.components.PrimaryDialog
 import com.dominion.mobile.ui.components.SecondaryButton
@@ -95,7 +95,7 @@ fun CharacterScreen(
             .navigationBarsPadding()
             .imePadding()
     ) {
-        DominionTopBar(
+        ScreenTopBar(
             title = "",
             onBack = onBack,
             actions = {
@@ -346,7 +346,7 @@ fun CustomizeScreen(
     Column(
         Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().background(p.screen).imePadding()
     ) {
-        DominionTopBar(title = tr(lang, "꾸미기", "Customize"), onBack = onBack)
+        ScreenTopBar(title = tr(lang, "꾸미기", "Customize"), onBack = onBack)
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)
         ) {
@@ -354,7 +354,7 @@ fun CustomizeScreen(
                 AssistantAvatar(Color(color), shape, size = 124.dp, breathing = true)
             }
             Spacer(Modifier.height(20.dp))
-            DominionTextField(
+            AppTextField(
                 value = name,
                 onValueChange = { name = it.take(12) },
                 label = tr(lang, "이름", "Name")
@@ -455,7 +455,7 @@ fun RoomInfoScreen(
     Column(
         Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().background(p.screen)
     ) {
-        DominionTopBar(title = tr(lang, "대화방 정보", "Room info"), onBack = onBack)
+        ScreenTopBar(title = tr(lang, "대화방 정보", "Room info"), onBack = onBack)
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
             Column(
                 Modifier.fillMaxWidth().padding(vertical = 14.dp),

@@ -69,7 +69,7 @@ import com.dominion.mobile.ui.components.GlyphButton
 import com.dominion.mobile.ui.components.GlyphIcon
 import com.dominion.mobile.ui.components.AssistantAvatar
 import com.dominion.mobile.ui.components.MessageBubble
-import com.dominion.mobile.ui.components.DominionBottomSheet
+import com.dominion.mobile.ui.components.AppBottomSheet
 import com.dominion.mobile.ui.components.PrimaryDialog
 import com.dominion.mobile.ui.components.SheetRow
 import com.dominion.mobile.ui.components.SheetTitle
@@ -226,7 +226,7 @@ fun ChatRoomScreen(
                                 }
                             }
                         )
-                        if (entry.message.sender == MessageSender.ME &&
+                        if (entry.message.sender == MessageSender.USER &&
                             entry.message.status != MessageStatus.SENT) {
                             Text(
                                 text = if (entry.message.status == MessageStatus.FAILED)
@@ -321,7 +321,7 @@ fun ChatRoomScreen(
     }
 
     if (showAttach) {
-        DominionBottomSheet(onDismiss = { showAttach = false }) {
+        AppBottomSheet(onDismiss = { showAttach = false }) {
             SheetTitle(tr(lang, "무엇을 보낼까요?", "What would you like to send?"))
             SheetRow(tr(lang, "사진", "Photo"), Glyph.IMAGE) {
                 vm.addCardToConversation(
@@ -354,7 +354,7 @@ fun ChatRoomScreen(
     }
 
     if (showMenu) {
-        DominionBottomSheet(onDismiss = { showMenu = false }) {
+        AppBottomSheet(onDismiss = { showMenu = false }) {
             SheetTitle(conversation.title(state.characters), character.tagline)
             SheetRow(tr(lang, "대화방 정보", "Room info"), Glyph.PERSON) { showMenu = false; onRoomInfo() }
             SheetRow(tr(lang, "대화 검색", "Search chat"), Glyph.SEARCH) { showMenu = false; onSearch() }
@@ -376,9 +376,9 @@ fun ChatRoomScreen(
     }
 
     messageMenu?.let { message ->
-        DominionBottomSheet(onDismiss = { messageMenu = null }) {
+        AppBottomSheet(onDismiss = { messageMenu = null }) {
             SheetTitle(tr(lang, "메시지", "Message"))
-            if (message.sender == MessageSender.ME && message.status == MessageStatus.FAILED) {
+            if (message.sender == MessageSender.USER && message.status == MessageStatus.FAILED) {
                 SheetRow(tr(lang, "전송 재시도", "Retry sending"), Glyph.SEND) {
                     vm.retryMessage(conversationId, message.id)
                     messageMenu = null

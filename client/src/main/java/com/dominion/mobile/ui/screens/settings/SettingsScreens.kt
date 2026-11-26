@@ -50,8 +50,8 @@ import com.dominion.mobile.ui.components.GlyphIcon
 import com.dominion.mobile.ui.components.Hairline
 import com.dominion.mobile.ui.components.AssistantAvatar
 import com.dominion.mobile.ui.components.LanguageToggle
-import com.dominion.mobile.ui.components.DominionTextField
-import com.dominion.mobile.ui.components.DominionTopBar
+import com.dominion.mobile.ui.components.AppTextField
+import com.dominion.mobile.ui.components.ScreenTopBar
 import com.dominion.mobile.ui.components.PrimaryButton
 import com.dominion.mobile.ui.components.PrimaryDialog
 import com.dominion.mobile.ui.components.SectionLabel
@@ -77,7 +77,7 @@ fun SettingsScreen(
     val own = state.myCharacter()
 
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().background(p.screen)) {
-        DominionTopBar(title = tr(lang, "설정", "Settings"), onBack = onBack)
+        ScreenTopBar(title = tr(lang, "설정", "Settings"), onBack = onBack)
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
             Row(
                 Modifier
@@ -279,16 +279,16 @@ fun AccountScreen(
     val context = LocalContext.current
 
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding().background(p.screen)) {
-        DominionTopBar(title = tr(lang, "계정", "Account"), onBack = onBack)
+        ScreenTopBar(title = tr(lang, "계정", "Account"), onBack = onBack)
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
             Spacer(Modifier.height(8.dp))
-            DominionTextField(name, { name = it.take(20) }, label = tr(lang, "이름", "Name"))
+            AppTextField(name, { name = it.take(20) }, label = tr(lang, "이름", "Name"))
             Spacer(Modifier.height(8.dp))
-            DominionTextField(birthday, { birthday = it.take(10) }, label = tr(lang, "생일", "Birthday"), placeholder = "1998.04.12")
+            AppTextField(birthday, { birthday = it.take(10) }, label = tr(lang, "생일", "Birthday"), placeholder = "1998.04.12")
             Spacer(Modifier.height(8.dp))
-            DominionTextField(state.account.phone, {}, label = tr(lang, "전화번호", "Phone"), singleLine = true)
+            AppTextField(state.account.phone, {}, label = tr(lang, "전화번호", "Phone"), singleLine = true)
             Spacer(Modifier.height(8.dp))
-            DominionTextField(state.account.email, {}, label = tr(lang, "이메일", "Email"))
+            AppTextField(state.account.email, {}, label = tr(lang, "이메일", "Email"))
             Spacer(Modifier.height(16.dp))
             PrimaryButton(
                 text = tr(lang, "저장", "Save"),
@@ -337,7 +337,7 @@ fun NotificationsSettingsScreen(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
     ) { }
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().background(p.screen)) {
-        DominionTopBar(title = tr(lang, "알림", "Notifications"), onBack = onBack)
+        ScreenTopBar(title = tr(lang, "알림", "Notifications"), onBack = onBack)
         SettingsGroup {
             SwitchRow(
                 title = tr(lang, "알림 받기", "Allow notifications"),
@@ -390,7 +390,7 @@ fun AppearanceScreen(
     val p = LocalDominionPalette.current
     val lang = LocalLang.current
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().background(p.screen)) {
-        DominionTopBar(title = tr(lang, "화면", "Appearance"), onBack = onBack)
+        ScreenTopBar(title = tr(lang, "화면", "Appearance"), onBack = onBack)
         Column(Modifier.padding(horizontal = 18.dp)) {
             Text(tr(lang, "테마", "Theme"), style = MaterialTheme.typography.labelMedium, color = p.textTertiary)
             Spacer(Modifier.height(8.dp))
@@ -444,7 +444,7 @@ fun LanguageScreen(
     val p = LocalDominionPalette.current
     val lang = LocalLang.current
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().background(p.screen)) {
-        DominionTopBar(title = tr(lang, "언어", "Language"), onBack = onBack)
+        ScreenTopBar(title = tr(lang, "언어", "Language"), onBack = onBack)
         Row(Modifier.fillMaxWidth().padding(20.dp), horizontalArrangement = Arrangement.Center) {
             LanguageToggle(state.settings.lang, vm::setLanguage)
         }
@@ -491,7 +491,7 @@ fun PrivacyScreen(
     val lang = LocalLang.current
     val context = LocalContext.current
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().background(p.screen)) {
-        DominionTopBar(title = tr(lang, "개인정보 및 보안", "Privacy & security"), onBack = onBack)
+        ScreenTopBar(title = tr(lang, "개인정보 및 보안", "Privacy & security"), onBack = onBack)
         SettingsGroup {
             SwitchRow(
                 title = tr(lang, "앱 잠금", "App lock"),
@@ -548,7 +548,7 @@ fun BlockedUsersScreen(
     val p = LocalDominionPalette.current
     val lang = LocalLang.current
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().background(p.screen)) {
-        DominionTopBar(title = tr(lang, "차단한 사용자", "Blocked users"), onBack = onBack)
+        ScreenTopBar(title = tr(lang, "차단한 사용자", "Blocked users"), onBack = onBack)
         if (state.settings.blockedUserIds.isEmpty()) {
             com.dominion.mobile.ui.components.EmptyState(
                 glyph = Glyph.LOCK,
@@ -582,7 +582,7 @@ fun TabLayoutScreen(
     val p = LocalDominionPalette.current
     val lang = LocalLang.current
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().background(p.screen)) {
-        DominionTopBar(title = tr(lang, "탭 구성", "Tab layout"), onBack = onBack)
+        ScreenTopBar(title = tr(lang, "탭 구성", "Tab layout"), onBack = onBack)
         SettingsGroup {
             state.settings.tabOrder.forEachIndexed { index, tab ->
                 Row(
@@ -630,7 +630,7 @@ fun LegalScreen(document: String, onBack: () -> Unit) {
     val terms = document.contains("terms")
     val title = if (terms) tr(lang, "이용약관", "Terms of service") else tr(lang, "개인정보 처리방침", "Privacy policy")
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().background(p.screen)) {
-        DominionTopBar(title = title, onBack = onBack)
+        ScreenTopBar(title = title, onBack = onBack)
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 22.dp)) {
             Text(
                 if (terms) tr(lang, "시행일 2026년 11월 1일", "Effective November 1, 2026")
@@ -708,7 +708,7 @@ fun EditProfileScreen(
     val context = LocalContext.current
 
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding().background(p.screen)) {
-        DominionTopBar(title = tr(lang, "프로필 편집", "Edit profile"), onBack = onBack)
+        ScreenTopBar(title = tr(lang, "프로필 편집", "Edit profile"), onBack = onBack)
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
                 AssistantAvatar(
@@ -735,11 +735,11 @@ fun EditProfileScreen(
                 )
             }
             Spacer(Modifier.height(12.dp))
-            DominionTextField(name, { name = it.take(20) }, label = tr(lang, "내 이름", "My name"))
+            AppTextField(name, { name = it.take(20) }, label = tr(lang, "내 이름", "My name"))
             Spacer(Modifier.height(8.dp))
-            DominionTextField(characterName, { characterName = it.take(12) }, label = tr(lang, "도미니온 이름", "Dominion name"))
+            AppTextField(characterName, { characterName = it.take(12) }, label = tr(lang, "도미니온 이름", "Dominion name"))
             Spacer(Modifier.height(8.dp))
-            DominionTextField(bio, { bio = it.take(160) }, label = tr(lang, "소개", "Bio"), singleLine = false, maxLines = 4)
+            AppTextField(bio, { bio = it.take(160) }, label = tr(lang, "소개", "Bio"), singleLine = false, maxLines = 4)
             Spacer(Modifier.height(16.dp))
             PrimaryButton(
                 text = tr(lang, "저장", "Save"),

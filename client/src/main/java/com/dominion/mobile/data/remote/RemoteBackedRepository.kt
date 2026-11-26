@@ -57,7 +57,7 @@ class RemoteBackedRepository(
                 null
             }
             if (rows != null && rows.any {
-                it.sender == MessageSender.CHARACTER && it.id.isNotBlank() && it.id !in knownIds
+                it.sender == MessageSender.ASSISTANT && it.id.isNotBlank() && it.id !in knownIds
             }) return rows
         }
         return emptyList()

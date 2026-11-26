@@ -50,8 +50,8 @@ import com.dominion.mobile.ui.components.CheckCircle
 import com.dominion.mobile.ui.components.Glyph
 import com.dominion.mobile.ui.components.GlyphIcon
 import com.dominion.mobile.ui.components.Hairline
-import com.dominion.mobile.ui.components.DominionChip
-import com.dominion.mobile.ui.components.DominionTopBar
+import com.dominion.mobile.ui.components.FilterChipItem
+import com.dominion.mobile.ui.components.ScreenTopBar
 import com.dominion.mobile.ui.components.PrimaryButton
 import com.dominion.mobile.ui.components.SectionLabel
 import com.dominion.mobile.ui.components.SettingsRow
@@ -78,7 +78,7 @@ fun ConnectionsScreen(
     }.filter { query.isBlank() || it.name.contains(query, true) }
 
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().background(p.screen)) {
-        DominionTopBar(
+        ScreenTopBar(
             title = tr(lang, "연결", "Connections"),
             subtitle = tr(lang, "도미니온이 사용할 수 있는 도구를 관리해요", "Choose the tools your Dominion can use"),
             onBack = onBack
@@ -119,7 +119,7 @@ fun ConnectionsScreen(
             item {
                 LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(categories.size) { index ->
-                        DominionChip(categories[index], filter == index, onClick = { filter = index })
+                        FilterChipItem(categories[index], filter == index, onClick = { filter = index })
                     }
                 }
             }
@@ -242,7 +242,7 @@ fun ConnectionDetailScreen(
     val accent = Color(connection.color)
 
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().background(p.screen)) {
-        DominionTopBar(title = connection.name, onBack = onBack)
+        ScreenTopBar(title = connection.name, onBack = onBack)
         Column(Modifier.weight(1f)) {
             Column(
                 Modifier.fillMaxWidth().padding(vertical = 12.dp),
@@ -300,9 +300,9 @@ fun ConnectionDetailScreen(
                 Spacer(Modifier.height(16.dp))
                 SectionLabel(tr(lang, "공유 방식", "Sharing"))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    DominionChip(tr(lang, "항상 허용", "Always allow"), sharing == 0, onClick = { sharing = 0 })
-                    DominionChip(tr(lang, "매번 확인", "Ask each time"), sharing == 1, onClick = { sharing = 1 })
-                    DominionChip(tr(lang, "사용 안 함", "Don't use"), sharing == 2, onClick = { sharing = 2 })
+                    FilterChipItem(tr(lang, "항상 허용", "Always allow"), sharing == 0, onClick = { sharing = 0 })
+                    FilterChipItem(tr(lang, "매번 확인", "Ask each time"), sharing == 1, onClick = { sharing = 1 })
+                    FilterChipItem(tr(lang, "사용 안 함", "Don't use"), sharing == 2, onClick = { sharing = 2 })
                 }
                 Spacer(Modifier.height(18.dp))
                 Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(p.cardSoft).padding(14.dp)) {

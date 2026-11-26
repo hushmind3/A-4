@@ -59,7 +59,13 @@ data class Character(
     val relation: String? = null
 )
 
-enum class MessageSender { ME, CHARACTER, SYSTEM }
+enum class MessageSender {
+    @com.google.gson.annotations.SerializedName(value = "USER", alternate = ["ME"])
+    USER,
+    @com.google.gson.annotations.SerializedName(value = "ASSISTANT", alternate = ["CHARACTER"])
+    ASSISTANT,
+    SYSTEM
+}
 
 enum class MessageKind { TEXT, TASK, CALL, FILE, LINK, SCHEDULE, IMAGE, VOICE, SYSTEM }
 

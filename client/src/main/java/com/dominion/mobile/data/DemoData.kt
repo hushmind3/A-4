@@ -174,11 +174,11 @@ object DemoData {
     fun conversations(): List<Conversation> {
         val momo = listOf(
             message("m1", CONV_MOMO, MessageSender.SYSTEM, "모모와의 대화가 시작됐어요.", hoursAgo(30), MessageKind.SYSTEM),
-            message("m2", CONV_MOMO, MessageSender.CHARACTER, "좋은 아침이에요, 민지님! 오늘 일정 확인해볼까요?", hoursAgo(3)),
-            message("m3", CONV_MOMO, MessageSender.ME, "응, 오늘 중요한 미팅이 있어", hoursAgo(3) + 120_000),
-            message("m4", CONV_MOMO, MessageSender.CHARACTER, "오후 3시 디자인 리뷰가 있네요. 30분 전에 알려드릴게요.", hoursAgo(3) + 180_000),
+            message("m2", CONV_MOMO, MessageSender.ASSISTANT, "좋은 아침이에요, 민지님! 오늘 일정 확인해볼까요?", hoursAgo(3)),
+            message("m3", CONV_MOMO, MessageSender.USER, "응, 오늘 중요한 미팅이 있어", hoursAgo(3) + 120_000),
+            message("m4", CONV_MOMO, MessageSender.ASSISTANT, "오후 3시 디자인 리뷰가 있네요. 30분 전에 알려드릴게요.", hoursAgo(3) + 180_000),
             message(
-                "m5", CONV_MOMO, MessageSender.CHARACTER,
+                "m5", CONV_MOMO, MessageSender.ASSISTANT,
                 at = hoursAgo(3) + 240_000, kind = MessageKind.TASK,
                 card = MessageCard(
                     kind = CardKind.TASK,
@@ -192,9 +192,9 @@ object DemoData {
                     )
                 )
             ),
-            message("m6", CONV_MOMO, MessageSender.ME, "고마워!", hoursAgo(3) + 300_000),
+            message("m6", CONV_MOMO, MessageSender.USER, "고마워!", hoursAgo(3) + 300_000),
             message(
-                "m7", CONV_MOMO, MessageSender.CHARACTER,
+                "m7", CONV_MOMO, MessageSender.ASSISTANT,
                 at = hoursAgo(1), kind = MessageKind.CALL,
                 card = MessageCard(
                     kind = CardKind.CALL,
@@ -203,14 +203,14 @@ object DemoData {
                     meta = "오늘 오후 1:12"
                 )
             ),
-            message("m8", CONV_MOMO, MessageSender.CHARACTER, "통화에서 정리한 내용을 기억에 저장해뒀어요. 필요하면 다시 꺼내볼 수 있어요.", hoursAgo(1) + 60_000)
+            message("m8", CONV_MOMO, MessageSender.ASSISTANT, "통화에서 정리한 내용을 기억에 저장해뒀어요. 필요하면 다시 꺼내볼 수 있어요.", hoursAgo(1) + 60_000)
         )
 
         val luna = listOf(
-            message("l1", CONV_LUNA, MessageSender.CHARACTER, "다음 주 제주 여행, 숙소 후보를 세 곳으로 좁혔어요.", daysAgo(1)),
-            message("l2", CONV_LUNA, MessageSender.ME, "가격이랑 위치 비교해줘", daysAgo(1) + 90_000),
+            message("l1", CONV_LUNA, MessageSender.ASSISTANT, "다음 주 제주 여행, 숙소 후보를 세 곳으로 좁혔어요.", daysAgo(1)),
+            message("l2", CONV_LUNA, MessageSender.USER, "가격이랑 위치 비교해줘", daysAgo(1) + 90_000),
             message(
-                "l3", CONV_LUNA, MessageSender.CHARACTER,
+                "l3", CONV_LUNA, MessageSender.ASSISTANT,
                 at = daysAgo(1) + 120_000, kind = MessageKind.LINK,
                 card = MessageCard(
                     kind = CardKind.LINK,
@@ -219,14 +219,14 @@ object DemoData {
                     meta = "luna.travel/jeju-stay"
                 )
             ),
-            message("l4", CONV_LUNA, MessageSender.ME, "두 번째가 좋다", daysAgo(1) + 200_000),
-            message("l5", CONV_LUNA, MessageSender.CHARACTER, "그럼 두 번째 숙소로 예약 링크를 보내드릴게요. 렌터카도 같이 볼까요?", daysAgo(1) + 260_000)
+            message("l4", CONV_LUNA, MessageSender.USER, "두 번째가 좋다", daysAgo(1) + 200_000),
+            message("l5", CONV_LUNA, MessageSender.ASSISTANT, "그럼 두 번째 숙소로 예약 링크를 보내드릴게요. 렌터카도 같이 볼까요?", daysAgo(1) + 260_000)
         )
 
         val teo = listOf(
-            message("t1", CONV_TEO, MessageSender.CHARACTER, "이번 주 리포트 초안을 만들었어요. 확인해 주세요.", daysAgo(2)),
+            message("t1", CONV_TEO, MessageSender.ASSISTANT, "이번 주 리포트 초안을 만들었어요. 확인해 주세요.", daysAgo(2)),
             message(
-                "t2", CONV_TEO, MessageSender.CHARACTER,
+                "t2", CONV_TEO, MessageSender.ASSISTANT,
                 at = daysAgo(2) + 60_000, kind = MessageKind.FILE,
                 card = MessageCard(
                     kind = CardKind.FILE,
@@ -235,20 +235,20 @@ object DemoData {
                     meta = "1.8 MB · PDF"
                 )
             ),
-            message("t3", CONV_TEO, MessageSender.ME, "좋아, 두 번째 섹션만 다듬자", daysAgo(2) + 120_000),
-            message("t4", CONV_TEO, MessageSender.CHARACTER, "수정해서 오후 5시까지 공유드릴게요.", daysAgo(2) + 180_000),
+            message("t3", CONV_TEO, MessageSender.USER, "좋아, 두 번째 섹션만 다듬자", daysAgo(2) + 120_000),
+            message("t4", CONV_TEO, MessageSender.ASSISTANT, "수정해서 오후 5시까지 공유드릴게요.", daysAgo(2) + 180_000),
             message("t5", CONV_TEO, MessageSender.SYSTEM, "테오가 작업을 완료했어요.", daysAgo(1), MessageKind.SYSTEM)
         )
 
         val haru = listOf(
-            message("h1", CONV_HARU, MessageSender.CHARACTER, "오늘 물 5잔 마셨어요? 저녁 메뉴도 골라드릴까요?", hoursAgo(5)),
-            message("h2", CONV_HARU, MessageSender.ME, "아직 3잔...", hoursAgo(5) + 60_000),
-            message("h3", CONV_HARU, MessageSender.CHARACTER, "그럼 지금 한 잔 하고, 9시에 알려드릴게요.", hoursAgo(4) + 180_000)
+            message("h1", CONV_HARU, MessageSender.ASSISTANT, "오늘 물 5잔 마셨어요? 저녁 메뉴도 골라드릴까요?", hoursAgo(5)),
+            message("h2", CONV_HARU, MessageSender.USER, "아직 3잔...", hoursAgo(5) + 60_000),
+            message("h3", CONV_HARU, MessageSender.ASSISTANT, "그럼 지금 한 잔 하고, 9시에 알려드릴게요.", hoursAgo(4) + 180_000)
         )
 
         val trip = listOf(
-            message("p1", CONV_TRIP, MessageSender.ME, "제주 3일차 일정도 정리해줘", daysAgo(5)),
-            message("p2", CONV_TRIP, MessageSender.CHARACTER, "오전엔 오름, 점심 후엔 카페, 저녁엔 동문시장으로 잡았어요.", daysAgo(5) + 80_000)
+            message("p1", CONV_TRIP, MessageSender.USER, "제주 3일차 일정도 정리해줘", daysAgo(5)),
+            message("p2", CONV_TRIP, MessageSender.ASSISTANT, "오전엔 오름, 점심 후엔 카페, 저녁엔 동문시장으로 잡았어요.", daysAgo(5) + 80_000)
         )
 
         return listOf(

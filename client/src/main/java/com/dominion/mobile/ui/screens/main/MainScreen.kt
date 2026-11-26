@@ -56,7 +56,7 @@ import com.dominion.mobile.ui.components.Glyph
 import com.dominion.mobile.ui.components.GlyphIcon
 import com.dominion.mobile.ui.components.Hairline
 import com.dominion.mobile.ui.components.AssistantAvatar
-import com.dominion.mobile.ui.components.DominionBottomSheet
+import com.dominion.mobile.ui.components.AppBottomSheet
 import com.dominion.mobile.ui.components.PrimaryDialog
 import com.dominion.mobile.ui.components.SheetRow
 import com.dominion.mobile.ui.components.SheetTitle
@@ -204,7 +204,7 @@ fun MainScreen(
     }
 
     if (sharedPicker) {
-        DominionBottomSheet(onDismiss = { sharedPicker = false }) {
+        AppBottomSheet(onDismiss = { sharedPicker = false }) {
             SheetTitle(
                 tr(lang, "어디로 보낼까요?", "Where should it go?"),
                 tr(lang, "공유된 내용을 도미니온과 나눠요", "Share this with a Dominion")

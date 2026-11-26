@@ -64,7 +64,7 @@ import com.dominion.mobile.ui.components.Glyph
 import com.dominion.mobile.ui.components.GlyphIcon
 import com.dominion.mobile.ui.components.AssistantAvatar
 import com.dominion.mobile.ui.components.LanguageToggle
-import com.dominion.mobile.ui.components.DominionTextField
+import com.dominion.mobile.ui.components.AppTextField
 import com.dominion.mobile.ui.components.PrimaryButton
 import com.dominion.mobile.ui.components.SecondaryButton
 import com.dominion.mobile.ui.components.toast
@@ -480,7 +480,7 @@ private fun PhoneStep(phone: String, onPhone: (String) -> Unit) {
             Text("⌄", color = p.textTertiary)
         }
         Spacer(Modifier.width(8.dp))
-        DominionTextField(
+        AppTextField(
             value = phone,
             onValueChange = { input -> onPhone(input.filter { it.isDigit() || it == '-' }.take(13)) },
             placeholder = "010-0000-0000",
@@ -511,7 +511,7 @@ private fun CodeStep(phone: String, code: String, onCode: (String) -> Unit) {
         tr(lang, "인증번호를 입력해 주세요", "Enter the code"),
         tr(lang, "$phone 로 보낸 6자리 숫자예요.", "6 digits sent to $phone.")
     )
-    DominionTextField(
+    AppTextField(
         value = code,
         onValueChange = { onCode(it.filter { c -> c.isDigit() }.take(6)) },
         placeholder = "000000",
@@ -552,7 +552,7 @@ private fun NameStep(name: String, onName: (String) -> Unit) {
         tr(lang, "어떻게 불러드릴까요?", "What should we call you?"),
         tr(lang, "대화와 알림에 사용할 이름이에요.", "This name appears in chats and notifications.")
     )
-    DominionTextField(
+    AppTextField(
         value = name,
         onValueChange = { onName(it.take(20)) },
         placeholder = tr(lang, "이름", "Name")
@@ -581,7 +581,7 @@ private fun BirthdayStep(birthday: String, onBirthday: (String) -> Unit) {
         tr(lang, "생일을 알려주세요", "When is your birthday?"),
         tr(lang, "생일을 기억해두고 특별한 날을 챙겨드려요.", "Your Dominion remembers and celebrates with you.")
     )
-    DominionTextField(
+    AppTextField(
         value = birthday,
         onValueChange = { onBirthday(it.filter { c -> c.isDigit() || c == '.' }.take(10)) },
         placeholder = "1998.04.12",
@@ -697,7 +697,7 @@ private fun CharacterNameStep(name: String, onName: (String) -> Unit) {
         tr(lang, "도미니온의 이름을 지어주세요", "Name your Dominion"),
         tr(lang, "대화할 때 이 이름으로 불러요.", "This is the name you will talk to.")
     )
-    DominionTextField(
+    AppTextField(
         value = name,
         onValueChange = { onName(it.take(12)) },
         placeholder = tr(lang, "예: 몽글", "e.g. Mochi")

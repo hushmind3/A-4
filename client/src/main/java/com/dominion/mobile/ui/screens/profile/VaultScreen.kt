@@ -51,10 +51,10 @@ import com.dominion.mobile.ui.LocalLang
 import com.dominion.mobile.ui.components.Glyph
 import com.dominion.mobile.ui.components.GlyphButton
 import com.dominion.mobile.ui.components.GlyphIcon
-import com.dominion.mobile.ui.components.DominionBottomSheet
-import com.dominion.mobile.ui.components.DominionChip
-import com.dominion.mobile.ui.components.DominionTextField
-import com.dominion.mobile.ui.components.DominionTopBar
+import com.dominion.mobile.ui.components.AppBottomSheet
+import com.dominion.mobile.ui.components.FilterChipItem
+import com.dominion.mobile.ui.components.AppTextField
+import com.dominion.mobile.ui.components.ScreenTopBar
 import com.dominion.mobile.ui.components.PrimaryButton
 import com.dominion.mobile.ui.components.PrimaryDialog
 import com.dominion.mobile.ui.components.SectionLabel
@@ -84,7 +84,7 @@ fun VaultScreen(
             Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().background(p.screen),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            DominionTopBar(title = tr(lang, "금고", "Vault"), onBack = onBack)
+            ScreenTopBar(title = tr(lang, "금고", "Vault"), onBack = onBack)
             Spacer(Modifier.weight(0.7f))
             Box(
                 Modifier.size(96.dp).clip(CircleShape).background(p.raised),
@@ -119,7 +119,7 @@ fun VaultScreen(
     val items = if (filter == 0) state.vault else state.vault.filter { it.type == VaultType.entries[filter - 1] }
 
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding().background(p.screen)) {
-        DominionTopBar(
+        ScreenTopBar(
             title = tr(lang, "금고", "Vault"),
             subtitle = tr(lang, "${state.vault.size}개의 항목 · 기기에서 암호화됨", "${state.vault.size} items · encrypted on device"),
             onBack = onBack,
@@ -160,7 +160,7 @@ fun VaultScreen(
             Spacer(Modifier.height(12.dp))
             LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(tabs.size) { index ->
-                    DominionChip(tabs[index], filter == index, onClick = { filter = index })
+                    FilterChipItem(tabs[index], filter == index, onClick = { filter = index })
                 }
             }
         }
@@ -291,22 +291,22 @@ private fun AddVaultSheet(
     var secret by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
 
-    DominionBottomSheet(onDismiss = onDismiss) {
+    AppBottomSheet(onDismiss = onDismiss) {
         SheetTitle(tr(lang, "금고에 추가", "Add to vault"), tr(lang, "이 정보는 암호화되어 저장돼요.", "This item is stored encrypted."))
         LazyRow(contentPadding = PaddingValues(horizontal = 24.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(VaultType.entries) { option ->
-                DominionChip(option.label(lang), type == option, onClick = { type = option })
+                FilterChipItem(option.label(lang), type == option, onClick = { type = option })
             }
         }
         Spacer(Modifier.height(12.dp))
         Column(Modifier.padding(horizontal = 24.dp)) {
-            DominionTextField(title, { title = it }, label = tr(lang, "이름", "Name"), placeholder = tr(lang, "예: 네이버", "e.g. Naver"))
+            AppTextField(title, { title = it }, label = tr(lang, "이름", "Name"), placeholder = tr(lang, "예: 네이버", "e.g. Naver"))
             Spacer(Modifier.height(8.dp))
-            DominionTextField(username, { username = it }, label = tr(lang, "아이디 또는 번호", "ID or number"), placeholder = tr(lang, "선택", "Optional"))
+            AppTextField(username, { username = it }, label = tr(lang, "아이디 또는 번호", "ID or number"), placeholder = tr(lang, "선택", "Optional"))
             Spacer(Modifier.height(8.dp))
-            DominionTextField(secret, { secret = it }, label = tr(lang, "보관할 내용", "Secret"), placeholder = tr(lang, "비밀번호, 카드 번호 등", "Password, card number…"), isPassword = true)
+            AppTextField(secret, { secret = it }, label = tr(lang, "보관할 내용", "Secret"), placeholder = tr(lang, "비밀번호, 카드 번호 등", "Password, card number…"), isPassword = true)
             Spacer(Modifier.height(8.dp))
-            DominionTextField(note, { note = it }, label = tr(lang, "메모", "Note"), placeholder = tr(lang, "선택", "Optional"))
+            AppTextField(note, { note = it }, label = tr(lang, "메모", "Note"), placeholder = tr(lang, "선택", "Optional"))
             Spacer(Modifier.height(14.dp))
             PrimaryButton(
                 text = tr(lang, "저장", "Save"),

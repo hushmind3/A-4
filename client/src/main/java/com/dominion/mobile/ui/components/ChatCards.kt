@@ -106,7 +106,7 @@ fun MessageBubble(
         SystemMessage(message.text)
         return
     }
-    val mine = message.sender == MessageSender.ME
+    val mine = message.sender == MessageSender.USER
     Row(
         modifier = Modifier
             .fillMaxWidth()

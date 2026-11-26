@@ -55,10 +55,10 @@ import com.dominion.mobile.ui.components.Glyph
 import com.dominion.mobile.ui.components.GlyphButton
 import com.dominion.mobile.ui.components.GlyphIcon
 import com.dominion.mobile.ui.components.AssistantAvatar
-import com.dominion.mobile.ui.components.DominionBottomSheet
-import com.dominion.mobile.ui.components.DominionChip
-import com.dominion.mobile.ui.components.DominionTextField
-import com.dominion.mobile.ui.components.DominionTopBar
+import com.dominion.mobile.ui.components.AppBottomSheet
+import com.dominion.mobile.ui.components.FilterChipItem
+import com.dominion.mobile.ui.components.AppTextField
+import com.dominion.mobile.ui.components.ScreenTopBar
 import com.dominion.mobile.ui.components.PrimaryButton
 import com.dominion.mobile.ui.components.PrimaryDialog
 import com.dominion.mobile.ui.components.SearchField
@@ -86,7 +86,7 @@ fun MemoriesScreen(
     val filtered = state.memories.filter { it.text.contains(query, true) }
 
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding().background(p.screen)) {
-        DominionTopBar(
+        ScreenTopBar(
             title = tr(lang, "기억", "Memories"),
             subtitle = tr(lang, "${state.memories.size}개의 기억을 저장했어요", "${state.memories.size} memories saved"),
             onBack = onBack,
@@ -161,7 +161,7 @@ fun MemoriesScreen(
     }
 
     if (showAdd) {
-        DominionBottomSheet(onDismiss = { showAdd = false }) {
+        AppBottomSheet(onDismiss = { showAdd = false }) {
             var text by remember { mutableStateOf("") }
             SheetTitle(tr(lang, "기억 추가", "Add a memory"), tr(lang, "어떤 도미니온이 기억할까요?", "Which Dominion should remember?"))
             LazyRow(
@@ -190,7 +190,7 @@ fun MemoriesScreen(
             }
             Spacer(Modifier.height(14.dp))
             Column(Modifier.padding(horizontal = 24.dp)) {
-                DominionTextField(
+                AppTextField(
                     value = text,
                     onValueChange = { text = it },
                     placeholder = tr(lang, "예: 나는 아침에 커피를 마셔요", "e.g. I drink coffee in the morning"),
@@ -242,7 +242,7 @@ fun TasksScreen(
     }
 
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding().background(p.screen)) {
-        DominionTopBar(
+        ScreenTopBar(
             title = tr(lang, "할 일", "Tasks"),
             subtitle = tr(lang, "${state.tasks.count { !it.done }}개 진행 중", "${state.tasks.count { !it.done }} active"),
             onBack = onBack,
@@ -250,7 +250,7 @@ fun TasksScreen(
         )
         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(tabs.size) { index ->
-                DominionChip(tabs[index], filter == index, onClick = { filter = index })
+                FilterChipItem(tabs[index], filter == index, onClick = { filter = index })
             }
         }
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 30.dp, top = 10.dp)) {
@@ -389,11 +389,11 @@ private fun AddTaskDialog(
         title = { Text(tr(lang, "할 일 추가", "Add a task"), style = MaterialTheme.typography.titleMedium, color = p.textPrimary) },
         text = {
             Column {
-                DominionTextField(title, { title = it }, placeholder = tr(lang, "무엇을 할까요?", "What needs doing?"))
+                AppTextField(title, { title = it }, placeholder = tr(lang, "무엇을 할까요?", "What needs doing?"))
                 Spacer(Modifier.height(8.dp))
-                DominionTextField(due, { due = it }, placeholder = tr(lang, "언제까지? 예: 오늘 오후 3시", "When? e.g. today 3pm"))
+                AppTextField(due, { due = it }, placeholder = tr(lang, "언제까지? 예: 오늘 오후 3시", "When? e.g. today 3pm"))
                 Spacer(Modifier.height(8.dp))
-                DominionTextField(
+                AppTextField(
                     steps, { steps = it },
                     placeholder = tr(lang, "단계는 줄바꿈으로 구분해요", "Separate steps with new lines"),
                     singleLine = false, maxLines = 4
@@ -447,7 +447,7 @@ fun SchedulesScreen(
     var deleteTarget by remember { mutableStateOf<String?>(null) }
 
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding().background(p.screen)) {
-        DominionTopBar(
+        ScreenTopBar(
             title = tr(lang, "일정", "Schedules"),
             subtitle = tr(lang, "${state.schedules.count { it.enabled }}개 알림이 켜져 있어요", "${state.schedules.count { it.enabled }} reminders on"),
             onBack = onBack,
@@ -508,7 +508,7 @@ fun SchedulesScreen(
                     Switch(
                         checked = schedule.enabled,
                         onCheckedChange = { vm.toggleSchedule(schedule.id) },
-                        colors = com.dominion.mobile.ui.components.dominionSwitchColors()
+                        colors = com.dominion.mobile.ui.components.appSwitchColors()
                     )
                 }
             }
@@ -569,13 +569,13 @@ private fun AddScheduleDialog(
         title = { Text(tr(lang, "일정 추가", "Add a schedule"), style = MaterialTheme.typography.titleMedium, color = p.textPrimary) },
         text = {
             Column {
-                DominionTextField(title, { title = it }, placeholder = tr(lang, "무엇을 알려줄까요?", "What should we remind you about?"))
+                AppTextField(title, { title = it }, placeholder = tr(lang, "무엇을 알려줄까요?", "What should we remind you about?"))
                 Spacer(Modifier.height(8.dp))
-                DominionTextField(whenText, { whenText = it }, placeholder = tr(lang, "예: 내일 오후 3시", "e.g. tomorrow 3pm"))
+                AppTextField(whenText, { whenText = it }, placeholder = tr(lang, "예: 내일 오후 3시", "e.g. tomorrow 3pm"))
                 Spacer(Modifier.height(10.dp))
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(Repeat.entries) { option ->
-                        DominionChip(option.label(lang), repeat == option, onClick = { repeat = option })
+                        FilterChipItem(option.label(lang), repeat == option, onClick = { repeat = option })
                     }
                 }
                 Spacer(Modifier.height(10.dp))
