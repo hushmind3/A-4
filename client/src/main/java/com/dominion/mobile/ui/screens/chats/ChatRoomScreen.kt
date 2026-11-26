@@ -130,6 +130,7 @@ fun ChatRoomScreen(
     var showAttach by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     var messageMenu by remember { mutableStateOf<Message?>(null) }
+    var showReport by remember { mutableStateOf(false) }
     var confirmRewind by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
 
@@ -518,7 +519,7 @@ fun ChatRoomScreen(
             SheetRow(tr(lang, "대화 비우기", "Clear chat"), Glyph.CLOSE) { showMenu = false; confirmClear = true }
             SheetRow(tr(lang, "신고하기", "Report"), Glyph.SHIELD) {
                 showMenu = false
-                context.toast(tr(lang, "신고가 접수됐어요 (데모)", "Report received (demo)"))
+                showReport = true
             }
         }
     }
@@ -562,6 +563,8 @@ fun ChatRoomScreen(
         }
     }
 
+    if (showReport) com.dominion.mobile.ui.components.SupportReportDialog(
+        target = "room", onDismiss = { showReport = false })
     if (confirmRewind) {
         PrimaryDialog(
             title = tr(lang, "대화를 되감을까요?", "Rewind this chat?"),

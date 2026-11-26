@@ -84,6 +84,7 @@ fun CharacterScreen(
     val memories = state.memories.filter { it.characterId == characterId }
     val tasks = state.tasks.filter { it.characterId == characterId }
     val schedules = state.schedules.filter { it.characterId == characterId }
+    var showReport by remember { mutableStateOf(false) }
     var showRename by remember { mutableStateOf(false) }
     var showAddMemory by remember { mutableStateOf(false) }
 
@@ -105,7 +106,7 @@ fun CharacterScreen(
                     color = p.textSecondary,
                     modifier = Modifier.clickable {
                         if (character.mine) showRename = true
-                        else context.toast(tr(lang, "신고가 접수됐어요 (데모)", "Report received (demo)"))
+                        else showReport = true
                     }.padding(12.dp)
                 )
             }
@@ -286,6 +287,8 @@ fun CharacterScreen(
         }
     }
 
+    if (showReport) com.dominion.mobile.ui.components.SupportReportDialog(
+        target = "agent", onDismiss = { showReport = false })
     if (showRename) {
         TextPromptDialog(
             title = tr(lang, "도미니온 이름 바꾸기", "Rename your Dominion"),
@@ -470,6 +473,7 @@ fun RoomInfoScreen(
     }
     val sharedItems = com.dominion.mobile.data.ArchiveIndex.roomItems(conversation.messages)
     androidx.compose.runtime.LaunchedEffect(conversationId) { vm.refreshConversationNow(conversationId) }
+    var showReport by remember { mutableStateOf(false) }
     var confirmLeave by remember { mutableStateOf(false) }
     var confirmRewind by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
@@ -552,7 +556,7 @@ fun RoomInfoScreen(
                     SettingsRow(
                         title = tr(lang, "신고하기", "Report"),
                         leading = { GlyphIcon(Glyph.SHIELD, p.textPrimary, size = 18.dp) },
-                        onClick = { context.toast(tr(lang, "신고가 접수됐어요 (데모)", "Report received (demo)")) }
+                        onClick = { showReport = true }
                     )
                     Hairline()
                     SettingsRow(
@@ -575,6 +579,8 @@ fun RoomInfoScreen(
         }
     }
 
+    if (showReport) com.dominion.mobile.ui.components.SupportReportDialog(
+        target = "room", onDismiss = { showReport = false })
     if (confirmClear) {
         PrimaryDialog(title = tr(lang, "대화를 비울까요?", "Clear chat?"),
             body = tr(lang, "실행을 중단하고 새 세션을 시작합니다. 이전 기록은 본체에 보존합니다.", "Stop active work and start a new session, preserving old history on the engine."),
