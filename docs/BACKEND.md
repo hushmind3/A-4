@@ -40,3 +40,7 @@ Voice uses the existing LiveKit WSS session contract. A connected room does not 
 ## Background reconciliation
 
 After the native room submit returns an actual job ID, the Android WorkManager watcher polls GET /api/jobs/{id}, validates the original room ID and job ID, and checks GET /api/approvals for the same engine session. WorkManager stores only origin hash, room ID and job ID, never a bearer token. A changed engine origin prevents stale job notifications. Status messages are informational; execution always stays on the DOMINION Rust server.
+
+## Native shared owner profile
+
+The Android account name reads and writes the actual native GET/POST /api/settings/owner-profile contract. The client preserves the existing avatar, requires the global profile ID and verifies the saved name by reading it back. Branch1's /v1/me legacy profile projection is not authoritative for this name. The existing server has no birthday field, so birthday and character appearance remain explicitly local personalization. An unconfigured app saves local personalization only. No server login or phone-number change is simulated.

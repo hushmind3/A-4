@@ -8,6 +8,9 @@ import retrofit2.http.Path
 import retrofit2.http.Query
 
 data class DataResponse<T>(val data: T? = null)
+
+data class OwnerProfile(val id: String?, val name: String?, val avatar: String?)
+data class OwnerProfileUpdate(val name: String, val avatar: String)
 data class AuthResponse(val token: String = "", val account: AccountDto? = null)
 data class SignInRequest(val provider_token: String = "", val invite_code: String? = null)
 data class PhoneStartRequest(val phone: String = "", val region: String = "KR")
@@ -38,6 +41,11 @@ data class NotificationDto(
 
 /** Existing DOMINION mobile and native engine contracts. */
 interface DominionApi {
+    @GET("api/settings/owner-profile")
+    suspend fun ownerProfile(): OwnerProfile
+    @POST("api/settings/owner-profile")
+    suspend fun saveOwnerProfile(@Body body: OwnerProfileUpdate): OwnerProfile
+
     @GET("api/oauth/providers")
     suspend fun serviceAccounts(): List<ServiceAccount>
     @POST("api/oauth/{id}/open")

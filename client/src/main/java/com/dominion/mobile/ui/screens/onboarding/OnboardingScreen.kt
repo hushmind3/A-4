@@ -106,14 +106,15 @@ fun OnboardingScreen(
     }
 
     fun finish() {
-        vm.updateAccountProfile(name, birthday)
-        state.myCharacter()?.let { character ->
-            vm.updateCharacter(character.id, name = characterName.ifBlank { character.name },
-                color = color, shape = runCatching { CharacterShape.valueOf(shape) }.getOrDefault(CharacterShape.BLOB),
-                voice = runCatching { VoiceTone.valueOf(voice) }.getOrDefault(VoiceTone.SOFT))
+        vm.updateAccountProfile(name, birthday) {
+            state.myCharacter()?.let { character ->
+                vm.updateCharacter(character.id, name = characterName.ifBlank { character.name },
+                    color = color, shape = runCatching { CharacterShape.valueOf(shape) }.getOrDefault(CharacterShape.BLOB),
+                    voice = runCatching { VoiceTone.valueOf(voice) }.getOrDefault(VoiceTone.SOFT))
+            }
+            vm.setLanguage(lang)
+            onDone()
         }
-        vm.setLanguage(lang)
-        onDone()
     }
 
     Box(Modifier.fillMaxSize().background(p.screen)) {

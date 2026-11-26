@@ -82,12 +82,16 @@ class AppViewModel(
 
     fun selectTab(tab: TabId) = mutate { it.copy(currentTab = tab) }
 
-    fun updateAccountProfile(name: String, birthday: String) {
-        mutate { s ->
-            s.copy(
-                account = s.account.copy(name = name, birthday = birthday),
-                characters = s.characters.map { if (it.mine) it.copy(name = it.name) else it }
-            )
+    private var profileSave: kotlinx.coroutines.Job? = null
+
+    fun updateAccountProfile(name: String, birthday: String, onSaved: (Boolean) -> Unit = {}) {
+        if (profileSave?.isActive == true) return
+        profileSave = viewModelScope.launch {
+            try {
+                val serverVerified = repo.saveOwnerProfile(name, birthday)
+                onSaved(serverVerified)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { _notice.value = "프로필 저장을 확인하지 못했습니다. 이름과 본체 연결을 확인하세요." }
         }
     }
 

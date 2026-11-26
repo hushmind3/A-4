@@ -49,6 +49,11 @@ interface DominionRepository {
     suspend fun setServiceConnectorEnabled(id: String, enabled: Boolean): Unit = error("본체 연결 필요")
     suspend fun openServiceWebsite(url: String): Unit = error("본체 연결 필요")
 
+    /** True only when the name has been persisted and read back from the engine. */
+    suspend fun saveOwnerProfile(name: String, birthday: String): Boolean {
+        error("Profile storage unavailable")
+    }
+
     fun update(transform: (AppState) -> AppState)
     suspend fun refresh() = Unit
     fun reset()

@@ -274,7 +274,7 @@ fun AccountScreen(
             Spacer(Modifier.height(8.dp))
             AppTextField(name, { name = it.take(20) }, label = tr(lang, "이름", "Name"))
             Spacer(Modifier.height(8.dp))
-            AppTextField(birthday, { birthday = it.take(10) }, label = tr(lang, "생일", "Birthday"), placeholder = "1998.04.12")
+            AppTextField(birthday, { birthday = it.take(10) }, label = tr(lang, "생일 (기기 설정)", "Birthday (device setting)"), placeholder = "1998.04.12")
             Spacer(Modifier.height(8.dp))
             AppTextField(state.account.phone, {}, label = tr(lang, "전화번호", "Phone"), singleLine = true)
             Spacer(Modifier.height(8.dp))
@@ -283,8 +283,10 @@ fun AccountScreen(
             PrimaryButton(
                 text = tr(lang, "저장", "Save"),
                 onClick = {
-                    vm.updateAccountProfile(name, birthday)
-                    context.toast(tr(lang, "저장했어요", "Saved"))
+                    vm.updateAccountProfile(name, birthday) { serverVerified ->
+                        context.toast(if (serverVerified) tr(lang, "본체 이름과 기기 생일을 저장했습니다.", "Engine name and local birthday saved.")
+                            else tr(lang, "기기에만 저장했습니다.", "Saved on this device only."))
+                    }
                 }
             )
             Spacer(Modifier.height(22.dp))
@@ -751,10 +753,12 @@ fun EditProfileScreen(
             PrimaryButton(
                 text = tr(lang, "저장", "Save"),
                 onClick = {
-                    vm.updateAccountProfile(name, state.account.birthday)
-                    own?.let { vm.updateCharacter(it.id, name = characterName.ifBlank { it.name }, bio = bio) }
-                    context.toast(tr(lang, "프로필을 저장했어요", "Profile saved"))
-                    onBack()
+                    vm.updateAccountProfile(name, state.account.birthday) { serverVerified ->
+                        own?.let { vm.updateCharacter(it.id, name = characterName.ifBlank { it.name }, bio = bio) }
+                        context.toast(if (serverVerified) tr(lang, "본체 이름과 기기 캐릭터 설정을 저장했습니다.", "Engine name and local character settings saved.")
+                            else tr(lang, "기기에만 저장했습니다.", "Saved on this device only."))
+                        onBack()
+                    }
                 }
             )
             Spacer(Modifier.height(20.dp))

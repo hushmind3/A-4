@@ -8,6 +8,7 @@ import com.dominion.mobile.data.ConnectionState
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import retrofit2.HttpException
 import java.io.IOException
 import com.dominion.mobile.data.local.LocalStore
@@ -55,6 +56,24 @@ class RemoteBackedRepository(
     init { store.saveState(_state.value) }
 
     override suspend fun searchMessages(query: String): List<Message> = store.searchMessages(query)
+
+    override suspend fun saveOwnerProfile(name: String, birthday: String): Boolean = refreshLock.withLock {
+        val clean = name.trim()
+        require(clean.isNotBlank() && clean.codePointCount(0, clean.length) <= 60)
+        // The existing native engine owns the name and avatar; birthday is a mobile
+        // personalization field because the engine profile schema has no birthday.
+        if (endpoint != null) {
+            val previous = api.ownerProfile()
+            require(previous.id == "global" && previous.avatar != null)
+            val saved = api.saveOwnerProfile(OwnerProfileUpdate(clean, previous.avatar))
+            check(saved.id == "global" && saved.name == clean)
+            val confirmed = api.ownerProfile()
+            check(confirmed.id == "global" && confirmed.name == clean)
+        }
+        update { it.copy(account = it.account.copy(name = clean, birthday = birthday)) }
+        store.saveStateNow(state.value)
+        endpoint != null
+    }
 
     override suspend fun deliverMessage(conversationId: String, message: Message): Message {
         // Use the native room endpoint, which persists a job and deduplicates retries.
@@ -269,7 +288,19 @@ class RemoteBackedRepository(
             }
             coroutineScope {
                 // Essential server data first; preserve cached state when the server is unreachable.
-                val accountRequest = async { requireNotNull(api.me().data) { "Missing account" }.toDomain() }
+                val accountRequest = async {
+                    val account = requireNotNull(api.me().data) { "Missing account" }.toDomain()
+                    // /v1/me in branch1 reads the legacy profile ID; the native settings
+                    // endpoint is authoritative for the actual shared owner name.
+                    val profile = try { api.ownerProfile() }
+                    catch (e: HttpException) {
+                        if (e.code() in listOf(404, 405)) null else throw e
+                    }
+                    if (profile != null) {
+                        require(profile.id == "global" && !profile.name.isNullOrBlank())
+                        account.copy(name = profile.name)
+                    } else account
+                }
                 val agentsRequest = async { api.characters().data.map { it.toDomain() } }
                 val roomsRequest = async { api.conversations().data.map { it.toDomain() } }
                 val account = accountRequest.await()
@@ -277,7 +308,7 @@ class RemoteBackedRepository(
                 val conversations = roomsRequest.await()
                 update { current ->
                     current.copy(
-                        account = account,
+                        account = account.copy(birthday = current.account.birthday),
                         characters = characters.map { character ->
                             current.characterPreferences.orEmpty()[character.id]?.applyTo(character) ?: character
                         },
