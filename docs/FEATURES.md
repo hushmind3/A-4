@@ -8,8 +8,8 @@ Status means source implementation, not a claim of production readiness. Server 
 | Chats, search, draft, conversation actions | Native UI and local state | Real rooms/history via REST; creation and mutation need server contracts |
 | Sending and retry | REST client, sending/failed status, stable local IDs | Server acknowledges text; durable idempotency still missing |
 | Streaming | Polling fallback | Streaming events and reconnect cursors not implemented |
-| Models | Server-driven conversation execution | Model catalog/selection UI not connected |
-| Login | Prototype onboarding | Google cloud account and device authorization pending |
+| Models | Server-driven conversation execution | Cloud catalog read-only; execution model selection not connected |
+| Login | Optional Cloud browser approval, encrypted app session, revocation, account/quota/model read | Real Google approval not tested; private engine device authorization pending |
 | Server connection | Build-time HTTPS origin, isolated cache, foreground connection status and retry | Runtime pairing and tunnel authorization pending |
 | Calls | LiveKit 2.30.0 voice transport, microphone permission, mute, foreground service and connection states | Live agent, interruption and video rendering pending; end-to-end test not run |
 | Attachments | Cards, share intent | Real file selection/upload and result viewer incomplete |

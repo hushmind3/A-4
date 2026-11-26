@@ -4,7 +4,7 @@
 
 Native Android companion for [DOMINION](https://github.com/hushmind3/dominion). Talk to your assistant, delegate work, review its progress and return to the same conversations across devices. The Android client is the interaction layer; DOMINION owns model selection, agent execution, tools, memory and verification.
 
-> Development preview · 0.1.0-dev. The native interface and server-mode REST messaging are implemented in source; production cloud authentication, remote job recovery and real-time media still require integration and end-to-end testing. The Android voice path uses LiveKit 2.30.0; video is not yet offered.
+> Development preview · 0.1.0-dev. The native interface and server-mode REST messaging are implemented in source; shared cloud account approval, remote job recovery and real-time media still require end-to-end testing or additional integration. The Android voice path uses LiveKit 2.30.0; video is not yet offered.
 
 ## Architecture
 
@@ -58,7 +58,8 @@ For the actual server routes and limitations, see [Backend integration](docs/BAC
 | Server response polling | Implemented; not streaming |
 | Profile, tasks, schedules, memory, attachments | Demo/interface or partial read contracts |
 | Voice calling | LiveKit native transport, permissions and foreground service implemented; live peer/agent integration unverified |
-| Shared Google account, Cloudflare routing | Integration pending |
+| Shared Google account | Existing Cloud browser approval, encrypted app session, quota/model list; live verification pending |
+| Cloudflare execution-server routing | Integration pending |
 | Background execution, approval, reconnect recovery | Integration pending |
 | Widgets and share intent | Native interface; deep links not fully routed |
 
@@ -91,3 +92,7 @@ Application ID and namespace: `com.dominion.mobile`. App links currently use `do
 Keep platform UI separate from the server execution harness. Do not embed provider keys or duplicate the DOMINION agent runtime. Build and test changes against real API contracts; distinguish demonstrations from validated integrations. APKs and private configuration are not source deliverables.
 
 Primary development branch: `main`. Server project: [hushmind3/dominion](https://github.com/hushmind3/dominion).
+
+### Optional DOMINION Cloud account
+
+Open Settings → DOMINION Cloud → Connect shared account. Approve the existing Google account in the system browser or copy the pairing code to the desktop Cloud account screen. Return to the app to verify approval, view the shared free quota and list available Cloud models. Credentials are encrypted using Android Keystore. This is optional, and does not authorize access to the local execution server or change its selected model.

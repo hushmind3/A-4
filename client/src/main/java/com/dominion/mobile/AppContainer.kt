@@ -16,6 +16,7 @@ class AppContainer(context: Context) {
             .joinToString("") { "%02x".format(it.toInt() and 0xff) }
     }
     val store = LocalStore(context, cacheScope)
+    val cloudAccount by lazy { com.dominion.mobile.data.remote.CloudAccountRepository(context.applicationContext) }
 
     val repository: DominionRepository = if (BuildConfig.USE_DEMO_DATA) {
         DemoRepository(store)

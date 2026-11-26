@@ -15,6 +15,7 @@ object Routes {
     const val NEW_CHAT = "newchat"
     const val SETTINGS = "settings"
     const val ACCOUNT = "account"
+    const val CLOUD_ACCOUNT = "cloud-account"
     const val NOTIFICATIONS = "notifications"
     const val APPEARANCE = "appearance"
     const val LANGUAGE = "language"

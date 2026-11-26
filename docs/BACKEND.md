@@ -44,7 +44,7 @@ The existing Cloud documentation describes Google identity and app pairing:
 - GET /v1/apps/status: poll for approval.
 - POST /v1/apps/disconnect: revoke app access.
 
-The documented pairing grant covers shared account quota and free inference; it does not grant access to the private execution engine or synchronize local history. Android integration must separately implement secure token storage, device authorization and an authenticated route to the selected DOMINION server. Never reuse an owner bearer as an external app credential. Do not embed model API keys.
+The documented pairing grant covers shared account quota and free inference; it does not grant access to the private execution engine or synchronize local history. Android now stores the separate app bearer using AES-GCM and Android Keystore; device authorization and an authenticated route to the selected DOMINION server remain separate work. Never reuse an owner bearer as an external app credential. Do not embed model API keys.
 
 Official references: [Android Google sign-in](https://developer.android.com/identity/sign-in/credential-manager-siwg-implementation), [Android network security](https://developer.android.com/privacy-and-security/security-config).
 
@@ -66,3 +66,11 @@ The mobile client requests POST /v1/conversations/{id}/calls with video=false. I
 The inspected server may return a plain ws:// fallback; a deployed secure WSS endpoint is required. Issuing a room token does not dispatch a voice agent. Actual bidirectional AI speech, interruption and task execution depend on a real agent participant using the DOMINION harness. No server or Cloudflare change was made here.
 
 SDK: [LiveKit Android 2.30.0](https://github.com/livekit/client-sdk-android/releases/tag/v2.30.0), Apache-2.0. See the [official Android integration guide](https://docs.livekit.io/transport/sdk-platforms/android/) and [foreground service restrictions](https://developer.android.com/develop/background-work/services/fgs/service-types).
+
+## Android Cloud account implementation
+
+The fixed gateway origin is `https://dominion-cloud.dominion-hushmind.workers.dev`, matching the existing TypeScript Cloud SDK. The app generates a random 32-byte base64url bearer prefixed with `dapp_`, sends only its SHA-256 base64url hash to `/v1/apps/start`, verifies the exact HTTPS approval URL and opens the system browser. The existing browser page handles Google identity and nonce-bound approval. The app restores its encrypted pending/approved credential, polls `/v1/apps/status` while the Cloud screen is visible, checks `/v1/me` for the matching session and `free_inference` scope, and reads `/v1/billing` and `/v1/models`. Disconnect requires server revocation before clearing local credentials. Expired or revoked sessions are cleared on status refresh. The server controls expiry (10 minutes pending, seven days approved in the inspected implementation).
+
+Cloud tokens are never sent to the execution-server Retrofit client. The model list is read-only; no direct inference or separate harness is introduced. Android Google OAuth credentials, server changes, Cloudflare deployment and real-device approval were not performed. The operator's existing Google/Cloud configuration must be available for live approval.
+
+References: [DOMINION Cloud SDK](https://github.com/hushmind3/dominion/blob/0ebc2d1667982fae6a8396d3bb39c46af361c36a/packages/sdk-typescript/src/cloud.ts), [Android Keystore](https://developer.android.com/privacy-and-security/keystore), [RFC 8252](https://www.rfc-editor.org/rfc/rfc8252).

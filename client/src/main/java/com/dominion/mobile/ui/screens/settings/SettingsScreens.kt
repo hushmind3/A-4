@@ -119,6 +119,16 @@ fun SettingsScreen(
                 )
             }
 
+            SectionLabel("DOMINION Cloud", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+            SettingsGroup {
+                SettingsRow(
+                    title = tr(lang, "공통 계정 연결", "Connect shared account"),
+                    subtitle = tr(lang, "Google 로그인 · 무료 모델 및 이용 한도", "Google sign-in · Free models and quota"),
+                    leading = { GlyphIcon(Glyph.GLOBE, p.textPrimary, size = 18.dp) },
+                    onClick = { onNavigate(Routes.CLOUD_ACCOUNT) }
+                )
+            }
+
             SectionLabel(tr(lang, "앱", "App"), Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
             SettingsGroup {
                 SettingsRow(
