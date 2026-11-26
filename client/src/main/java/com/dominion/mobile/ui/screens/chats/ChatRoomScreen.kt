@@ -539,6 +539,12 @@ fun ChatRoomScreen(
                     messageMenu = null
                 }
             }
+            if (com.dominion.mobile.data.ArchiveIndex.fromMessage(message).isNotEmpty()) {
+                SheetRow(tr(lang, "보관함에 저장", "Save to archive"), Glyph.FILE) {
+                    vm.archiveMessage(message)
+                    messageMenu = null
+                }
+            }
             SheetRow(tr(lang, "기억에 저장", "Save to memories"), Glyph.MEMORY) {
                 vm.addMemory(character.id, message.text.ifBlank { message.card?.title.orEmpty() })
                  messageMenu = null

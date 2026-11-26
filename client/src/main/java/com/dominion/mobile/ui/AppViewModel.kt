@@ -259,6 +259,13 @@ class AppViewModel(
         finally { lock.unlock() }
     }
 
+    fun archiveMessage(message: Message) {
+        val items = com.dominion.mobile.data.ArchiveIndex.fromMessage(message)
+        if (items.isEmpty()) { _notice.value = "보관할 원본 파일 또는 웹 링크가 없습니다."; return }
+        mutate { current -> current.copy(archive = (items + current.archive).distinctBy { it.id }) }
+        _notice.value = "보관함에 " + items.size + "개 항목을 추가했습니다."
+    }
+
     fun addCardToConversation(conversationId: String, card: MessageCard, intro: String = "") {
         sendMessage(conversationId, intro, card)
     }

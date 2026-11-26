@@ -1,5 +1,20 @@
 package com.dominion.mobile.ui.screens.archive
 
+import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.LinearProgressIndicator
+import com.dominion.mobile.data.ArchiveIndex
+import com.dominion.mobile.ui.AppViewModel
+import com.dominion.mobile.platform.attachments.ArchiveShare
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -57,7 +72,10 @@ import androidx.compose.ui.platform.LocalContext
 @Composable
 fun ArchiveScreen(
     state: AppState,
-    onOpenChat: (String) -> Unit
+    onOpenChat: (String) -> Unit,
+    vm: AppViewModel,
+    roomId: String? = null,
+    onBack: (() -> Unit)? = null
 ) {
     val p = LocalDominionPalette.current
     val lang = LocalLang.current
@@ -66,15 +84,44 @@ fun ArchiveScreen(
         tr(lang, "전체", "All"),
         tr(lang, "사진", "Photos"),
         tr(lang, "파일", "Files"),
-        tr(lang, "링크", "Links")
+        tr(lang, "링크", "Links"),
+        tr(lang, "영상", "Videos")
     )
     var selected by remember { mutableIntStateOf(0) }
     var detail by remember { mutableStateOf<ArchiveItem?>(null) }
+    val scope = rememberCoroutineScope()
+    var busy by remember { mutableStateOf(false) }
+    var pendingSave by remember { mutableStateOf<ArchiveItem?>(null) }
+    val allItems = if (roomId == null) state.archive else
+        ArchiveIndex.roomItems(state.conversation(roomId)?.messages.orEmpty())
+    LaunchedEffect(roomId) { if (roomId != null) vm.refreshConversationNow(roomId) }
     val items = when (selected) {
-        1 -> state.archive.filter { it.type == ArchiveType.IMAGE }
-        2 -> state.archive.filter { it.type == ArchiveType.FILE }
-        3 -> state.archive.filter { it.type == ArchiveType.LINK }
-        else -> state.archive
+        1 -> allItems.filter { it.type == ArchiveType.IMAGE }
+        2 -> allItems.filter { it.type == ArchiveType.FILE }
+        3 -> allItems.filter { it.type == ArchiveType.LINK }
+        4 -> allItems.filter { it.type == ArchiveType.VIDEO }
+        else -> allItems
+    }
+    suspend fun bytesFor(item: ArchiveItem): ByteArray =
+        if (item.type == ArchiveType.LINK) requireNotNull(ArchiveIndex.safeUrl(item.url)).toByteArray(Charsets.UTF_8)
+        else vm.downloadAttachment(requireNotNull(item.conversationId), requireNotNull(item.attachmentId))
+    val saveDocument = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        val item = pendingSave
+        pendingSave = null
+        if (uri != null && item != null && !busy) {
+            busy = true
+            scope.launch {
+                try {
+                    val bytes = bytesFor(item)
+                    withContext(Dispatchers.IO) {
+                        requireNotNull(context.contentResolver.openOutputStream(uri, "wt")).use { it.write(bytes) }
+                    }
+                    context.toast(tr(lang, "원본을 기기에 저장했습니다.", "Original saved to device."))
+                } catch (e: CancellationException) { throw e }
+                catch (_: Exception) { context.toast(tr(lang, "파일 저장 실패 · 본체 연결과 원본을 확인하세요.", "Save failed; check engine and original.")) }
+                finally { busy = false }
+            }
+        }
     }
 
     Column(Modifier.fillMaxSize().statusBarsPadding().background(p.screen)) {
@@ -82,8 +129,9 @@ fun ArchiveScreen(
             Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            if (onBack != null) TextButton(onClick = onBack) { Text("‹") }
             Column(Modifier.weight(1f)) {
-                Text(tr(lang, "보관함", "Archive"), style = MaterialTheme.typography.headlineMedium, color = p.textPrimary)
+                Text(if (roomId == null) tr(lang, "보관함", "Archive") else tr(lang, "공유된 파일과 링크", "Shared files and links"), style = MaterialTheme.typography.headlineMedium, color = p.textPrimary)
                 Text(
                     tr(lang, "대화에서 저장한 사진과 파일", "Photos and files saved from chats"),
                     style = MaterialTheme.typography.bodySmall,
@@ -106,6 +154,7 @@ fun ArchiveScreen(
             }
         }
         Spacer(Modifier.height(12.dp))
+        if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         if (items.isEmpty()) {
             EmptyState(
                 glyph = Glyph.IMAGE,
@@ -161,12 +210,44 @@ fun ArchiveScreen(
                 if (conv != null) onOpenChat(conv.id)
                 else context.toast(tr(lang, "대화를 찾을 수 없어요", "Chat not found"))
             }
+            if (item.type == ArchiveType.LINK && ArchiveIndex.safeUrl(item.url) != null) {
+                SheetRow(tr(lang, "웹 링크 열기", "Open web link"), Glyph.LINK) {
+                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(item.url))) }
+                        .onFailure { context.toast(tr(lang, "링크 열기 실패", "Could not open link")) }
+                }
+            }
             SheetRow(tr(lang, "기기에 저장", "Save to device"), Glyph.FILE) {
-                context.toast(tr(lang, "저장했어요 (데모)", "Saved (demo)"))
-                detail = null
+                if (!busy && pendingSave == null) {
+                    pendingSave = item
+                    runCatching { saveDocument.launch(if (item.type == ArchiveType.LINK) "link.txt" else ArchiveShare.safeName(item.title)) }
+                        .onFailure { pendingSave = null; context.toast(tr(lang, "파일 선택기 열기 실패", "Could not open document picker")) }
+                    detail = null
+                }
             }
             SheetRow(tr(lang, "공유", "Share"), Glyph.LINK) {
-                context.toast(tr(lang, "공유 시트는 연결 후 사용할 수 있어요", "Sharing needs the backend"))
+                if (!busy) {
+                    busy = true
+                    detail = null
+                    scope.launch {
+                        try {
+                            val intent = if (item.type == ArchiveType.LINK) {
+                                Intent(Intent.ACTION_SEND).setType("text/plain")
+                                    .putExtra(Intent.EXTRA_TEXT, requireNotNull(ArchiveIndex.safeUrl(item.url)))
+                            } else {
+                                val bytes = bytesFor(item)
+                                withContext(Dispatchers.IO) { ArchiveShare.fileIntent(context, item, bytes) }
+                            }
+                            context.startActivity(Intent.createChooser(intent, tr(lang, "공유", "Share")))
+                        } catch (e: CancellationException) { throw e }
+                        catch (_: Exception) { context.toast(tr(lang, "원본 공유 실패", "Could not share original")) }
+                        finally { busy = false }
+                    }
+                }
+            }
+            if (roomId != null) SheetRow(tr(lang, "보관함에 저장", "Save to archive"), Glyph.FILE) {
+                val message = state.conversation(roomId)?.messages?.firstOrNull { it.id == item.messageId }
+                if (message != null) vm.archiveMessage(message)
+                else context.toast(tr(lang, "원본 메시지를 찾을 수 없습니다.", "Original message unavailable"))
                 detail = null
             }
         }

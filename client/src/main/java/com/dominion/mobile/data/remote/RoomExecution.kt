@@ -77,7 +77,11 @@ data class NativeRoomMessage(
             clientMessageId = metadata?.clientMessageId,
             replyTo = metadata?.replyToMessageId,
             authorAgentId = agent_id?.takeIf { sender == com.dominion.mobile.data.model.MessageSender.ASSISTANT },
-            attachmentIds = attachments.mapNotNull { it.id }.takeIf { it.isNotEmpty() })
+            attachmentIds = attachments.mapNotNull { it.id }.takeIf { it.isNotEmpty() },
+            attachments = attachments.map { item ->
+                com.dominion.mobile.data.model.MessageAttachment(requireNotNull(item.id),
+                    item.name ?: "attachment", item.mimeType ?: "application/octet-stream", item.size)
+            }.takeIf { it.isNotEmpty() })
     }
 }
 data class NativeRoomMetadata(val clientMessageId: String?, val attachments: List<EngineAttachment>?,

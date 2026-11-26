@@ -30,7 +30,8 @@ object MessageSync {
                     clientMessageId = remote.clientMessageId ?: original.clientMessageId,
                     modelId = remote.modelId ?: original.modelId,
                     authorAgentId = remote.authorAgentId ?: original.authorAgentId,
-                    jobStatus = remote.jobStatus ?: original.jobStatus
+                    jobStatus = remote.jobStatus ?: original.jobStatus,
+                    attachments = remote.attachments ?: original.attachments
                 )
             } else {
                 merged.add(remote.copy(status = MessageStatus.SENT))

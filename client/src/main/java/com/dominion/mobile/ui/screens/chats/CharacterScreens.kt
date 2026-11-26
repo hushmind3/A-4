@@ -456,7 +456,8 @@ fun RoomInfoScreen(
     onBack: () -> Unit,
     onOpenChat: () -> Unit,
     onSearch: () -> Unit,
-    onOpenCharacter: () -> Unit
+    onOpenCharacter: () -> Unit,
+    onSharedFiles: () -> Unit
 ) {
     val p = LocalDominionPalette.current
     val lang = LocalLang.current
@@ -467,6 +468,8 @@ fun RoomInfoScreen(
         androidx.compose.runtime.LaunchedEffect(Unit) { onBack() }
         return
     }
+    val sharedItems = com.dominion.mobile.data.ArchiveIndex.roomItems(conversation.messages)
+    androidx.compose.runtime.LaunchedEffect(conversationId) { vm.refreshConversationNow(conversationId) }
     var confirmLeave by remember { mutableStateOf(false) }
     var confirmRewind by remember { mutableStateOf(false) }
 
@@ -513,9 +516,11 @@ fun RoomInfoScreen(
                     Hairline()
                     SettingsRow(
                         title = tr(lang, "공유된 파일", "Shared files"),
-                        subtitle = tr(lang, "사진 3개 · 파일 2개", "3 photos · 2 files"),
+                        subtitle = tr(lang,
+                            "사진 "+sharedItems.count { it.type == com.dominion.mobile.data.model.ArchiveType.IMAGE }+"개 · 파일/영상 "+sharedItems.count { it.type in setOf(com.dominion.mobile.data.model.ArchiveType.FILE, com.dominion.mobile.data.model.ArchiveType.VIDEO) }+"개 · 링크 "+sharedItems.count { it.type == com.dominion.mobile.data.model.ArchiveType.LINK }+"개",
+                            sharedItems.size.toString() + " items in available history"),
                         leading = { GlyphIcon(Glyph.IMAGE, p.textPrimary, size = 18.dp) },
-                        onClick = { onSearch() }
+                        onClick = onSharedFiles
                     )
                     Hairline()
                     SettingsRow(

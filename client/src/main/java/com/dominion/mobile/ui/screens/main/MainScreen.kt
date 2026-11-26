@@ -176,7 +176,7 @@ fun MainScreen(
                             onOpenProfile = { onNavigate(Routes.EDIT_PROFILE) }
                         )
                         TabId.ARCHIVE -> ArchiveScreen(
-                            state = state,
+                            state = state, vm = vm,
                             onOpenChat = { onNavigate(Routes.chat(it)) }
                         )
                         TabId.PROFILE -> ProfileScreen(

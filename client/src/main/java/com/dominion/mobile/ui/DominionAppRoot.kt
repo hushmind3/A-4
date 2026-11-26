@@ -195,10 +195,19 @@ fun DominionAppRoot(vm: AppViewModel) {
                     onBack = { nav.popBackStack() },
                     onOpenChat = { nav.popBackStack() },
                     onSearch = { nav.navigate(Routes.SEARCH) },
+                    onSharedFiles = { nav.navigate(Routes.sharedFiles(id)) },
                     onOpenCharacter = {
                         state.conversation(id)?.characterId?.let { nav.navigate(Routes.character(it)) }
                     }
                 )
+            }
+            composable(
+                route = "sharedfiles/{id}",
+                arguments = listOf(navArgument("id") { type = NavType.StringType })
+            ) { entry ->
+                val id = entry.arguments?.getString("id") ?: return@composable
+                com.dominion.mobile.ui.screens.archive.ArchiveScreen(state = state, vm = vm, roomId = id,
+                    onBack = { nav.popBackStack() }, onOpenChat = { nav.navigate(Routes.chat(it)) })
             }
             composable(
                 route = "friend/{id}",

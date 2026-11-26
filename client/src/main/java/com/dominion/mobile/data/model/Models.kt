@@ -111,8 +111,11 @@ data class Message(
     val jobId: String? = null,
     val attachmentIds: List<String>? = null,
     val authorAgentId: String? = null,
-    val jobStatus: String? = null
+    val jobStatus: String? = null,
+    val attachments: List<MessageAttachment>? = null
 )
+
+data class MessageAttachment(val id: String, val name: String, val mimeType: String, val size: Long)
 
 enum class ConversationKind { DIRECT, EXTRA, GROUP, TASK }
 
@@ -239,7 +242,11 @@ data class ArchiveItem(
     val meta: String,
     val conversationId: Id? = null,
     val createdAt: Long = System.currentTimeMillis(),
-    val color: Long = 0xFF4797EF
+    val color: Long = 0xFF4797EF,
+    val messageId: String? = null,
+    val attachmentId: String? = null,
+    val mimeType: String? = null,
+    val url: String? = null
 )
 
 enum class ActivityType { FRIEND, TASK, CREDIT, SYSTEM, CALL }

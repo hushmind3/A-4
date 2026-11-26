@@ -7,6 +7,7 @@ object Routes {
     fun character(id: String) = "character/$id"
     fun customize(id: String) = "customize/$id"
     fun roomInfo(id: String) = "roominfo/$id"
+    fun sharedFiles(id: String) = "sharedfiles/$id"
     fun friend(id: String) = "friend/$id"
     fun connection(id: String) = "connection/$id"
     fun legal(document: String) = "legal/$document"
