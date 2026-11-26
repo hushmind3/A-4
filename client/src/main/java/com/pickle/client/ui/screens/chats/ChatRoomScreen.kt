@@ -59,6 +59,7 @@ import com.pickle.client.data.model.Character
 import com.pickle.client.data.model.Message
 import com.pickle.client.data.model.MessageCard
 import com.pickle.client.data.model.MessageSender
+import com.pickle.client.data.model.MessageStatus
 import com.pickle.client.ui.AppViewModel
 import com.pickle.client.ui.LocalLang
 import com.pickle.client.ui.components.ChatCardView
@@ -209,19 +210,38 @@ fun ChatRoomScreen(
             items(entries.size) { index ->
                 when (val entry = entries[index]) {
                     is ChatEntry.Day -> DateDivider(entry.label)
-                    is ChatEntry.Item -> MessageBubble(
-                        message = entry.message,
-                        character = character,
-                        onLongPress = { messageMenu = entry.message },
-                        onCardAction = {
-                            when (entry.message.card?.kind) {
-                                CardKind.TASK -> onNavigate(com.pickle.client.ui.nav.Routes.TASKS)
-                                CardKind.LINK -> context.toast(tr(lang, "링크를 열었어요 (데모)", "Opened link (demo)"))
-                                CardKind.FILE -> context.toast(tr(lang, "파일을 열었어요 (데모)", "Opened file (demo)"))
-                                else -> onNavigate(com.pickle.client.ui.nav.Routes.TASKS)
+                    is ChatEntry.Item -> Column {
+                        MessageBubble(
+                            message = entry.message,
+                            character = character,
+                            onLongPress = { messageMenu = entry.message },
+                            onCardAction = {
+                                when (entry.message.card?.kind) {
+                                    CardKind.TASK -> onNavigate(com.pickle.client.ui.nav.Routes.TASKS)
+                                    CardKind.LINK -> context.toast(tr(lang, "링크를 열었어요 (데모)", "Opened link (demo)"))
+                                    CardKind.FILE -> context.toast(tr(lang, "파일을 열었어요 (데모)", "Opened file (demo)"))
+                                    else -> onNavigate(com.pickle.client.ui.nav.Routes.TASKS)
+                                }
                             }
+                        )
+                        if (entry.message.sender == MessageSender.ME &&
+                            entry.message.status != MessageStatus.SENT) {
+                            Text(
+                                text = if (entry.message.status == MessageStatus.FAILED)
+                                    tr(lang, "전송 실패 · 눌러서 재시도", "Failed · tap to retry")
+                                else tr(lang, "전송 중…", "Sending…"),
+                                color = if (entry.message.status == MessageStatus.FAILED) p.blue else p.textTertiary,
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier
+                                    .align(Alignment.End)
+                                    .padding(end = 12.dp, top = 2.dp)
+                                    .then(if (entry.message.status == MessageStatus.FAILED)
+                                        Modifier.clickable {
+                                            vm.retryMessage(conversationId, entry.message.id)
+                                        } else Modifier)
+                            )
                         }
-                    )
+                    }
                     ChatEntry.Typing -> TypingBubble(character)
                 }
             }
@@ -356,6 +376,12 @@ fun ChatRoomScreen(
     messageMenu?.let { message ->
         PickleBottomSheet(onDismiss = { messageMenu = null }) {
             SheetTitle(tr(lang, "메시지", "Message"))
+            if (message.sender == MessageSender.ME && message.status == MessageStatus.FAILED) {
+                SheetRow(tr(lang, "전송 재시도", "Retry sending"), Glyph.SEND) {
+                    vm.retryMessage(conversationId, message.id)
+                    messageMenu = null
+                }
+            }
             if (message.text.isNotBlank()) {
                 SheetRow(tr(lang, "복사", "Copy"), Glyph.LINK) {
                     clipboard.setText(AnnotatedString(message.text))
