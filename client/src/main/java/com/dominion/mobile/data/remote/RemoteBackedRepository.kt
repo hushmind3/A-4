@@ -40,6 +40,10 @@ class RemoteBackedRepository(
     override val connection = _connection.asStateFlow()
     private val refreshLock = Mutex()
 
+    init { store.saveState(_state.value) }
+
+    override suspend fun searchMessages(query: String): List<Message> = store.searchMessages(query)
+
     override suspend fun deliverMessage(conversationId: String, message: Message): Message {
         // Keep the stable client id across retries so cooperating servers can deduplicate.
         val dto = api.sendMessage(
@@ -103,7 +107,7 @@ class RemoteBackedRepository(
                         conversations = conversations.map { serverConv ->
                             val existing = current.conversation(serverConv.id)
                             if (existing != null) serverConv.copy(
-                                messages = if (serverConv.messages.isEmpty()) existing.messages else serverConv.messages,
+                                messages = com.dominion.mobile.data.MessageSync.reconcile(existing.messages, serverConv.messages),
                                 draft = existing.draft,
                                 updatedAt = maxOf(serverConv.updatedAt, existing.updatedAt)
                             ) else serverConv

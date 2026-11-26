@@ -23,6 +23,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import com.dominion.mobile.data.model.Message
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,6 +61,7 @@ import com.dominion.mobile.util.asRelative
 @Composable
 fun SearchScreen(
     state: AppState,
+    vm: AppViewModel,
     onBack: () -> Unit,
     onOpenChat: (String) -> Unit
 ) {
@@ -67,9 +72,25 @@ fun SearchScreen(
     val convResults = state.conversations.filter {
         query.isNotBlank() && it.title(state.characters).contains(query, true)
     }
-    val messageResults = if (query.isBlank()) emptyList() else state.conversations.flatMap { conv ->
-        conv.messages.filter { it.text.contains(query, true) }.map { conv to it }
-    }.take(30)
+    var matches by remember { mutableStateOf(emptyList<Message>()) }
+    var searching by remember { mutableStateOf(false) }
+    var failed by remember { mutableStateOf(false) }
+    LaunchedEffect(query, state.conversations) {
+        matches = emptyList()
+        failed = false
+        searching = query.isNotBlank()
+        if (searching) {
+            try {
+                delay(200)
+                matches = vm.searchMessages(query)
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) { failed = true }
+            finally { searching = false }
+        }
+    }
+    val messageResults = matches.mapNotNull { message ->
+        state.conversation(message.conversationId)?.let { it to message }
+    }
 
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().background(p.screen)) {
         ScreenTopBar(title = tr(lang, "검색", "Search"), onBack = onBack)
@@ -165,7 +186,10 @@ fun SearchScreen(
                         }
                     }
                 }
-                if (convResults.isEmpty() && messageResults.isEmpty()) {
+                if (searching || failed) {
+                    item { Text(if (failed) tr(lang, "저장된 메시지 검색 실패", "Local message search failed") else tr(lang, "검색 중", "Searching"), modifier = Modifier.padding(18.dp), color = p.textSecondary) }
+                }
+                if (!searching && !failed && convResults.isEmpty() && messageResults.isEmpty()) {
                     item {
                         EmptyState(
                             glyph = Glyph.SPARK,

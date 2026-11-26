@@ -33,6 +33,10 @@ class CallForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (!(application as DominionApplication).containerReady) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
         if (intent?.action == ACTION_END) {
             repo.update { it.copy(call = null) }
             stopSelf()
@@ -151,7 +155,7 @@ class CallForegroundService : Service() {
             runCatching { media.release() }
         }
         room = null
-        repo.update { state ->
+        if ((application as DominionApplication).containerReady) repo.update { state ->
             if (state.call?.sessionId == sessionId && state.call?.phase != CallPhase.FAILED)
                 state.copy(call = null) else state
         }

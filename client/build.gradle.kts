@@ -1,4 +1,7 @@
+import java.net.URI
+
 plugins {
+    id("com.google.devtools.ksp")
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -7,7 +10,7 @@ plugins {
 // A remote build must explicitly identify its own DOMINION server.
 val dominionServerUrl = providers.gradleProperty("dominionServerUrl").orNull?.trim()?.takeIf { it.isNotEmpty() }
 val configuredServer = dominionServerUrl?.let { raw ->
-    val uri = java.net.URI(raw)
+    val uri = URI(raw)
     require(uri.scheme == "https" && !uri.host.isNullOrBlank() &&
         uri.userInfo == null && uri.query == null && uri.fragment == null &&
         (uri.path.isNullOrEmpty() || uri.path == "/")) {
@@ -26,6 +29,7 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0-dev"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         vectorDrawables.useSupportLibrary = true
         buildConfigField("String", "API_BASE_URL", "\"${configuredServer ?: "https://dominion.invalid/"}\"")
@@ -92,10 +96,15 @@ dependencies {
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("com.google.code.gson:gson:2.11.0")
+    implementation("androidx.room:room-runtime:2.7.2")
+    implementation("androidx.room:room-ktx:2.7.2")
+    ksp("androidx.room:room-compiler:2.7.2")
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
     implementation("io.livekit:livekit-android:2.30.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
 }

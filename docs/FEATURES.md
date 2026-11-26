@@ -5,7 +5,7 @@ Status means source implementation, not a claim of production readiness. Server 
 | Area | Client source | Real integration / gap |
 | --- | --- | --- |
 | App identity, navigation, theme | Native Kotlin/Compose | DOMINION namespace, resources and app identity |
-| Chats, search, draft, conversation actions | Native UI and local state | Real rooms/history via REST; creation and mutation need server contracts |
+| Chats, search, draft, conversation actions | Native UI, Room database, SQL message search | Real rooms/history via REST; creation and mutation need server contracts; paging and FTS pending |
 | Sending and retry | REST client, sending/failed status, stable local IDs | Server acknowledges text; durable idempotency still missing |
 | Streaming | Polling fallback | Streaming events and reconnect cursors not implemented |
 | Models | Server-driven conversation execution | Cloud catalog read-only; execution model selection not connected |
@@ -19,6 +19,6 @@ Status means source implementation, not a claim of production readiness. Server 
 | Friends, connections, credits | Local prototype | Not authoritative server-backed operations |
 | Vault, app lock | Prototype UI | Not a secure vault; Keystore and actual authentication pending |
 | Widgets | Android widget providers | Deep-link routing requires further integration |
-| Background recovery | Local snapshot and foreground resync | Durable background job restoration not integrated |
+| Background recovery | Room database, legacy snapshot migration, interrupted send recovery and foreground resync | Durable background job restoration not integrated |
 
 Demo purchases, fake account actions and simulated calls must not be presented as production operations. Future improvements should replace or remove these flows rather than treating renamed screens as finished capabilities.

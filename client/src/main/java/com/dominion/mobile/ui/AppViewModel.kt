@@ -67,6 +67,8 @@ class AppViewModel(
 
     suspend fun refreshServer() = repo.refresh()
 
+    suspend fun searchMessages(query: String) = repo.searchMessages(query)
+
     fun retryServerConnection() {
         viewModelScope.launch { refreshServer() }
     }

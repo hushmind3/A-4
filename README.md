@@ -11,7 +11,7 @@ Native Android companion for [DOMINION](https://github.com/hushmind3/dominion). 
 ```text
 DOMINION Mobile (Kotlin / Jetpack Compose)
   ├─ Conversation UI, attachments, call controls, task views
-  ├─ Repository + REST transport + isolated local cache
+  ├─ Repository + REST transport + isolated Room/SQLite databases
   └─ Intended: common Cloud identity, notifications, media
                      │
            Authorized HTTPS connection
@@ -34,7 +34,7 @@ Requirements: JDK 17, Android SDK 35, Android 12L (API 32) or newer, Android Stu
 ./gradlew :client:assembleDebug
 ```
 
-Without a server URL, the app opens its local demonstration environment. Sample conversations, purchases, calls and account actions in this mode are simulations, not live services.
+Without a server URL, the app opens its local demonstration environment. Sample conversations, purchases and account actions in this mode are simulations, not live services. Calls require a connected engine.
 
 ### Connect to your DOMINION server
 
@@ -52,7 +52,7 @@ For the actual server routes and limitations, see [Backend integration](docs/BAC
 
 | Capability | Current state |
 | --- | --- |
-| Native chat, history, search, navigation | Implemented interface |
+| Native chat, history, search, navigation | Room SQLite storage and SQL message search; Android validation pending |
 | REST message submission and history retrieval | Implemented client; live integration not verified |
 | Failed-send state and retry | Implemented client; server idempotency not yet guaranteed |
 | Server response polling | Implemented; not streaming |
@@ -96,3 +96,7 @@ Primary development branch: `main`. Server project: [hushmind3/dominion](https:/
 ### Optional DOMINION Cloud account
 
 Open Settings → DOMINION Cloud → Connect shared account. Approve the existing Google account in the system browser or copy the pairing code to the desktop Cloud account screen. Return to the app to verify approval, view the shared free quota and list available Cloud models. Credentials are encrypted using Android Keystore. This is optional, and does not authorize access to the local execution server or change its selected model.
+
+### Local data storage
+
+Each execution origin has its own private Room/SQLite database with WAL, separate conversation/message rows and local task, schedule, memory, vault, archive and activity records. Legacy preference snapshots migrate transactionally and are removed only after commit. Authentication credentials remain separate. Database reads/writes run off the UI thread. The UI currently hydrates the existing conversation state at startup; pagination, FTS and durable background execution synchronization remain follow-up work. A disconnected engine does not prevent reading the local history. Direct Cloud conversation execution and runtime engine configuration are not yet implemented.

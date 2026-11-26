@@ -215,6 +215,7 @@ fun DominionAppRoot(vm: AppViewModel) {
             composable(Routes.SEARCH) {
                 SearchScreen(
                     state = state,
+                    vm = vm,
                     onBack = { nav.popBackStack() },
                     onOpenChat = { nav.navigate(Routes.chat(it)) }
                 )

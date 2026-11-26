@@ -32,6 +32,10 @@ interface DominionRepository {
     suspend fun requestVoiceCall(conversationId: String): com.dominion.mobile.data.remote.CallTokenResponse =
         error("Voice calls require a connected server")
 
+    suspend fun searchMessages(query: String): List<Message> = state.value.conversations
+        .flatMap { it.messages }.filter { query.isNotBlank() && it.text.contains(query, ignoreCase = true) }
+        .sortedByDescending { it.createdAt }.take(30)
+
     fun update(transform: (AppState) -> AppState)
     suspend fun refresh() = Unit
     fun reset()
@@ -45,6 +49,11 @@ class DemoRepository(
     override val state: StateFlow<AppState> = _state.asStateFlow()
     override val isDemo: Boolean = true
     override val connection: StateFlow<ConnectionState> = MutableStateFlow(ConnectionState.DEMO).asStateFlow()
+
+    init { store?.saveState(_state.value) }
+
+    override suspend fun searchMessages(query: String): List<Message> =
+        store?.searchMessages(query) ?: super.searchMessages(query)
 
     override fun update(transform: (AppState) -> AppState) {
         _state.update(transform)
