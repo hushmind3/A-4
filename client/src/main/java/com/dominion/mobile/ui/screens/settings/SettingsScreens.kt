@@ -1,5 +1,8 @@
 package com.dominion.mobile.ui.screens.settings
 
+import com.dominion.mobile.platform.security.rememberDeviceAuthentication
+import com.dominion.mobile.platform.security.deviceAuthenticationAvailable
+import com.dominion.mobile.platform.export.rememberDataExport
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -73,6 +76,7 @@ fun SettingsScreen(
     val lang = LocalLang.current
     val context = LocalContext.current
     val own = state.myCharacter()
+    val export = rememberDataExport(state, lang)
 
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().background(p.screen)) {
         ScreenTopBar(title = tr(lang, "설정", "Settings"), onBack = onBack)
@@ -186,7 +190,8 @@ fun SettingsScreen(
                 SettingsRow(
                     title = tr(lang, "내 데이터 내보내기", "Export my data"),
                     leading = { GlyphIcon(Glyph.FILE, p.textPrimary, size = 18.dp) },
-                    onClick = { context.toast(tr(lang, "내보내기 요청을 보냈어요 (데모)", "Export requested (demo)")) }
+                    subtitle = tr(lang, "이 기기에 저장된 대화·기록을 JSON 파일로 저장 (금고 제외)", "Save local chats and records as JSON, excluding vault"),
+                    onClick = export
                 )
             }
 
@@ -212,7 +217,7 @@ fun SettingsScreen(
                 Hairline()
                 SettingsRow(
                     title = tr(lang, "앱 정보", "About"),
-                    trailingText = "1.1.20",
+                    trailingText = com.dominion.mobile.BuildConfig.VERSION_NAME,
                     showChevron = false,
                     leading = { GlyphIcon(Glyph.MEMORY, p.textPrimary, size = 18.dp) },
                     onClick = null
@@ -475,6 +480,12 @@ fun PrivacyScreen(
     val p = LocalDominionPalette.current
     val lang = LocalLang.current
     val context = LocalContext.current
+    val export = rememberDataExport(state, lang)
+    val authenticate = rememberDeviceAuthentication(
+        title = tr(lang, "DOMINION 앱 잠금 설정", "DOMINION app lock"),
+        onSuccess = { vm.setAppLock(!state.settings.appLock) },
+        onError = { context.toast(it) }
+    )
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().background(p.screen)) {
         ScreenTopBar(title = tr(lang, "개인정보 및 보안", "Privacy & security"), onBack = onBack)
         SettingsGroup {
@@ -482,7 +493,12 @@ fun PrivacyScreen(
                 title = tr(lang, "앱 잠금", "App lock"),
                 subtitle = tr(lang, "앱을 열 때 지문이나 기기 잠금을 사용해요", "Use biometrics or device lock to open Dominion"),
                 checked = state.settings.appLock,
-                onCheckedChange = vm::setAppLock
+                onCheckedChange = { enabled ->
+                    if (enabled != state.settings.appLock) {
+                        if (deviceAuthenticationAvailable(context)) authenticate()
+                        else context.toast(tr(lang, "기기 설정에서 PIN 또는 지문을 등록하세요.", "Set a device PIN or biometrics first."))
+                    }
+                }
             )
             Hairline()
             SwitchRow(
@@ -510,13 +526,14 @@ fun PrivacyScreen(
             SettingsRow(
                 title = tr(lang, "내 데이터 내보내기", "Export my data"),
                 leading = { GlyphIcon(Glyph.FILE, p.textPrimary, size = 18.dp) },
-                onClick = { context.toast(tr(lang, "내보내기 요청을 보냈어요 (데모)", "Export requested (demo)")) }
+                subtitle = tr(lang, "이 기기에 저장된 대화·기록 (금고 제외)", "Local chats and records, excluding vault"),
+                onClick = export
             )
         }
         Spacer(Modifier.height(14.dp))
         Box(Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(p.cardSoft).padding(14.dp)) {
             Text(
-                tr(lang, "대화는 전송 구간과 저장 시 암호화돼요. 금고 항목은 기기에서만 복호화돼요.", "Chats are encrypted in transit and at rest. Vault items are decrypted only on your device."),
+                tr(lang, "대화는 HTTPS로 전송되며 기기 데이터베이스에 저장됩니다. 금고 항목은 Android Keystore 키로 암호화됩니다.", "Chats travel over HTTPS and are stored in the device database. Vault records are encrypted with Android Keystore."),
                 style = MaterialTheme.typography.bodySmall,
                 color = p.textTertiary
             )

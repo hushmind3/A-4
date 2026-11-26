@@ -17,7 +17,7 @@ Source implementation, not production certification.
 | Video, files, camera, notification | Further integration required |
 | Other existing screens | Local records or incomplete prototype UI; not evidence of live execution |
 
-Removed hardcoded reply generator, fictional seed data, mock onboarding, separate direct-cloud chat, and build-time server-mode selection. Unconnected means unconnected. Remaining UI-only operations must be implemented or removed, not reported as completed work.
+Removed hardcoded reply generator, fictional seed data, mock onboarding, separate direct-cloud chat, and build-time server-mode selection. Unconnected means unconnected. Remaining UI-only operations must be made functional and preserved, not removed or reported as completed work.
 
 ## Preserved original design
 
@@ -41,3 +41,10 @@ Existing connections and task templates remain unchanged. The connections screen
 After a native room job is accepted, a unique periodic WorkManager check reads the existing engine job record and pending approvals. The mobile worker never executes the job: DOMINION remains responsible for all actions, memory and approval decisions. The worker derives its origin from the encrypted current engine connection and never stores the owner token in WorkManager input. Notification text omits prompts, arguments and credentials. Android 13+ permission is requested from the room execution controls.
 
 This is best-effort background polling (15-minute minimum interval, possibly delayed by the OS), NOT realtime push. Tap a notification to open its conversation (once it exists in the server-synced room list) for authoritative details. Engine origin switches invalidate old watchers. Physical device testing, FCM push and job-specific deep links remain pending.
+
+
+## Native security and data portability
+
+The two existing data-export menus now open Android's CreateDocument picker and write a real UTF-8 JSON export of locally available chat history, tasks, schedules, memories, account display data and settings. Vault contents, credentials, connection tokens and ephemeral state are intentionally excluded. This is not a complete server backup or an encrypted export.
+
+App lock and vault unlock now use Android's system biometric/PIN authentication, not a local demo flag. Vault access is gated independently of app lock and is cleared on backgrounding or leaving its screen. Vault records are sealed using per-origin Android Keystore AES-GCM with record-bound associated data; existing plaintext rows are migrated without discarding the logical records. Ordinary chat history remains in the local SQLite database. Existing historical SQLite/WAL pages and old backups are not claimed to have been securely erased. Device authentication and database migration require Android runtime testing.

@@ -1,5 +1,7 @@
 package com.dominion.mobile.ui.screens.profile
 
+import androidx.compose.runtime.DisposableEffect
+import com.dominion.mobile.platform.security.rememberDeviceAuthentication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -79,7 +81,13 @@ fun VaultScreen(
     var deleteTarget by remember { mutableStateOf<VaultItem?>(null) }
     var revealed by remember { mutableStateOf(emptySet<String>()) }
 
-    if (state.settings.appLock && !state.vaultUnlocked) {
+    DisposableEffect(vm) { onDispose { vm.lockVault() } }
+    val authenticate = rememberDeviceAuthentication(
+        title = tr(lang, "DOMINION 금고 잠금 해제", "Unlock DOMINION vault"),
+        onSuccess = vm::unlockVault,
+        onError = { context.toast(it) }
+    )
+    if (!state.vaultUnlocked) {
         Column(
             Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().background(p.screen),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -104,10 +112,7 @@ fun VaultScreen(
             Box(Modifier.padding(horizontal = 24.dp).fillMaxWidth()) {
                 PrimaryButton(
                     text = tr(lang, "지문으로 열기", "Unlock with biometrics"),
-                    onClick = {
-                        vm.unlockVault()
-                        context.toast(tr(lang, "금고를 열었어요 (데모)", "Vault unlocked (demo)"))
-                    }
+                    onClick = authenticate
                 )
             }
             Spacer(Modifier.weight(1f))
@@ -124,7 +129,7 @@ fun VaultScreen(
             subtitle = tr(lang, "${state.vault.size}개의 항목 · 기기에서 암호화됨", "${state.vault.size} items · encrypted on device"),
             onBack = onBack,
             actions = {
-                if (state.settings.appLock) GlyphButton(Glyph.LOCK, onClick = { vm.lockVault() })
+                GlyphButton(Glyph.LOCK, onClick = { vm.lockVault() })
                 GlyphButton(Glyph.PLUS, onClick = { showAdd = true })
             }
         )

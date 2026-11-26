@@ -1,5 +1,11 @@
 package com.dominion.mobile.ui
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import com.dominion.mobile.platform.security.rememberDeviceAuthentication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -93,7 +99,7 @@ fun DominionAppRoot(vm: AppViewModel) {
         }
         var appUnlocked by remember { mutableStateOf(!state.settings.appLock) }
         LaunchedEffect(state.settings.appLock) {
-            if (!state.settings.appLock) appUnlocked = true
+            appUnlocked = !state.settings.appLock
         }
         val lifecycleOwner = LocalLifecycleOwner.current
         LaunchedEffect(lifecycleOwner, vm) {
@@ -106,15 +112,19 @@ fun DominionAppRoot(vm: AppViewModel) {
         }
         DisposableEffect(lifecycleOwner, state.settings.appLock) {
             val observer = LifecycleEventObserver { _, event ->
-                if (event == Lifecycle.Event.ON_STOP && state.settings.appLock) {
-                    appUnlocked = false
+                if (event == Lifecycle.Event.ON_STOP) {
+                    vm.lockVault()
+                    if (state.settings.appLock) appUnlocked = false
                 }
             }
             lifecycleOwner.lifecycle.addObserver(observer)
             onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
         }
 
-        NavHost(navController = nav, startDestination = Routes.MAIN) {
+        val locked = state.settings.appLock && !appUnlocked
+        Box(Modifier.fillMaxSize()) {
+        NavHost(navController = nav, startDestination = Routes.MAIN,
+            modifier = if (locked) Modifier.alpha(0f).clearAndSetSemantics {} else Modifier) {
             composable(Routes.ONBOARDING) {
                 com.dominion.mobile.ui.screens.onboarding.OnboardingScreen(
                     state = state, vm = vm, onDone = { nav.popBackStack() },
@@ -314,8 +324,10 @@ fun DominionAppRoot(vm: AppViewModel) {
             }
         }
 
-        if (state.settings.appLock && !appUnlocked) {
+        if (locked) {
+            BackHandler { }
             AppLockOverlay(onUnlock = { appUnlocked = true })
+        }
         }
     }
 }
@@ -324,6 +336,12 @@ fun DominionAppRoot(vm: AppViewModel) {
 private fun AppLockOverlay(onUnlock: () -> Unit) {
     val p = com.dominion.mobile.ui.theme.LocalDominionPalette.current
     val lang = LocalLang.current
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val authenticate = rememberDeviceAuthentication(
+        title = tr(lang, "DOMINION 잠금 해제", "Unlock DOMINION"),
+        onSuccess = onUnlock,
+        onError = { android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show() }
+    )
     androidx.compose.foundation.layout.Box(
         modifier = androidx.compose.ui.Modifier
             .fillMaxSize()
@@ -364,7 +382,7 @@ private fun AppLockOverlay(onUnlock: () -> Unit) {
                 modifier = androidx.compose.ui.Modifier
                     .clip(androidx.compose.foundation.shape.RoundedCornerShape(22.dp))
                     .background(p.actionPrimary)
-                    .clickable(onClick = onUnlock)
+                    .clickable(onClick = authenticate)
                     .padding(horizontal = 22.dp, vertical = 12.dp)
             ) {
                 androidx.compose.material3.Text(

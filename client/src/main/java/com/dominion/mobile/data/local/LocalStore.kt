@@ -16,6 +16,7 @@ import java.util.concurrent.atomic.AtomicReference
 class LocalStore(context: Context, scope: String = "unconfigured") {
     private val prefs = context.getSharedPreferences("dominion_mobile_$scope", Context.MODE_PRIVATE)
     private val gson = GsonBuilder().serializeNulls().create()
+    private val vaultCipher = VaultRecordCipher(scope)
     private val db = Room.databaseBuilder(context.applicationContext, MobileDatabase::class.java,
         "dominion_mobile_$scope.db").setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING).build()
     private val dao = db.local()
@@ -40,7 +41,14 @@ class LocalStore(context: Context, scope: String = "unconfigured") {
         add("task", s.tasks, TaskItem::id)
         add("schedule", s.schedules, ScheduleItem::id)
         add("memory", s.memories, MemoryItem::id)
-        add("vault", s.vault, VaultItem::id)
+        val previousVault = persisted?.records.orEmpty().filter { it.kind == "vault" }.associateBy { it.id }
+        s.vault.forEachIndexed { index, item ->
+            val json = gson.toJson(item)
+            val prior = previousVault[item.id]?.payload
+            val sealed = if (prior != null && vaultCipher.isSealed(prior) &&
+                vaultCipher.open(item.id, prior) == json) prior else vaultCipher.seal(item.id, json)
+            records += RecordRow("vault", item.id, index, sealed)
+        }
         add("archive", s.archive, ArchiveItem::id)
         add("activity", s.activity, ActivityItem::id)
         val metadata = s.copy(conversations = emptyList(), tasks = emptyList(), schedules = emptyList(),
@@ -70,9 +78,13 @@ class LocalStore(context: Context, scope: String = "unconfigured") {
         persisted = saved
         val grouped = saved.messages.groupBy { it.conversationId }
         fun <T> records(kind: String, type: Class<T>): List<T> =
-            saved.records.filter { it.kind == kind }.map { gson.fromJson(it.payload, type) }
+            saved.records.filter { it.kind == kind }.map {
+                val payload = if (kind == "vault" && vaultCipher.isSealed(it.payload))
+                    vaultCipher.open(it.id, it.payload) else it.payload
+                gson.fromJson(payload, type)
+            }
         val meta = gson.fromJson(saved.metadata.payload, AppState::class.java)
-        return recoverInterrupted(clean(meta.copy(
+        val recovered = recoverInterrupted(clean(meta.copy(
             conversations = saved.conversations.map { row ->
                 gson.fromJson(row.payload, Conversation::class.java).copy(messages =
                     grouped[row.id].orEmpty().map { gson.fromJson(it.payload, Message::class.java) })
@@ -81,6 +93,10 @@ class LocalStore(context: Context, scope: String = "unconfigured") {
             memories = records("memory", MemoryItem::class.java), vault = records("vault", VaultItem::class.java),
             archive = records("archive", ArchiveItem::class.java), activity = records("activity", ActivityItem::class.java)
         )))
+        // Rewrite legacy plaintext vault records before exposing them to the UI.
+        // Existing records are retained; a failed migration aborts loading.
+        if (saved.records.any { it.kind == "vault" && !vaultCipher.isSealed(it.payload) }) persist(recovered)
+        return recovered
     }
 
     private fun recoverInterrupted(state: AppState): AppState = state.copy(conversations = state.conversations.map { c ->
