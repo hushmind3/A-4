@@ -61,7 +61,7 @@ fun AssistantAvatar(
     breathing: Boolean = false
 ) {
     val p = LocalDominionPalette.current
-    val infinite = rememberInfiniteTransition(label = "jaum")
+    val infinite = rememberInfiniteTransition(label = "assistant-avatar")
     val breath by infinite.animateFloat(
         initialValue = 0.985f,
         targetValue = 1.02f,
