@@ -19,7 +19,7 @@ class RemoteBackedRepository(
     private val store: LocalStore
 ) : PickleRepository {
 
-    private val _state = MutableStateFlow(store.loadState() ?: DemoData.initial(onboarded = true))
+    private val _state = MutableStateFlow((store.loadState() ?: DemoData.initial(onboarded = true)).copy(onboarded = true))
     override val state: StateFlow<AppState> = _state.asStateFlow()
 
     override fun update(transform: (AppState) -> AppState) {
@@ -58,6 +58,6 @@ class RemoteBackedRepository(
 
     override fun reset() {
         store.clearState()
-        _state.value = DemoData.initial()
+        _state.value = DemoData.initial(onboarded = true)
     }
 }

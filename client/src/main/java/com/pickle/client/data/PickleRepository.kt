@@ -22,7 +22,7 @@ class DemoRepository(
     private val store: LocalStore? = null
 ) : PickleRepository {
 
-    private val _state = MutableStateFlow(store?.loadState() ?: DemoData.initial())
+    private val _state = MutableStateFlow((store?.loadState() ?: DemoData.initial()).copy(onboarded = true))
     override val state: StateFlow<AppState> = _state.asStateFlow()
 
     override fun update(transform: (AppState) -> AppState) {
@@ -31,7 +31,7 @@ class DemoRepository(
     }
 
     override fun reset() {
-        _state.value = DemoData.initial()
+        _state.value = DemoData.initial(onboarded = true)
         store?.saveState(_state.value)
     }
 }

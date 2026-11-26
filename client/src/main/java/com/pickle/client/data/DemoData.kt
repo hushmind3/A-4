@@ -431,7 +431,7 @@ object DemoData {
     )
 
     fun freshState(): AppState {
-        val base = initial(onboarded = false)
+        val base = initial(onboarded = true)
         return base.copy(
             conversations = emptyList(),
             memories = emptyList(),
