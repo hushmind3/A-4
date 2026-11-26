@@ -3,6 +3,12 @@ package com.dominion.mobile.data.remote
 import com.dominion.mobile.data.model.Account
 import com.dominion.mobile.data.model.Plan
 import com.dominion.mobile.data.DominionRepository
+import com.dominion.mobile.data.ConnectionState
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Mutex
+import retrofit2.HttpException
+import java.io.IOException
 import com.dominion.mobile.data.local.LocalStore
 import com.dominion.mobile.data.model.AppState
 import com.dominion.mobile.data.model.Message
@@ -30,6 +36,9 @@ class RemoteBackedRepository(
 
     private val _state = MutableStateFlow((store.loadState() ?: emptyRemoteState()).copy(onboarded = true))
     override val state: StateFlow<AppState> = _state.asStateFlow()
+    private val _connection = MutableStateFlow(ConnectionState.CONNECTING)
+    override val connection = _connection.asStateFlow()
+    private val refreshLock = Mutex()
 
     override suspend fun deliverMessage(conversationId: String, message: Message): Message {
         // Keep the stable client id across retries so cooperating servers can deduplicate.
@@ -69,42 +78,54 @@ class RemoteBackedRepository(
     }
 
     override suspend fun refresh() {
-        val account = runCatching { api.me().data?.toDomain() }.getOrNull()
-        val characters = runCatching { api.characters().data.map { it.toDomain() } }.getOrNull()
-        val conversations = runCatching { api.conversations().data.map { it.toDomain() } }.getOrNull()
-        val tasks = runCatching { api.tasks().data.map { it.toDomain() } }.getOrNull()
-        val schedules = runCatching { api.schedules().data.map { it.toDomain() } }.getOrNull()
-        val memories = runCatching { api.memories().data.map { it.toDomain() } }.getOrNull()
-        val friends = runCatching { api.friends().data.map { it.toDomain() } }.getOrNull()
-        val connections = runCatching { api.connections().data.map { it.toDomain() } }.getOrNull()
-        val explore = runCatching { api.explore().data.map { it.toDomain() } }.getOrNull()
-        val vault = runCatching { api.vault().data.map { it.toDomain() } }.getOrNull()
-
-        _state.update { current ->
-            current.copy(
-                account = account ?: current.account,
-                characters = characters ?: current.characters,
-                conversations = conversations?.map { serverConv ->
-                    val existing = current.conversation(serverConv.id)
-                    if (serverConv.messages.isEmpty() && existing != null) {
-                        serverConv.copy(messages = existing.messages, updatedAt = maxOf(serverConv.updatedAt, existing.updatedAt))
-                    } else {
-                        serverConv
-                    }
-                } ?: current.conversations,
-                tasks = tasks ?: current.tasks,
-                schedules = schedules ?: current.schedules,
-                memories = memories ?: current.memories,
-                friends = friends ?: current.friends,
-                connections = connections ?: current.connections,
-                explore = explore ?: current.explore,
-                vault = vault ?: current.vault
-            )
+        if (!refreshLock.tryLock()) return
+        try {
+            if (_connection.value != ConnectionState.CONNECTED) {
+                _connection.value = ConnectionState.CONNECTING
+            }
+            coroutineScope {
+                // Essential server data first; do not treat an unreachable server as a demo.
+                val accountRequest = async { requireNotNull(api.me().data) { "Missing account" }.toDomain() }
+                val agentsRequest = async { api.characters().data.map { it.toDomain() } }
+                val roomsRequest = async { api.conversations().data.map { it.toDomain() } }
+                val account = accountRequest.await()
+                val characters = agentsRequest.await()
+                val conversations = roomsRequest.await()
+                update { current ->
+                    current.copy(
+                        account = account,
+                        characters = characters,
+                        conversations = conversations.map { serverConv ->
+                            val existing = current.conversation(serverConv.id)
+                            if (existing != null) serverConv.copy(
+                                messages = if (serverConv.messages.isEmpty()) existing.messages else serverConv.messages,
+                                draft = existing.draft,
+                                updatedAt = maxOf(serverConv.updatedAt, existing.updatedAt)
+                            ) else serverConv
+                        }
+                    )
+                }
+                _connection.value = ConnectionState.CONNECTED
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: HttpException) {
+            _connection.value = if (failure.code() == 401 || failure.code() == 403) {
+                ConnectionState.AUTH_REQUIRED
+            } else {
+                ConnectionState.UNAVAILABLE
+            }
+        } catch (_: IOException) {
+            _connection.value = ConnectionState.OFFLINE
+        } catch (_: Exception) {
+            _connection.value = ConnectionState.UNAVAILABLE
+        } finally {
+            refreshLock.unlock()
         }
-        store.saveState(_state.value)
     }
 
     override fun reset() {
+        _connection.value = ConnectionState.CONNECTING
         store.clearState()
         _state.value = emptyRemoteState()
     }

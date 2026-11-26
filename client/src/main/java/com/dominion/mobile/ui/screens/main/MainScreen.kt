@@ -45,6 +45,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.dominion.mobile.data.ConnectionState
 import com.dominion.mobile.data.model.AppState
 import com.dominion.mobile.data.model.Conversation
 import com.dominion.mobile.data.model.ConversationKind
@@ -81,6 +83,7 @@ fun MainScreen(
 ) {
     val p = LocalDominionPalette.current
     val lang = LocalLang.current
+    val connection by vm.connection.collectAsStateWithLifecycle()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     var showNewTab by remember { mutableStateOf(false) }
@@ -139,6 +142,7 @@ fun MainScreen(
                 }
             ) { padding ->
                 Column(Modifier.fillMaxSize().padding(bottom = padding.calculateBottomPadding())) {
+                    ConnectionBanner(connection, vm::retryServerConnection)
                     state.sharedText?.let { shared ->
                         SharedBanner(
                             text = shared,
@@ -556,6 +560,32 @@ private fun MinimizedCallBar(
             contentAlignment = Alignment.Center
         ) {
             GlyphIcon(Glyph.PHONE, Color.White, size = 16.dp, modifier = Modifier.rotate(135f))
+        }
+    }
+}
+
+@Composable
+private fun ConnectionBanner(state: ConnectionState, onRetry: () -> Unit) {
+    val lang = LocalLang.current
+    val p = LocalDominionPalette.current
+    if (state == ConnectionState.CONNECTED) return
+    val message = when (state) {
+        ConnectionState.DEMO -> tr(lang, "데모 모드 · 실제 서버 미연결", "Demo mode · no live server")
+        ConnectionState.CONNECTING -> tr(lang, "서버 연결 중", "Connecting to server")
+        ConnectionState.OFFLINE -> tr(lang, "서버 연결 끊김 · 저장된 대화", "Offline · cached conversations")
+        ConnectionState.AUTH_REQUIRED -> tr(lang, "서버 인증 필요", "Server authorization required")
+        ConnectionState.UNAVAILABLE -> tr(lang, "서버 응답 오류", "Server response unavailable")
+        ConnectionState.CONNECTED -> return
+    }
+    Row(
+        Modifier.fillMaxWidth().statusBarsPadding().background(p.blue.copy(alpha = 0.09f))
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(message, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = p.textPrimary)
+        if (state != ConnectionState.DEMO && state != ConnectionState.CONNECTING) {
+            Text(tr(lang, "다시 연결", "Retry"), Modifier.clickable(onClick = onRetry).padding(6.dp), color = p.blue,
+                style = MaterialTheme.typography.labelMedium)
         }
     }
 }

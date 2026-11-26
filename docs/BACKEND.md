@@ -12,7 +12,7 @@ Source baseline inspected: [DOMINION branch1](https://github.com/hushmind3/domin
 ./gradlew :client:assembleDebug -PdominionServerUrl=https://your-dominion-server.example
 ```
 
-Only an HTTPS origin is accepted; the final slash is normalized. No server URL selects demo mode. The app isolates demo storage from each server origin and does not seed a remote session with fictional demo conversations. A configured URL is not proof of reachability or authentication.
+Only an HTTPS origin is accepted; the final slash is normalized. No server URL selects demo mode. The app isolates demo storage from each server origin and does not seed a remote session with fictional demo conversations. A configured URL is not proof of reachability or authentication. While the app is visible, it refreshes the account, agent and room collections concurrently, every 30 seconds after completion. The UI distinguishes connection loss, authorization errors and other server errors. The seven prototype collection reads are not part of the foreground heartbeat. The client does not automatically retry failed network submissions.
 
 The client must be used against an authorized, operator-controlled deployment. The current local server's mobile auth handlers are development stubs; do not expose them as production login.
 

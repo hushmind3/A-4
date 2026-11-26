@@ -44,7 +44,7 @@ Use an HTTPS origin belonging to your own authenticated DOMINION deployment, not
 ./gradlew :client:assembleDebug -PdominionServerUrl=https://your-dominion-server.example
 ```
 
-An explicitly configured origin selects server mode. The app uses the existing DOMINION mobile REST contract and keeps server caches separate from demo data and other origins. Never expose an unauthenticated local engine to the internet. Cloud-to-device authorization is not complete in this release.
+An explicitly configured origin selects server mode. The app uses the existing DOMINION mobile REST contract and keeps server caches separate from demo data and other origins. Foreground resynchronization and a connection-status banner expose offline, authorization and server errors. Never expose an unauthenticated local engine to the internet. Cloud-to-device authorization is not complete in this release.
 
 For the actual server routes and limitations, see [Backend integration](docs/BACKEND.md).
 

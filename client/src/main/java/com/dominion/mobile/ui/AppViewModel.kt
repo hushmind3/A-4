@@ -4,7 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.dominion.mobile.data.DemoData
-import com.dominion.mobile.data.remote.RemoteBackedRepository
 import com.dominion.mobile.data.DemoReplies
 import com.dominion.mobile.data.MessageSync
 import com.dominion.mobile.data.DominionRepository
@@ -65,8 +64,12 @@ class AppViewModel(
 
     val state: StateFlow<AppState> = repo.state
 
-    init {
-        viewModelScope.launch { runCatching { repo.refresh() } }
+    val connection = repo.connection
+
+    suspend fun refreshServer() = repo.refresh()
+
+    fun retryServerConnection() {
+        viewModelScope.launch { refreshServer() }
     }
 
     private fun mutate(transform: (AppState) -> AppState) = repo.update(transform)

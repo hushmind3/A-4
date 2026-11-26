@@ -20,6 +20,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import com.dominion.mobile.data.ConnectionState
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavType
@@ -78,6 +82,16 @@ fun DominionAppRoot(vm: AppViewModel) {
             if (!state.settings.appLock) appUnlocked = true
         }
         val lifecycleOwner = LocalLifecycleOwner.current
+        LaunchedEffect(lifecycleOwner, vm) {
+            if (vm.connection.value != ConnectionState.DEMO) {
+                lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                    while (isActive) {
+                        vm.refreshServer()
+                        delay(30_000L)
+                    }
+                }
+            }
+        }
         DisposableEffect(lifecycleOwner, state.settings.appLock) {
             val observer = LifecycleEventObserver { _, event ->
                 if (event == Lifecycle.Event.ON_STOP && state.settings.appLock) {

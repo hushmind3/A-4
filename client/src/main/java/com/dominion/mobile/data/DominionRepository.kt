@@ -12,8 +12,11 @@ import kotlinx.coroutines.flow.update
  * The single data boundary used by the UI. Swapping the demo implementation for
  * [com.dominion.mobile.data.remote.RemoteBackedRepository] does not change any screen.
  */
+enum class ConnectionState { DEMO, CONNECTING, CONNECTED, OFFLINE, AUTH_REQUIRED, UNAVAILABLE }
+
 interface DominionRepository {
     val state: StateFlow<AppState>
+    val connection: StateFlow<ConnectionState>
     val isDemo: Boolean get() = false
 
     /** Acknowledge one outbound message; only the remote implementation performs HTTP. */
@@ -38,6 +41,7 @@ class DemoRepository(
     private val _state = MutableStateFlow((store?.loadState() ?: DemoData.initial()).copy(onboarded = true))
     override val state: StateFlow<AppState> = _state.asStateFlow()
     override val isDemo: Boolean = true
+    override val connection: StateFlow<ConnectionState> = MutableStateFlow(ConnectionState.DEMO).asStateFlow()
 
     override fun update(transform: (AppState) -> AppState) {
         _state.update(transform)

@@ -10,7 +10,7 @@ Status means source implementation, not a claim of production readiness. Server 
 | Streaming | Polling fallback | Streaming events and reconnect cursors not implemented |
 | Models | Server-driven conversation execution | Model catalog/selection UI not connected |
 | Login | Prototype onboarding | Google cloud account and device authorization pending |
-| Server connection | Build-time HTTPS origin and isolated cache | Runtime pairing, reachability indicator and tunnel authorization pending |
+| Server connection | Build-time HTTPS origin, isolated cache, foreground connection status and retry | Runtime pairing and tunnel authorization pending |
 | Calls | UI, controls, timer, foreground service | Actual LiveKit/WebRTC media, interruption and voice agent pending |
 | Attachments | Cards, share intent | Real file selection/upload and result viewer incomplete |
 | Tasks, memory, schedules | Local demo screens | Mobile server endpoints currently placeholder collections |
@@ -19,6 +19,6 @@ Status means source implementation, not a claim of production readiness. Server 
 | Friends, connections, credits | Local prototype | Not authoritative server-backed operations |
 | Vault, app lock | Prototype UI | Not a secure vault; Keystore and actual authentication pending |
 | Widgets | Android widget providers | Deep-link routing requires further integration |
-| Background recovery | Local snapshot | Server task restoration across app restarts not integrated |
+| Background recovery | Local snapshot and foreground resync | Durable background job restoration not integrated |
 
 Demo purchases, fake account actions and simulated calls must not be presented as production operations. Future improvements should replace or remove these flows rather than treating renamed screens as finished capabilities.

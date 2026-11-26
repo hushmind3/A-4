@@ -14,6 +14,8 @@ object ApiFactory {
         val gson = GsonBuilder().setLenient().create()
         val client = OkHttpClient.Builder()
             .connectTimeout(20, TimeUnit.SECONDS)
+            // A dropped connection after submission must not silently replay a task.
+            .retryOnConnectionFailure(false)
             .readTimeout(60, TimeUnit.SECONDS)
             .addInterceptor { chain ->
                 val token = store.authToken
