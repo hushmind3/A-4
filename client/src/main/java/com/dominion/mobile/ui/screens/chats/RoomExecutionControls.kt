@@ -1,5 +1,12 @@
 package com.dominion.mobile.ui.screens.chats
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -32,6 +39,12 @@ fun RoomExecutionControls(vm: AppViewModel, roomId: String) {
     val p = LocalDominionPalette.current
     val scope = rememberCoroutineScope()
     val lifecycle = LocalLifecycleOwner.current
+    val context = LocalContext.current
+    var notificationsAllowed by remember { mutableStateOf(Build.VERSION.SDK_INT < 33 ||
+        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) }
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        notificationsAllowed = it
+    }
     val gate = remember(roomId) { Mutex() }
     var snapshot by remember(roomId) { mutableStateOf<RoomExecution?>(null) }
     var failure by remember(roomId) { mutableStateOf(false) }
@@ -96,6 +109,11 @@ fun RoomExecutionControls(vm: AppViewModel, roomId: String) {
                 else statusLabel(current?.status), color = p.textPrimary, style = MaterialTheme.typography.labelMedium)
             if (approvals.isNotEmpty()) Text(tr(lang, "승인 대기 ", "Pending approvals ") + approvals.size,
                 color = p.blue, style = MaterialTheme.typography.labelSmall)
+        }
+        if (!notificationsAllowed) {
+            TextButton(onClick = { permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) }) {
+                Text(tr(lang, "작업 알림 켜기", "Enable job alerts"))
+            }
         }
         TextButton(onClick = { open = true; scope.launch { refresh() } }) {
             Text(tr(lang, "작업·도구 실행", "Jobs and tools"))

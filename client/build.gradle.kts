@@ -86,6 +86,8 @@ dependencies {
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
     implementation("io.livekit:livekit-android:2.30.0")
+    // SDK 35 compatible WorkManager release.
+    implementation("androidx.work:work-runtime-ktx:2.10.5")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")

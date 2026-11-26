@@ -57,6 +57,8 @@ interface DominionApi {
     suspend fun pendingApprovals(): List<EngineApproval>
     @POST("api/approvals")
     suspend fun decideApproval(@Body body: ApprovalDecision): ApprovalResult
+    @GET("api/jobs/{id}")
+    suspend fun engineJob(@Path("id") id: String): EngineJob
     @POST("api/jobs/{id}/cancel")
     suspend fun cancelEngineJob(@Path("id") id: String): EngineJob
     @retrofit2.http.Streaming

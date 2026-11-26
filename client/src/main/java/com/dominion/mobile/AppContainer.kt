@@ -7,6 +7,7 @@ import com.dominion.mobile.data.local.EngineConnection
 import com.dominion.mobile.data.local.LocalStore
 import com.dominion.mobile.data.remote.ApiFactory
 import com.dominion.mobile.data.remote.RemoteBackedRepository
+import com.dominion.mobile.platform.background.BackgroundJobMonitor
 
 class AppContainer(context: Context) {
     private val app = context.applicationContext
@@ -27,7 +28,9 @@ class AppContainer(context: Context) {
                 .joinToString("") { b -> "%02x".format(b.toInt() and 255) }
         } ?: "unconfigured"
         val store = stores.getOrPut(scope) { LocalStore(app, scope) }
-        return RemoteBackedRepository(connection?.let(ApiFactory::create), store)
+        return RemoteBackedRepository(connection?.let(ApiFactory::create), store) { roomId, jobId ->
+            connection?.let { BackgroundJobMonitor.enqueue(app, it.origin, roomId, jobId) }
+        }
     }
 
     /** Call after cancelling the old ViewModel and with no active call. */

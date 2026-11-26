@@ -35,3 +35,8 @@ Existing engine owner settings are not globally changed. New mobile rooms defaul
 The existing Room database stores messages, conversations and local records transactionally with background writes and legacy migration. SQL substring search is bounded. Full paging and job recovery are not implemented. Old prototype/direct-cloud files remain untouched but are not displayed through a separate direct-cloud chat interface.
 
 Voice uses the existing LiveKit WSS session contract. A connected room does not establish that a voice agent is present. Video, interruption, real attachments, device permissions and background job notifications require further work. No live Android/server/cloud integration test was performed for this update.
+
+
+## Background reconciliation
+
+After the native room submit returns an actual job ID, the Android WorkManager watcher polls GET /api/jobs/{id}, validates the original room ID and job ID, and checks GET /api/approvals for the same engine session. WorkManager stores only origin hash, room ID and job ID, never a bearer token. A changed engine origin prevents stale job notifications. Status messages are informational; execution always stays on the DOMINION Rust server.

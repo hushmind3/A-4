@@ -23,7 +23,8 @@ import kotlinx.coroutines.flow.update
 
 class RemoteBackedRepository(
     private val endpoint: DominionApi?,
-    private val store: LocalStore
+    private val store: LocalStore,
+    private val onJobAccepted: (String, String) -> Unit = { _, _ -> }
 ) : DominionRepository {
 
     private val api: DominionApi get() = requireNotNull(endpoint) { "Connect DOMINION first" }
@@ -70,6 +71,8 @@ class RemoteBackedRepository(
             message.attachmentIds.orEmpty()))
         val row = requireNotNull(submitted.message)
         require(row.id.isNotBlank() && submitted.jobId.isNotBlank())
+        // Local scheduling failure must not cause a duplicate server submission.
+        runCatching { onJobAccepted(conversationId, submitted.jobId) }
         return message.copy(id = row.id, clientMessageId = message.clientMessageId ?: message.id,
             status = com.dominion.mobile.data.model.MessageStatus.SENT, jobId = submitted.jobId)
     }
