@@ -12,6 +12,10 @@ data class RoomExecution(
     val operations: List<EngineOperation>? = null,
     val approvals: List<EngineApproval>? = null
 )
+/** A job from the global endpoint may only be displayed for its original room. */
+fun EngineJob.belongsToRoom(roomId: String, expectedJobId: String): Boolean =
+    id == expectedJobId && input?.roomId == roomId && !sessionId.isNullOrBlank()
+
 data class EngineJobInput(val roomId: String? = null, val input: String? = null)
 data class EngineJob(val id: String?, val status: String?, val sessionId: String?,
     val input: EngineJobInput?, val stepIndex: Int = 0, val stepTotal: Int = 0,

@@ -22,6 +22,7 @@ import com.dominion.mobile.DominionApplication
 import com.dominion.mobile.MainActivity
 import com.dominion.mobile.R
 import com.dominion.mobile.data.remote.ApiFactory
+import com.dominion.mobile.data.remote.belongsToRoom
 import kotlinx.coroutines.CancellationException
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
@@ -74,7 +75,7 @@ class BackgroundJobWorker(context: Context, params: WorkerParameters) : Coroutin
             catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { return Result.success() } // next scheduled poll
 
-        if (job.id != jobId || job.input?.roomId != roomId || job.sessionId.isNullOrBlank()) {
+        if (!job.belongsToRoom(roomId, jobId)) {
             BackgroundJobMonitor.stop(applicationContext, engine.origin, roomId, jobId)
             return Result.success()
         }
