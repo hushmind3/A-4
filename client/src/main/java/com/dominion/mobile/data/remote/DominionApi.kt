@@ -38,6 +38,19 @@ data class NotificationDto(
 
 /** Existing DOMINION mobile and native engine contracts. */
 interface DominionApi {
+    @GET("api/oauth/providers")
+    suspend fun serviceAccounts(): List<ServiceAccount>
+    @POST("api/oauth/{id}/open")
+    suspend fun openServiceLogin(@Path("id") id: String): com.google.gson.JsonObject
+    @retrofit2.http.DELETE("api/oauth/{id}")
+    suspend fun disconnectServiceAccount(@Path("id") id: String): com.google.gson.JsonObject
+    @GET("api/mcp")
+    suspend fun serviceConnectors(): List<com.google.gson.JsonObject>
+    @POST("api/mcp")
+    suspend fun saveServiceConnector(@Body body: com.google.gson.JsonObject): ServiceConnector
+    @POST("api/browser/action")
+    suspend fun browserAction(@Body body: Map<String, String>): com.google.gson.JsonObject
+
     @GET("api/rooms/{id}/state")
     suspend fun roomExecution(@Path("id") id: String): RoomExecution
     @GET("api/approvals")

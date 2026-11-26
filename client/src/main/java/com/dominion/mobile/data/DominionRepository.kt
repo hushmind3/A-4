@@ -21,7 +21,7 @@ interface DominionRepository {
     suspend fun pollForReply(conversationId: String, knownIds: Set<String>): List<Message> =
         emptyList()
 
-    suspend fun requestVoiceCall(conversationId: String): com.dominion.mobile.data.remote.CallTokenResponse =
+    suspend fun requestVoiceCall(conversationId: String, video: Boolean = false): com.dominion.mobile.data.remote.CallTokenResponse =
         error("Voice calls require a connected server")
 
     suspend fun searchMessages(query: String): List<Message> = state.value.conversations
@@ -39,6 +39,15 @@ interface DominionRepository {
         com.dominion.mobile.data.remote.EngineAttachment = error("Engine not connected")
 
     suspend fun downloadAttachment(roomId: String, id: String): ByteArray = error("Engine not connected")
+
+    suspend fun serviceAccounts(): List<com.dominion.mobile.data.remote.ServiceAccount> = error("본체 연결 필요")
+    suspend fun serviceConnectors(): List<com.dominion.mobile.data.remote.ServiceConnector> = error("본체 연결 필요")
+    suspend fun openServiceLogin(id: String): Unit = error("본체 연결 필요")
+    suspend fun disconnectServiceAccount(id: String): Unit = error("본체 연결 필요")
+    suspend fun registerServiceConnector(registration: com.dominion.mobile.data.remote.ConnectorRegistration,
+        token: String): com.dominion.mobile.data.remote.ServiceConnector = error("본체 연결 필요")
+    suspend fun setServiceConnectorEnabled(id: String, enabled: Boolean): Unit = error("본체 연결 필요")
+    suspend fun openServiceWebsite(url: String): Unit = error("본체 연결 필요")
 
     fun update(transform: (AppState) -> AppState)
     suspend fun refresh() = Unit

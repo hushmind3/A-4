@@ -137,6 +137,15 @@ class AppViewModel(
         deliverRemoteMessage(message)
     }
 
+    suspend fun serviceAccounts() = repo.serviceAccounts()
+    suspend fun serviceConnectors() = repo.serviceConnectors()
+    suspend fun openServiceLogin(id: String) = repo.openServiceLogin(id)
+    suspend fun disconnectServiceAccount(id: String) = repo.disconnectServiceAccount(id)
+    suspend fun registerServiceConnector(registration: com.dominion.mobile.data.remote.ConnectorRegistration,
+        token: String) = repo.registerServiceConnector(registration, token)
+    suspend fun setServiceConnectorEnabled(id: String, enabled: Boolean) = repo.setServiceConnectorEnabled(id, enabled)
+    suspend fun openServiceWebsite(url: String) = repo.openServiceWebsite(url)
+
     suspend fun engineTools() = repo.engineTools()
     suspend fun roomExecution(roomId: String) = repo.roomExecution(roomId)
     suspend fun decideApproval(roomId: String, approval: com.dominion.mobile.data.remote.EngineApproval,
@@ -388,12 +397,12 @@ class AppViewModel(
     fun startCall(conversationId: String, video: Boolean): Boolean {
         val snapshot = repo.state.value
         val conversation = snapshot.conversation(conversationId) ?: return false
-        if (video || repo.connection.value != com.dominion.mobile.data.ConnectionState.CONNECTED ||
+        if (repo.connection.value != com.dominion.mobile.data.ConnectionState.CONNECTED ||
             snapshot.call != null) return false
         mutate { it.copy(call = CallSession(
             conversationId = conversationId,
             characterId = conversation.characterId,
-            video = false
+            video = false, requestVideo = video
         )) }
         return true
     }
@@ -410,7 +419,7 @@ class AppViewModel(
         } ?: s
     }
 
-    fun endCall() = mutate { it.copy(call = null) }
+    fun endCall() = mutate { com.dominion.mobile.data.CallHistory.finish(it) }
 
     fun minimizeCall(minimized: Boolean) = mutate { s ->
         s.call?.let { s.copy(call = it.copy(minimized = minimized)) } ?: s

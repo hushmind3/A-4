@@ -1,5 +1,14 @@
 package com.dominion.mobile.platform.audio
 
+import android.Manifest
+import android.content.pm.PackageManager
+import com.twilio.audioswitch.AudioDevice
+import io.livekit.android.room.track.Track
+import io.livekit.android.room.track.VideoTrack
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -22,6 +31,12 @@ import io.livekit.android.room.Room
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collect
 
+/** Ephemeral media state: never saved in the conversation database. */
+data class CallMediaState(val sessionId: String? = null, val room: Room? = null,
+    val localVideo: VideoTrack? = null, val remoteVideo: VideoTrack? = null,
+    val audioLevel: Float = 0f, val speaker: Boolean = false, val cameraBusy: Boolean = false,
+    val error: String? = null)
+
 /** Owns the actual media room; UI navigation does not own microphone lifetime. */
 class CallForegroundService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -29,6 +44,11 @@ class CallForegroundService : Service() {
     private var room: Room? = null
     private var sessionId: String? = null
     private var job: Job? = null
+    private val cameraGate = Mutex()
+    private var ready = false
+    private var cameraBusy = false
+    private var mediaError: String? = null
+    private var cameraActive = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -38,7 +58,7 @@ class CallForegroundService : Service() {
             return START_NOT_STICKY
         }
         if (intent?.action == ACTION_END) {
-            repo.update { it.copy(call = null) }
+            repo.update { com.dominion.mobile.data.CallHistory.finish(it) }
             stopSelf()
             return START_NOT_STICKY
         }
@@ -47,10 +67,20 @@ class CallForegroundService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        if (job?.isActive == true) return START_NOT_STICKY
+        if (job?.isActive == true) {
+            when (intent?.action) {
+                ACTION_CAMERA -> if (ready) scope.launch { applyCamera(intent.getBooleanExtra("enable", false)) }
+                ACTION_SPEAKER -> if (ready) selectSpeaker(intent.getBooleanExtra("enable", false))
+            }
+            return START_NOT_STICKY
+        }
+        if (intent?.action == ACTION_CAMERA || intent?.action == ACTION_SPEAKER) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
         sessionId = call.sessionId
         try {
-            foreground()
+            foreground(call.requestVideo && hasCameraPermission())
         } catch (_: Exception) {
             fail("Microphone foreground service could not start")
             return START_NOT_STICKY
@@ -58,7 +88,7 @@ class CallForegroundService : Service() {
         phase(CallPhase.CONNECTING)
         job = scope.launch {
             try {
-                val credentials = withTimeout(30_000) { repo.requestVoiceCall(call.conversationId) }
+                val credentials = withTimeout(30_000) { repo.requestVoiceCall(call.conversationId, call.requestVideo) }
                 val media = LiveKit.create(applicationContext)
                 room = media
                 coroutineScope {
@@ -84,11 +114,19 @@ class CallForegroundService : Service() {
                     }
                     withTimeout(35_000) { media.connect(credentials.url, credentials.token) }
                     check(media.localParticipant.setMicrophoneEnabled(true)) { "Microphone publish failed" }
+                    ready = true
                     peerState(media)
+                    if (call.requestVideo) applyCamera(true)
+                    launch {
+                        while (isActive) {
+                            publishMedia(media)
+                            delay(250)
+                        }
+                    }
                     var appliedMuted = false
                     repo.state.collect { state ->
                         val current = state.call
-                        if (current?.sessionId != sessionId || current.phase == CallPhase.FAILED) {
+                        if (current == null || current.sessionId != sessionId || current.phase == CallPhase.FAILED) {
                             stopSelf()
                         } else if (current.phase in setOf(CallPhase.WAITING_PEER, CallPhase.PEER_PRESENT) &&
                             current.muted != appliedMuted) {
@@ -107,6 +145,73 @@ class CallForegroundService : Service() {
         return START_NOT_STICKY
     }
 
+    private fun hasCameraPermission() = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
+        PackageManager.PERMISSION_GRANTED
+
+    private fun selectSpeaker(enable: Boolean) {
+        val handler = room?.audioSwitchHandler ?: return
+        val target = handler.availableAudioDevices.firstOrNull {
+            if (enable) it is AudioDevice.Speakerphone else it is AudioDevice.Earpiece
+        } ?: if (!enable) handler.availableAudioDevices.firstOrNull { it !is AudioDevice.Speakerphone } else null
+        if (target != null) {
+            mediaError = null
+            handler.selectDevice(target)
+        } else mediaError = "선택한 오디오 출력 장치를 사용할 수 없습니다."
+    }
+
+    private suspend fun applyCamera(enable: Boolean) = cameraGate.withLock {
+        val media = room ?: return@withLock
+        if (!ready) return@withLock
+        cameraBusy = true
+        mediaError = null
+        publishMedia(media)
+        try {
+            if (enable) {
+                check(hasCameraPermission()) { "카메라 권한이 필요합니다." }
+                // Called only after explicit UI request; Android enforces while-in-use permission.
+                foreground(true)
+                check(media.localParticipant.setCameraEnabled(true)) { "카메라 영상 송출 실패" }
+                cameraActive = true
+            } else {
+                check(media.localParticipant.setCameraEnabled(false)) { "카메라 중지 실패" }
+                cameraActive = false
+                foreground(false)
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            mediaError = "카메라 전환 실패 · 권한과 연결 상태를 확인하세요."
+            if (enable) {
+                // Do not retain a partially published camera after a failed enable.
+                val stopped = runCatching { media.localParticipant.setCameraEnabled(false) }.getOrDefault(false)
+                cameraActive = media.localParticipant.isCameraEnabled
+                if (stopped && !cameraActive) runCatching { foreground(false) }
+                else if (cameraActive) { fail("카메라 종료 확인 실패 · 통화를 중단합니다.") }
+            }
+        } finally {
+            cameraBusy = false
+            repo.update { state ->
+                val current = state.call
+                if (current != null && current.sessionId == sessionId) state.copy(call = current.copy(video = cameraActive, requestVideo = false, hadVideo = current.hadVideo || cameraActive)) else state
+            }
+            publishMedia(media)
+        }
+    }
+
+    private fun publishMedia(media: Room) {
+        val current = repo.state.value.call
+        if (current?.sessionId != sessionId) return
+        val local = media.localParticipant.getTrackPublication(Track.Source.CAMERA)
+            ?.takeUnless { it.muted }?.track as? VideoTrack
+        val remote = media.remoteParticipants.values.asSequence().mapNotNull {
+            it.getTrackPublication(Track.Source.CAMERA)?.takeUnless { p -> p.muted }?.track as? VideoTrack
+        }.firstOrNull()
+        val level = maxOf(media.localParticipant.audioLevel,
+            media.remoteParticipants.values.maxOfOrNull { it.audioLevel } ?: 0f).coerceIn(0f, 1f)
+        _mediaState.value = CallMediaState(sessionId, media, local, remote, level,
+            media.audioSwitchHandler?.selectedAudioDevice is AudioDevice.Speakerphone, cameraBusy, mediaError)
+    }
+
     private fun peerState(media: Room) {
         phase(if (media.remoteParticipants.isEmpty()) CallPhase.WAITING_PEER else CallPhase.PEER_PRESENT)
     }
@@ -116,8 +221,9 @@ class CallForegroundService : Service() {
             val call = state.call
             if (call == null || call.sessionId != sessionId || call.phase == CallPhase.FAILED) state
             else state.copy(call = call.copy(phase = value, error = error,
-                startedAt = if (value == CallPhase.PEER_PRESENT && call.phase != CallPhase.PEER_PRESENT &&
-                    call.phase != CallPhase.RECONNECTING) System.currentTimeMillis() else call.startedAt))
+                startedAt = if (value == CallPhase.PEER_PRESENT && call.connectedAt == null)
+                    System.currentTimeMillis() else call.startedAt,
+                connectedAt = call.connectedAt ?: if (value == CallPhase.PEER_PRESENT) System.currentTimeMillis() else null))
         }
     }
 
@@ -126,7 +232,7 @@ class CallForegroundService : Service() {
         stopSelf()
     }
 
-    private fun foreground() {
+    private fun foreground(camera: Boolean = false) {
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(CHANNEL, "Voice calls", NotificationManager.IMPORTANCE_LOW))
         val open = PendingIntent.getActivity(this, 1, Intent(this, MainActivity::class.java).apply {
@@ -145,11 +251,14 @@ class CallForegroundService : Service() {
             .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .build()
-        ServiceCompat.startForeground(this, 4301, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+        ServiceCompat.startForeground(this, 4301, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
+            (if (camera) ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA else 0))
     }
 
     override fun onDestroy() {
+        ready = false
         scope.cancel()
+        if (_mediaState.value.sessionId == sessionId) _mediaState.value = CallMediaState()
         room?.let { media ->
             runCatching { media.disconnect() }
             runCatching { media.release() }
@@ -157,7 +266,7 @@ class CallForegroundService : Service() {
         room = null
         if ((application as DominionApplication).containerReady) repo.update { state ->
             if (state.call?.sessionId == sessionId && state.call?.phase != CallPhase.FAILED)
-                state.copy(call = null) else state
+                com.dominion.mobile.data.CallHistory.finish(state) else state
         }
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         super.onDestroy()
@@ -166,6 +275,22 @@ class CallForegroundService : Service() {
     companion object {
         private const val CHANNEL = "dominion_call"
         private const val ACTION_END = "com.dominion.mobile.action.END_CALL"
+        private const val ACTION_CAMERA = "com.dominion.mobile.action.CALL_CAMERA"
+        private const val ACTION_SPEAKER = "com.dominion.mobile.action.CALL_SPEAKER"
+        private val _mediaState = MutableStateFlow(CallMediaState())
+        val mediaState = _mediaState.asStateFlow()
+        fun camera(context: Context, enabled: Boolean) {
+            context.startService(Intent(context, CallForegroundService::class.java).apply {
+                action = ACTION_CAMERA
+                putExtra("enable", enabled)
+            })
+        }
+        fun speaker(context: Context, enabled: Boolean) {
+            context.startService(Intent(context, CallForegroundService::class.java).apply {
+                action = ACTION_SPEAKER
+                putExtra("enable", enabled)
+            })
+        }
         fun start(context: Context) {
             ContextCompat.startForegroundService(context, Intent(context, CallForegroundService::class.java))
         }

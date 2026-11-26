@@ -1,6 +1,12 @@
 package com.dominion.mobile.ui.screens.chats
 
 import android.Manifest
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.viewinterop.AndroidView
+import io.livekit.android.renderer.TextureViewRenderer
+import io.livekit.android.room.Room
+import io.livekit.android.room.track.VideoTrack
 import android.content.pm.PackageManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -90,14 +96,26 @@ fun CallScreen(
             vm.failCall(call.sessionId, "Microphone foreground service could not start")
         }
     }
-    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) connect() else vm.failCall(call.sessionId, "Microphone permission denied")
+    val media by CallForegroundService.mediaState.collectAsState()
+    val mediaReady = media.sessionId == call.sessionId && call.phase in setOf(CallPhase.WAITING_PEER, CallPhase.PEER_PRESENT)
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
+        val mic = granted[Manifest.permission.RECORD_AUDIO] == true ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        val camera = !call.requestVideo || granted[Manifest.permission.CAMERA] == true ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        if (mic && camera) connect() else vm.failCall(call.sessionId, "통화에 필요한 마이크 또는 카메라 권한이 거부되었습니다.")
+    }
+    val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted && mediaReady) runCatching { CallForegroundService.camera(context, true) }
+            .onFailure { context.toast("카메라 전환 실패") }
+        else if (!granted) context.toast("카메라 권한이 필요합니다.")
     }
     LaunchedEffect(call.sessionId) {
         if (call.phase == CallPhase.PERMISSION) {
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
-                connect()
-            else permission.launch(Manifest.permission.RECORD_AUDIO)
+            val required = if (call.requestVideo) listOf(Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA)
+                else listOf(Manifest.permission.RECORD_AUDIO)
+            val missing = required.filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
+            if (missing.isEmpty()) connect() else permission.launch(missing.toTypedArray())
         }
     }
 
@@ -146,7 +164,7 @@ fun CallScreen(
                 )
             )
     ) {
-        if (call.video) {
+        if (call.video || (mediaReady && media.remoteVideo != null)) {
             Box(
                 Modifier
                     .fillMaxSize()
@@ -158,7 +176,11 @@ fun CallScreen(
                         )
                     )
             ) {
-                Column(
+                val remoteTrack = media.remoteVideo
+                val mediaRoom = media.room
+                if (mediaReady && remoteTrack != null && mediaRoom != null) {
+                    CallVideoView(mediaRoom, remoteTrack, Modifier.fillMaxSize())
+                } else Column(
                     Modifier.fillMaxSize(),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
@@ -171,7 +193,7 @@ fun CallScreen(
                         color = Color.White
                     )
                     Text(
-                        if (LocalLang.current == com.dominion.mobile.data.model.Lang.KO) "영상 연결 준비 필요" else "Video transport not connected",
+                        if (LocalLang.current == com.dominion.mobile.data.model.Lang.KO) "상대 영상 대기 중" else "Waiting for remote video",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.White.copy(alpha = 0.6f)
                     )
@@ -185,7 +207,9 @@ fun CallScreen(
                         .background(Brush.verticalGradient(listOf(Color(0xFF3A3E48), Color(0xFF1F2229)))),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(if (LocalLang.current == com.dominion.mobile.data.model.Lang.KO) "나" else "Me", color = Color.White.copy(alpha = 0.75f))
+                    val localTrack = media.localVideo
+                    if (mediaReady && localTrack != null && mediaRoom != null) CallVideoView(mediaRoom, localTrack, Modifier.fillMaxSize())
+                    else Text(tr(lang, "카메라 꺼짐", "Camera off"), color = Color.White.copy(alpha = 0.75f))
                 }
             }
         }
@@ -241,7 +265,7 @@ fun CallScreen(
                 }
             }
 
-            if (!call.video) {
+            if (!call.video && !(mediaReady && media.remoteVideo != null)) {
                 Spacer(Modifier.weight(0.6f))
                 CallAvatar(accent, character)
                 Spacer(Modifier.height(26.dp))
@@ -273,10 +297,11 @@ fun CallScreen(
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Waveform(active = false, color = Color.White.copy(alpha = 0.75f))
+                    Waveform(active = mediaReady, color = Color.White.copy(alpha = 0.75f), level = if (mediaReady) media.audioLevel else 0f)
                 }
             }
 
+            if (mediaReady && media.error != null) Text(media.error.orEmpty(), color = Color(0xFFFFB4AB), modifier = Modifier.padding(8.dp))
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -292,10 +317,10 @@ fun CallScreen(
                     onClick = { if (call.phase in setOf(CallPhase.WAITING_PEER, CallPhase.PEER_PRESENT)) vm.toggleCallMute() }
                 )
                 CallControl(
-                    glyph = if (call.speaker) Glyph.SPEAKER else Glyph.SPEAKER_OFF,
+                    glyph = if (media.speaker) Glyph.SPEAKER else Glyph.SPEAKER_OFF,
                     label = if (LocalLang.current == com.dominion.mobile.data.model.Lang.KO) "스피커" else "Speaker",
-                    active = false,
-                    onClick = { context.toast(tr(lang, "스피커 전환 연동 필요", "Speaker routing not connected")) }
+                    active = mediaReady && media.speaker,
+                    onClick = { if (mediaReady) runCatching { CallForegroundService.speaker(context, !media.speaker) }.onFailure { context.toast("스피커 전환 실패") } }
                 )
                 CallControl(
                     glyph = Glyph.VIDEO,
@@ -304,8 +329,14 @@ fun CallScreen(
                     } else {
                         if (LocalLang.current == com.dominion.mobile.data.model.Lang.KO) "영상 켜기" else "Video on"
                     },
-                    active = false,
-                    onClick = { context.toast(tr(lang, "영상통화 연동 필요", "Video transport not connected")) }
+                    active = call.video,
+                    onClick = {
+                        if (mediaReady && !media.cameraBusy) {
+                            if (!call.video && ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED)
+                                cameraPermission.launch(Manifest.permission.CAMERA)
+                            else runCatching { CallForegroundService.camera(context, !call.video) }.onFailure { context.toast("카메라 전환 실패") }
+                        }
+                    }
                 )
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(
@@ -390,7 +421,7 @@ private fun CallControl(
 }
 
 @Composable
-private fun Waveform(active: Boolean, color: Color) {
+private fun Waveform(active: Boolean, color: Color, level: Float = 0f) {
     val transition = rememberInfiniteTransition(label = "wave")
     val t by transition.animateFloat(
         initialValue = 0f,
@@ -403,7 +434,7 @@ private fun Waveform(active: Boolean, color: Color) {
         val gap = size.width / bars
         for (i in 0 until bars) {
             val wave = if (active) {
-                (0.25f + 0.75f * kotlin.math.abs(kotlin.math.sin((i * 0.55f) + (t * kotlin.math.PI * 2).toFloat())))
+                (0.14f + level.coerceIn(0f, 1f) * 0.86f * kotlin.math.abs(kotlin.math.sin((i * 0.55f) + (t * kotlin.math.PI * 2).toFloat())))
             } else 0.14f
             val h = size.height * wave * 0.7f
             drawLine(
@@ -414,5 +445,23 @@ private fun Waveform(active: Boolean, color: Color) {
                 cap = androidx.compose.ui.graphics.StrokeCap.Round
             )
         }
+    }
+}
+
+@Composable
+private fun CallVideoView(room: Room, track: VideoTrack, modifier: Modifier) {
+    val context = LocalContext.current
+    val renderer = remember(room, track, context) {
+        TextureViewRenderer(context).also { room.initVideoRenderer(it) }
+    }
+    DisposableEffect(track, renderer) {
+        track.addRenderer(renderer)
+        onDispose {
+            runCatching { track.removeRenderer(renderer) }
+            renderer.release()
+        }
+    }
+    androidx.compose.runtime.key(room, track) {
+        AndroidView(factory = { renderer }, modifier = modifier)
     }
 }

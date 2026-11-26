@@ -134,6 +134,81 @@ class RemoteBackedRepository(
         }
     }
 
+    private val connectorLock = Mutex()
+    private val connectorGson = com.google.gson.Gson()
+
+    override suspend fun serviceAccounts(): List<ServiceAccount> = api.serviceAccounts().also { accounts ->
+        update { current ->
+            current.copy(connections = current.connections.map { connection ->
+                if (connection.builtIn) connection else connection.copy(
+                    connected = accounts.any { it.authorizes(connection.provider) })
+            })
+        }
+    }
+
+    override suspend fun serviceConnectors(): List<ServiceConnector> =
+        api.serviceConnectors().map { connectorGson.fromJson(it, ServiceConnector::class.java) }
+
+    override suspend fun openServiceLogin(id: String) {
+        val account = api.serviceAccounts().firstOrNull { it.id == id }
+            ?: error("본체에 등록되지 않은 서비스")
+        require(account.configured)
+        // The existing engine owns the callback (often desktop loopback).
+        // Start authorization on that computer, never pass the owner token to an external URL.
+        val result = api.openServiceLogin(id)
+        check(result.get("opened")?.asBoolean == true)
+    }
+
+    override suspend fun disconnectServiceAccount(id: String) {
+        require(api.serviceAccounts().any { it.id == id && it.connected })
+        val result = api.disconnectServiceAccount(id)
+        require(result.get("connected")?.asBoolean == false)
+        check(serviceAccounts().any { it.id == id && !it.connected })
+    }
+
+    override suspend fun registerServiceConnector(registration: ConnectorRegistration, token: String): ServiceConnector {
+        connectorLock.lock()
+        try {
+            registration.validate()
+            val before = serviceConnectors()
+            val existing = before.firstOrNull { it.id == registration.id }
+            // A retry may update the SAME record only. Never send an existing bearer to another host.
+            require(existing == null || (existing.url == registration.url && existing.name == registration.name.trim()))
+            require(before.none { it.id != registration.id && it.name.equals(registration.name.trim(), true) })
+            val saved = api.saveServiceConnector(registration.record(token))
+            check(saved.id == registration.id && saved.url == registration.url &&
+                saved.enabled == true && saved.transport == "http")
+            val verified = serviceConnectors().firstOrNull { it.id == registration.id } ?: error("등록 확인 실패")
+            check(verified.url == registration.url && verified.enabled != false && verified.name == registration.name.trim())
+            return verified
+        } finally { connectorLock.unlock() }
+    }
+
+    override suspend fun setServiceConnectorEnabled(id: String, enabled: Boolean) {
+        connectorLock.lock()
+        try {
+            val record = api.serviceConnectors().firstOrNull { it.get("id")?.asString == id }
+                ?: error("외부 서비스가 없습니다.")
+            require(record.get("transport")?.asString == "http")
+            val patch = record.deepCopy().apply {
+                remove("apiKey")
+                addProperty("enabled", enabled)
+                if (enabled) addProperty("approval", true)
+            }
+            val saved = api.saveServiceConnector(patch)
+            check(saved.id == id && saved.enabled == enabled)
+            check(serviceConnectors().any { it.id == id && it.enabled == enabled })
+        } finally { connectorLock.unlock() }
+    }
+
+    override suspend fun openServiceWebsite(url: String) {
+        val uri = java.net.URI(url)
+        require(uri.scheme == "https" && !uri.host.isNullOrBlank() && uri.userInfo == null)
+        // Manual user navigation only. No automatic password entry or credential export.
+        val result = api.browserAction(mapOf("action" to "open", "url" to url))
+        check(result.get("error") == null || result.get("error").isJsonNull)
+    }
+
     override suspend fun createConversation(title: String, characterId: String): String {
         require(state.value.character(characterId) != null)
         val id = java.util.UUID.randomUUID().toString()
@@ -151,8 +226,8 @@ class RemoteBackedRepository(
         return room.id
     }
 
-    override suspend fun requestVoiceCall(conversationId: String): CallTokenResponse =
-        requireNotNull(api.startCall(conversationId, StartCallRequest(video = false)).data) {
+    override suspend fun requestVoiceCall(conversationId: String, video: Boolean): CallTokenResponse =
+        requireNotNull(api.startCall(conversationId, StartCallRequest(video = video)).data) {
             "Server did not issue a call session"
         }.requireUsable()
 

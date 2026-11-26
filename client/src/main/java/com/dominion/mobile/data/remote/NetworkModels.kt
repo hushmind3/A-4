@@ -350,5 +350,5 @@ data class RoomInput(val input: String, val clientMessageId: String, val reasoni
 data class RoomMessage(val id: String)
 data class RoomSubmission(val jobId: String, val message: RoomMessage?)
 data class EngineTool(val name: String, val description: String? = null, val approval: Boolean = false,
-    val source: String? = null, val parameters: com.google.gson.JsonElement? = null)
+    val source: String? = null, val parameters: com.google.gson.JsonElement? = null, val server: String? = null)
 data class SkillImportResult(val added: Int, val skills: List<String>)

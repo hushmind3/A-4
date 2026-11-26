@@ -343,6 +343,7 @@ fun CustomizeScreen(
     var name by remember(character.id) { mutableStateOf(character.name) }
     var bio by remember(character.id) { mutableStateOf(character.bio) }
     val context = LocalContext.current
+    val previewVoice = com.dominion.mobile.platform.audio.rememberVoicePreview(lang)
 
     Column(
         Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().background(p.screen).imePadding()
@@ -439,8 +440,8 @@ fun CustomizeScreen(
             )
             Spacer(Modifier.height(14.dp))
             SecondaryButton(
-                text = tr(lang, "미리 듣기", "Preview voice"),
-                onClick = { context.toast(tr(lang, "실제 음성 미리 듣기 연결 필요", "Voice preview is not connected")) }
+                text = tr(lang, "미리 듣기 (기기 음성)", "Preview voice (device)"),
+                onClick = { previewVoice(voice) { context.toast(tr(lang, "기기의 음성 합성 서비스를 확인하세요.", "Check the device speech service")) } }
             )
             Spacer(Modifier.height(30.dp))
         }

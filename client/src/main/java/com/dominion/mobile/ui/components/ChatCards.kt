@@ -103,7 +103,12 @@ fun MessageBubble(
     val p = LocalDominionPalette.current
     val lang = LocalLang.current
     if (message.sender == MessageSender.SYSTEM) {
-        SystemMessage(message.text)
+        if (message.text.isNotBlank()) SystemMessage(message.text)
+        message.card?.let { card ->
+            Box(Modifier.fillMaxWidth().padding(vertical = 4.dp), contentAlignment = Alignment.Center) {
+                ChatCardView(card, onAction = onCardAction)
+            }
+        }
         return
     }
     val mine = message.sender == MessageSender.USER

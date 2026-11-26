@@ -152,6 +152,7 @@ fun ConnectionsScreen(
                     }
                 }
             }
+            item { ServiceConnectionPanel(vm) }
             item { SectionLabel(tr(lang, "도구", "Tools"), Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) }
             item {
                 LazyVerticalGrid(
@@ -287,7 +288,7 @@ fun ConnectionDetailScreen(
 
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().background(p.screen)) {
         ScreenTopBar(title = connection.name, onBack = onBack)
-        Column(Modifier.weight(1f)) {
+        Column(Modifier.weight(1f).verticalScroll(androidx.compose.foundation.rememberScrollState())) {
             Column(
                 Modifier.fillMaxWidth().padding(vertical = 12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -320,7 +321,7 @@ fun ConnectionDetailScreen(
                 }
             }
             Column(Modifier.padding(horizontal = 16.dp)) {
-                SectionLabel(tr(lang, "허용할 권한", "Permissions"))
+                SectionLabel(tr(lang, "기존 권한 항목 (참고)", "Requested permissions (reference)"))
                 Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(p.card).border(0.5.dp, p.hairline, RoundedCornerShape(18.dp))) {
                     Column {
                         connection.scopes.forEachIndexed { index, scope ->
@@ -342,7 +343,7 @@ fun ConnectionDetailScreen(
                     }
                 }
                 Spacer(Modifier.height(16.dp))
-                SectionLabel(tr(lang, "공유 방식", "Sharing"))
+                SectionLabel(tr(lang, "공유 방식 (설계 항목)", "Sharing options (design)"))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChipItem(tr(lang, "항상 허용", "Always allow"), sharing == 0, onClick = { sharing = 0 })
                     FilterChipItem(tr(lang, "매번 확인", "Ask each time"), sharing == 1, onClick = { sharing = 1 })
@@ -353,15 +354,16 @@ fun ConnectionDetailScreen(
                     Text(
                         tr(
                             lang,
-                            "도미니온은 이 도구를 사용하기 전에 무엇을 할지 먼저 알려드려요. 민감한 작업은 항상 확인을 받아요.",
-                            "Your Dominion tells you what it plans to do before using this tool. Sensitive actions always need your confirmation."
+                            "위 선택지는 원래 설계입니다. 실제 권한은 아래 계정의 승인 범위와 본체 도구 정책을 따릅니다.",
+                            "The original design options are shown above. Actual permissions follow the account grant and engine policy."
                         ),
                         style = MaterialTheme.typography.bodySmall,
                         color = p.textTertiary
                     )
                 }
             }
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.height(12.dp))
+            ServiceConnectionPanel(vm, connection)
             Column(Modifier.padding(16.dp)) {
                 if (connection.builtIn) {
                     Text(
@@ -371,11 +373,8 @@ fun ConnectionDetailScreen(
                     )
                 } else {
                     PrimaryButton(
-                        text = tr(lang, "본체에서 연결 설정", "Configure on engine"),
-                        onClick = {
-                            context.toast(tr(lang, "본체 설정에서 실제 서비스 인증이 필요합니다.", "Service authorization must be configured on the engine."))
-                            onBack()
-                        }
+                        text = tr(lang, "연결 화면 닫기", "Close connection details"),
+                        onClick = onBack
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(

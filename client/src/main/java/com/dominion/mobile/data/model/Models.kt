@@ -344,7 +344,10 @@ data class CallSession(
     val minimized: Boolean = false,
     val phase: CallPhase = CallPhase.PERMISSION,
     val error: String? = null,
-    val sessionId: String = java.util.UUID.randomUUID().toString()
+    val sessionId: String = java.util.UUID.randomUUID().toString(),
+    val requestVideo: Boolean = false,
+    val connectedAt: Long? = null,
+    val hadVideo: Boolean = false
 )
 
 data class AppState(
