@@ -304,7 +304,7 @@ fun ProfileScreen(
         item {
             Spacer(Modifier.height(28.dp))
             Text(
-                "DOMINION Mobile · ${if (com.dominion.mobile.BuildConfig.USE_DEMO_DATA) tr(lang, "데모 모드", "Demo mode") else tr(lang, "서버 모드", "Server mode")}",
+                "DOMINION Mobile · ${tr(lang, "개인 AI 비서", "Personal AI assistant")}",
                 style = MaterialTheme.typography.labelSmall,
                 color = p.textTertiary,
                 modifier = Modifier.fillMaxWidth(),

@@ -1,26 +1,42 @@
 package com.dominion.mobile
 
 import android.content.Context
-import com.dominion.mobile.data.DemoRepository
 import com.dominion.mobile.data.DominionRepository
+import com.dominion.mobile.data.local.EncryptedRecordStore
+import com.dominion.mobile.data.local.EngineConnection
 import com.dominion.mobile.data.local.LocalStore
 import com.dominion.mobile.data.remote.ApiFactory
 import com.dominion.mobile.data.remote.RemoteBackedRepository
 
 class AppContainer(context: Context) {
+    private val app = context.applicationContext
+    private val credentials = EncryptedRecordStore(app, "dominion_engine_connection", EngineConnection::class.java)
+    val cloudAccount by lazy { com.dominion.mobile.data.remote.CloudAccountRepository(app) }
+    @Volatile var engine: EngineConnection? = runCatching {
+        credentials.load()?.let { EngineConnection.parse(it.origin, it.ownerToken) }
+    }.getOrNull()
+        private set
+    private val stores = mutableMapOf<String, LocalStore>()
+    @Volatile var repository: DominionRepository = buildRepository(engine)
+        private set
 
-    // Separate demo fixtures from each real server's private cache.
-    private val cacheScope = if (BuildConfig.USE_DEMO_DATA) "demo" else {
-        java.security.MessageDigest.getInstance("SHA-256")
-            .digest(BuildConfig.API_BASE_URL.toByteArray(Charsets.UTF_8))
-            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+    private fun buildRepository(connection: EngineConnection?): DominionRepository {
+        val scope = connection?.let {
+            java.security.MessageDigest.getInstance("SHA-256")
+                .digest(it.origin.toByteArray(Charsets.UTF_8))
+                .joinToString("") { b -> "%02x".format(b.toInt() and 255) }
+        } ?: "unconfigured"
+        val store = stores.getOrPut(scope) { LocalStore(app, scope) }
+        return RemoteBackedRepository(connection?.let(ApiFactory::create), store)
     }
-    val store = LocalStore(context, cacheScope)
-    val cloudAccount by lazy { com.dominion.mobile.data.remote.CloudAccountRepository(context.applicationContext) }
 
-    val repository: DominionRepository = if (BuildConfig.USE_DEMO_DATA) {
-        DemoRepository(store)
-    } else {
-        RemoteBackedRepository(ApiFactory.create(store), store)
+    /** Call after cancelling the old ViewModel and with no active call. */
+    @Synchronized fun applyEngine(connection: EngineConnection?) {
+        check(repository.state.value.call == null)
+        stores.values.forEach { it.flush() }
+        val next = buildRepository(connection)
+        if (connection == null) credentials.clear() else credentials.save(connection)
+        engine = connection
+        repository = next
     }
 }

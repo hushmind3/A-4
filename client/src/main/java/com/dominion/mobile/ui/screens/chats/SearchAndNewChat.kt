@@ -320,8 +320,7 @@ fun NewChatScreen(
             confirmLabel = tr(lang, "만들기", "Create"),
             onConfirm = {
                 showExtra = false
-                val conv = vm.createExtraConversation(it)
-                if (conv.isNotBlank()) onOpenChat(conv)
+                vm.createExtraConversation(it, onOpenChat)
             },
             onDismiss = { showExtra = false }
         )

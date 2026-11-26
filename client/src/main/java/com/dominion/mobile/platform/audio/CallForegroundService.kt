@@ -43,7 +43,7 @@ class CallForegroundService : Service() {
             return START_NOT_STICKY
         }
         val call = repo.state.value.call
-        if (call == null || repo.isDemo || call.phase == CallPhase.FAILED) {
+        if (call == null || call.phase == CallPhase.FAILED) {
             stopSelf()
             return START_NOT_STICKY
         }

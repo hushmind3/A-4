@@ -21,12 +21,15 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
 class RemoteBackedRepository(
-    private val api: DominionApi,
+    private val endpoint: DominionApi?,
     private val store: LocalStore
 ) : DominionRepository {
 
+    private val api: DominionApi get() = requireNotNull(endpoint) { "Connect DOMINION first" }
+
     private fun emptyRemoteState() = AppState(
         onboarded = true,
+        characters = emptyList(),
         account = Account(
             name = "DOMINION", birthday = "", phone = "", email = "",
             plan = Plan.FREE, jelly = 0, energy = 0, energyMax = 0,
@@ -36,7 +39,7 @@ class RemoteBackedRepository(
 
     private val _state = MutableStateFlow((store.loadState() ?: emptyRemoteState()).copy(onboarded = true))
     override val state: StateFlow<AppState> = _state.asStateFlow()
-    private val _connection = MutableStateFlow(ConnectionState.CONNECTING)
+    private val _connection = MutableStateFlow(if (endpoint == null) ConnectionState.AUTH_REQUIRED else ConnectionState.CONNECTING)
     override val connection = _connection.asStateFlow()
     private val refreshLock = Mutex()
 
@@ -45,14 +48,38 @@ class RemoteBackedRepository(
     override suspend fun searchMessages(query: String): List<Message> = store.searchMessages(query)
 
     override suspend fun deliverMessage(conversationId: String, message: Message): Message {
-        // Keep the stable client id across retries so cooperating servers can deduplicate.
-        val dto = api.sendMessage(
-            conversationId,
-            SendMessageRequest(text = message.text, client_message_id = message.id)
-        ).data
-        return requireNotNull(dto?.toDomain()?.takeIf { it.id.isNotBlank() }) {
-            "Server did not acknowledge the message with an ID"
+        // Use the native room endpoint, which persists a job and deduplicates retries.
+        var room = api.engineRoom(conversationId)
+        // Only the dedicated mobile assistant is initialized automatically. Other
+        // existing rooms retain the owner's explicit execution settings.
+        if (!room.toolsEnabled && conversationId == "assistant") {
+            api.updateRoom(conversationId, RoomConfigUpdate(toolsEnabled = true))
+            room = api.engineRoom(conversationId)
         }
+        check(room.toolsEnabled) { "대화방 설정에서 도구를 활성화하세요." }
+        val submitted = api.submitRoomMessage(conversationId, RoomInput(message.text, message.id,
+            if (state.value.settings.lang == com.dominion.mobile.data.model.Lang.KO) "ko" else "default"))
+        val row = requireNotNull(submitted.message)
+        require(row.id.isNotBlank() && submitted.jobId.isNotBlank())
+        return message.copy(id = row.id, clientMessageId = message.id,
+            status = com.dominion.mobile.data.model.MessageStatus.SENT, jobId = submitted.jobId)
+    }
+
+    override suspend fun createConversation(title: String, characterId: String): String {
+        require(state.value.character(characterId) != null)
+        val id = java.util.UUID.randomUUID().toString()
+        // Use the owner's existing assistant model pool if configured.
+        val existing = api.engineRooms().firstOrNull { it.id == "assistant" }
+        val room = api.createRoom(RoomCreate(id, title.ifBlank { "새 대화" }.take(160),
+            listOf(characterId), models = existing?.models.orEmpty()))
+        check(room.id == id && room.toolsEnabled)
+        update { current ->
+            current.copy(conversations = listOf(com.dominion.mobile.data.model.Conversation(
+                id = room.id, characterId = characterId, titleOverride = room.name,
+                kind = com.dominion.mobile.data.model.ConversationKind.DIRECT
+            )) + current.conversations.filterNot { it.id == room.id })
+        }
+        return room.id
     }
 
     override suspend fun requestVoiceCall(conversationId: String): CallTokenResponse =
@@ -87,13 +114,14 @@ class RemoteBackedRepository(
     }
 
     override suspend fun refresh() {
+        if (endpoint == null) { _connection.value = ConnectionState.AUTH_REQUIRED; return }
         if (!refreshLock.tryLock()) return
         try {
             if (_connection.value != ConnectionState.CONNECTED) {
                 _connection.value = ConnectionState.CONNECTING
             }
             coroutineScope {
-                // Essential server data first; do not treat an unreachable server as a demo.
+                // Essential server data first; preserve cached state when the server is unreachable.
                 val accountRequest = async { requireNotNull(api.me().data) { "Missing account" }.toDomain() }
                 val agentsRequest = async { api.characters().data.map { it.toDomain() } }
                 val roomsRequest = async { api.conversations().data.map { it.toDomain() } }

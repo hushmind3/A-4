@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 /** One database per execution origin. Secrets stay outside the conversation database. */
-class LocalStore(context: Context, scope: String = "demo") {
+class LocalStore(context: Context, scope: String = "unconfigured") {
     private val prefs = context.getSharedPreferences("dominion_mobile_$scope", Context.MODE_PRIVATE)
     private val gson = GsonBuilder().serializeNulls().create()
     private val db = Room.databaseBuilder(context.applicationContext, MobileDatabase::class.java,
@@ -150,12 +150,12 @@ class LocalStore(context: Context, scope: String = "demo") {
         persist(clean(state))
     }
 
+    fun flush() { writer.submit { pending.getAndSet(null)?.let { persist(it.state) } }.get() }
+
     suspend fun searchMessages(query: String): List<Message> = withContext(writerDispatcher) {
         pending.getAndSet(null)?.let { persist(it.state) }
         if (query.isBlank()) emptyList() else dao.searchMessages(query.trim(), 30)
             .map { gson.fromJson(it.payload, Message::class.java).copy(conversationId = it.conversationId) }
     }
 
-    // Legacy private server transport uses this separate preference; cloud credentials use Keystore.
-    val authToken: String? get() = prefs.getString("auth_token", null)
 }

@@ -1,22 +1,8 @@
-import java.net.URI
-
 plugins {
     id("com.google.devtools.ksp")
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
-}
-
-// A remote build must explicitly identify its own DOMINION server.
-val dominionServerUrl = providers.gradleProperty("dominionServerUrl").orNull?.trim()?.takeIf { it.isNotEmpty() }
-val configuredServer = dominionServerUrl?.let { raw ->
-    val uri = URI(raw)
-    require(uri.scheme == "https" && !uri.host.isNullOrBlank() &&
-        uri.userInfo == null && uri.query == null && uri.fragment == null &&
-        (uri.path.isNullOrEmpty() || uri.path == "/")) {
-        "dominionServerUrl must be an HTTPS origin without credentials, path, query or fragment"
-    }
-    raw.trimEnd('/') + "/"
 }
 
 android {
@@ -32,8 +18,6 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         vectorDrawables.useSupportLibrary = true
-        buildConfigField("String", "API_BASE_URL", "\"${configuredServer ?: "https://dominion.invalid/"}\"")
-        buildConfigField("boolean", "USE_DEMO_DATA", (configuredServer == null).toString())
     }
 
     buildTypes {

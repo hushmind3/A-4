@@ -71,8 +71,6 @@ fun SettingsScreen(
 ) {
     val p = LocalDominionPalette.current
     val lang = LocalLang.current
-    var confirmSignOut by remember { mutableStateOf(false) }
-    var confirmDelete by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val own = state.myCharacter()
 
@@ -119,6 +117,10 @@ fun SettingsScreen(
                 )
             }
 
+            SectionLabel(tr(lang, "실행 서버", "Execution server"), Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+            SettingsGroup {
+                SettingsRow(title = tr(lang, "본체 연결 및 모델·도구", "Engine, models and tools"), onClick = { onNavigate(Routes.ENGINE_SETTINGS) })
+            }
             SectionLabel("DOMINION Cloud", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
             SettingsGroup {
                 SettingsRow(
@@ -127,10 +129,6 @@ fun SettingsScreen(
                     leading = { GlyphIcon(Glyph.GLOBE, p.textPrimary, size = 18.dp) },
                     onClick = { onNavigate(Routes.CLOUD_ACCOUNT) }
                 )
-                Hairline()
-                SettingsRow(title = tr(lang, "Cloud 일반 대화", "Cloud chat"),
-                    subtitle = tr(lang, "본체 없이 무료 모델 사용", "Use free models without engine"),
-                    onClick = { onNavigate(Routes.CLOUD_CHAT) })
             }
 
             SectionLabel(tr(lang, "앱", "App"), Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
@@ -217,24 +215,6 @@ fun SettingsScreen(
                 )
             }
 
-            Spacer(Modifier.height(16.dp))
-            SettingsGroup {
-                SettingsRow(
-                    title = tr(lang, "로그아웃", "Sign out"),
-                    danger = true,
-                    showChevron = false,
-                    leading = { GlyphIcon(Glyph.SEND, p.danger, size = 18.dp) },
-                    onClick = { confirmSignOut = true }
-                )
-                Hairline()
-                SettingsRow(
-                    title = tr(lang, "계정 삭제", "Delete account"),
-                    danger = true,
-                    showChevron = false,
-                    leading = { GlyphIcon(Glyph.CLOSE, p.danger, size = 18.dp) },
-                    onClick = { confirmDelete = true }
-                )
-            }
             Spacer(Modifier.height(26.dp))
             Text(
                 "DOMINION Mobile ${com.dominion.mobile.BuildConfig.VERSION_NAME} · ${state.settings.legalVersion}",
@@ -247,28 +227,6 @@ fun SettingsScreen(
         }
     }
 
-    if (confirmSignOut) {
-        PrimaryDialog(
-            title = tr(lang, "로그아웃할까요?", "Sign out?"),
-            body = tr(lang, "이 기기의 데모 데이터가 초기화되고 로그인 화면으로 돌아가요.", "Local demo data resets and you return to sign-in."),
-            confirmLabel = tr(lang, "로그아웃", "Sign out"),
-            onConfirm = { confirmSignOut = false; vm.resetAllData() },
-            dismissLabel = tr(lang, "취소", "Cancel"),
-            onDismiss = { confirmSignOut = false },
-            destructive = true
-        )
-    }
-    if (confirmDelete) {
-        PrimaryDialog(
-            title = tr(lang, "계정을 삭제할까요?", "Delete your account?"),
-            body = tr(lang, "대화, 기억, 금고가 모두 삭제돼요. 이 작업은 되돌릴 수 없어요.", "Chats, memories and vault items are deleted. This cannot be undone."),
-            confirmLabel = tr(lang, "삭제", "Delete"),
-            onConfirm = { confirmDelete = false; vm.deleteAccount() },
-            dismissLabel = tr(lang, "취소", "Cancel"),
-            onDismiss = { confirmDelete = false },
-            destructive = true
-        )
-    }
 }
 
 @Composable

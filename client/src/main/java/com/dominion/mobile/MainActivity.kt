@@ -23,6 +23,14 @@ class MainActivity : ComponentActivity() {
 
     private var ready = false
 
+    suspend fun applyEngine(connection: com.dominion.mobile.data.local.EngineConnection?) {
+        val container = (application as DominionApplication).container
+        check(container.repository.state.value.call == null)
+        viewModelStore.clear()
+        try { withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) { container.applyEngine(connection) } }
+        finally { recreate() }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()

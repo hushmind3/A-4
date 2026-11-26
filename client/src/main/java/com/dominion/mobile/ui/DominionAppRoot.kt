@@ -23,7 +23,6 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
-import com.dominion.mobile.data.ConnectionState
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavType
@@ -43,7 +42,6 @@ import com.dominion.mobile.ui.screens.chats.SearchScreen
 import com.dominion.mobile.ui.screens.friends.AddFriendScreen
 import com.dominion.mobile.ui.screens.friends.FriendProfileScreen
 import com.dominion.mobile.ui.screens.main.MainScreen
-import com.dominion.mobile.ui.screens.onboarding.OnboardingScreen
 import com.dominion.mobile.ui.screens.profile.ConnectionDetailScreen
 import com.dominion.mobile.ui.screens.profile.ConnectionsScreen
 import com.dominion.mobile.ui.screens.profile.CreditsScreen
@@ -55,7 +53,7 @@ import com.dominion.mobile.ui.screens.profile.TasksScreen
 import com.dominion.mobile.ui.screens.profile.VaultScreen
 import com.dominion.mobile.ui.screens.settings.AccountScreen
 import com.dominion.mobile.ui.screens.settings.CloudAccountScreen
-import com.dominion.mobile.ui.screens.chats.CloudChatScreen
+import com.dominion.mobile.ui.screens.settings.EngineSettingsScreen
 import com.dominion.mobile.ui.screens.settings.AppearanceScreen
 import com.dominion.mobile.ui.screens.settings.BlockedUsersScreen
 import com.dominion.mobile.ui.screens.settings.EditProfileScreen
@@ -70,6 +68,11 @@ import com.dominion.mobile.ui.theme.DominionTheme
 @Composable
 fun DominionAppRoot(vm: AppViewModel) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val notice by vm.notice.collectAsStateWithLifecycle()
+    LaunchedEffect(notice) {
+        notice?.let { android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show(); vm.clearNotice() }
+    }
     val systemDark = isSystemInDarkTheme()
     val dark = when (state.settings.theme) {
         ThemeMode.SYSTEM -> systemDark
@@ -85,14 +88,12 @@ fun DominionAppRoot(vm: AppViewModel) {
         }
         val lifecycleOwner = LocalLifecycleOwner.current
         LaunchedEffect(lifecycleOwner, vm) {
-            if (vm.connection.value != ConnectionState.DEMO) {
                 lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
                     while (isActive) {
                         vm.refreshServer()
                         delay(30_000L)
                     }
                 }
-            }
         }
         DisposableEffect(lifecycleOwner, state.settings.appLock) {
             val observer = LifecycleEventObserver { _, event ->
@@ -104,30 +105,7 @@ fun DominionAppRoot(vm: AppViewModel) {
             onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
         }
 
-        LaunchedEffect(state.onboarded) {
-            val route = nav.currentBackStackEntry?.destination?.route
-            if (state.onboarded && route == Routes.ONBOARDING) {
-                nav.navigate(Routes.MAIN) { popUpTo(0) { inclusive = true } }
-            } else if (!state.onboarded && route != Routes.ONBOARDING && route != null) {
-                nav.navigate(Routes.ONBOARDING) { popUpTo(0) { inclusive = true } }
-            }
-        }
-
-        NavHost(
-            navController = nav,
-            startDestination = if (state.onboarded) Routes.MAIN else Routes.ONBOARDING
-        ) {
-            composable(Routes.ONBOARDING) {
-                OnboardingScreen(
-                    state = state,
-                    vm = vm,
-                    onDone = {
-                        nav.navigate(Routes.MAIN) {
-                            popUpTo(Routes.ONBOARDING) { inclusive = true }
-                        }
-                    }
-                )
-            }
+        NavHost(navController = nav, startDestination = Routes.MAIN) {
             composable(Routes.MAIN) {
                 MainScreen(state = state, vm = vm, onNavigate = { nav.navigate(it) })
             }
@@ -238,11 +216,11 @@ fun DominionAppRoot(vm: AppViewModel) {
                     onNavigate = { nav.navigate(it) }
                 )
             }
-            composable(Routes.CLOUD_CHAT) {
-                CloudChatScreen(onBack = { nav.popBackStack() }, onAccount = { nav.navigate(Routes.CLOUD_ACCOUNT) })
+            composable(Routes.ENGINE_SETTINGS) {
+                EngineSettingsScreen(onBack = { nav.popBackStack() })
             }
             composable(Routes.CLOUD_ACCOUNT) {
-                CloudAccountScreen(onBack = { nav.popBackStack() }, onChat = { nav.navigate(Routes.CLOUD_CHAT) })
+                CloudAccountScreen(onBack = { nav.popBackStack() })
             }
             composable(Routes.ACCOUNT) {
                 AccountScreen(

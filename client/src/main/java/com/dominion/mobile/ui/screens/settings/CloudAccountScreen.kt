@@ -16,7 +16,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.dominion.mobile.BuildConfig
 import com.dominion.mobile.DominionApplication
 import com.dominion.mobile.data.remote.CloudAccountSnapshot
 import com.dominion.mobile.ui.LocalLang
@@ -28,7 +27,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
-fun CloudAccountScreen(onBack: () -> Unit, onChat: () -> Unit) {
+fun CloudAccountScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val repo = remember(context.applicationContext) {
         (context.applicationContext as DominionApplication).container.cloudAccount
@@ -91,7 +90,7 @@ fun CloudAccountScreen(onBack: () -> Unit, onChat: () -> Unit) {
             Text(tr(lang, "기존 DOMINION Cloud Google 계정을 연결합니다. 로컬 서버 사용에는 로그인이 필요하지 않습니다.",
                 "Connect your existing DOMINION Cloud Google account. Local server use does not require cloud sign-in."))
             Text(tr(lang, "실행 서버: ", "Execution server: ") +
-                if (BuildConfig.USE_DEMO_DATA) tr(lang, "미설정", "Not configured") else BuildConfig.API_BASE_URL)
+                ((context.applicationContext as DominionApplication).container.engine?.origin ?: tr(lang, "미설정", "Not configured")))
             Text(tr(lang, "클라우드 계정 연결은 실행 서버 접근 권한과 별개입니다.", "Cloud account authorization does not grant execution server access."))
             if (error) Text(tr(lang, "클라우드 연결 또는 확인에 실패했습니다. 다시 확인하세요.",
                 "Cloud request or verification failed. Retry."), color = MaterialTheme.colorScheme.error)
@@ -129,7 +128,6 @@ fun CloudAccountScreen(onBack: () -> Unit, onChat: () -> Unit) {
                         style = MaterialTheme.typography.titleMedium)
                     current.models.forEach { Text(it.name.ifBlank { it.id }) }
                     Text(tr(lang, "이 목록은 본체 실행 모델을 변경하지 않습니다.", "This list does not change the engine model."))
-                    Button(onClick = onChat, enabled = !busy) { Text(tr(lang, "Cloud 일반 대화 시작", "Start Cloud chat")) }
                     OutlinedButton(onClick = { runAction(repo::disconnect) }, enabled = !busy) {
                         Text(tr(lang, "클라우드 연결 해제", "Disconnect cloud account"))
                     }

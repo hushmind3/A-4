@@ -1,24 +1,20 @@
-# DOMINION Mobile — feature matrix
+# Feature status
 
-Status means source implementation, not a claim of production readiness. Server behavior refers to the inspected DOMINION branch1 snapshot. No live Android/cloud/server end-to-end run is claimed here.
+Source implementation, not production certification.
 
-| Area | Client source | Real integration / gap |
-| --- | --- | --- |
-| App identity, navigation, theme | Native Kotlin/Compose | DOMINION namespace, resources and app identity |
-| Chats, search, draft, conversation actions | Native UI, Room database, SQL message search | Real rooms/history via REST; creation and mutation need server contracts; paging and FTS pending |
-| Sending and retry | REST client, sending/failed status, stable local IDs | Server acknowledges text; durable idempotency still missing |
-| Streaming | Polling fallback | Streaming events and reconnect cursors not implemented |
-| Models | Engine room execution plus optional Cloud-only general chat (free-auto or listed free model) | Engine model selection not connected; Cloud inference unverified |
-| Login | Optional Cloud browser approval, encrypted app session, revocation, account/quota/model read | Real Google approval not tested; private engine device authorization pending |
-| Server connection | Build-time HTTPS origin, isolated cache, foreground connection status and retry | Runtime pairing and tunnel authorization pending |
-| Calls | LiveKit 2.30.0 voice transport, microphone permission, mute, foreground service and connection states | Live agent, interruption and video rendering pending; end-to-end test not run |
-| Attachments | Cards, share intent | Real file selection/upload and result viewer incomplete |
-| Tasks, memory, schedules | Local demo screens | Mobile server endpoints currently placeholder collections |
-| Job progress/approval/cancel/resume | Not integrated | Needs real engine event and job contracts |
-| Notifications | Permission/UI and call notification | FCM and durable job updates pending |
-| Friends, connections, credits | Local prototype | Not authoritative server-backed operations |
-| Vault, app lock | Prototype UI | Not a secure vault; Keystore and actual authentication pending |
-| Widgets | Android widget providers | Deep-link routing requires further integration |
-| Background recovery | Room database, legacy snapshot migration, interrupted send recovery and foreground resync | Durable background job restoration not integrated |
+| Area | Current state |
+|---|---|
+| Identity and UI | Kotlin/Compose; original Korean UI and character presentation retained |
+| Authentication | Shared Google approval and independent encrypted engine credential; token renewal/device pairing pending |
+| Local storage | Room/SQLite and existing migration/search |
+| Chat | Native room submission, server message/job IDs and history polling |
+| New rooms | Actual engine creation; existing agents and default tools |
+| Models | Existing provider and model catalogue; room model pool and server rotation |
+| Tools | Existing tool inventory, room enablement, user-confirmed Korean skill import |
+| Cloudflare | Can select configured engine providers; actual deployment and inference untested |
+| Job execution | Existing harness; accepted job ID stored; complete progress/approval/cancel/recovery UI pending |
+| Voice | LiveKit transport; live AI peer unverified |
+| Video, files, camera, notification | Further integration required |
+| Other existing screens | Local records or incomplete prototype UI; not evidence of live execution |
 
-Demo purchases, fake account actions and simulated calls must not be presented as production operations. Future improvements should replace or remove these flows rather than treating renamed screens as finished capabilities.
+Removed hardcoded reply generator, fictional seed data, mock onboarding, separate direct-cloud chat, and build-time server-mode selection. Unconnected means unconnected. Remaining UI-only operations must be implemented or removed, not reported as completed work.

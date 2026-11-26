@@ -333,3 +333,20 @@ fun parseHex(value: String?): Long? {
         else null
     }.getOrNull()
 }
+
+// Native room contract; the server owns tools, model selection, persona and execution.
+data class EngineModel(val id: String, val name: String? = null)
+data class EngineProvider(val id: String, val name: String, val kind: String? = null, val enabled: Boolean? = null)
+data class RoomModel(val providerId: String, val model: String, val reasoningEffort: String? = null)
+data class RoomCreate(val id: String, val name: String, val agentIds: List<String>,
+    val toolsEnabled: Boolean = true, val autoModels: Boolean = true, val rounds: Int = 1,
+    val models: List<RoomModel> = emptyList())
+data class EngineRoom(val id: String, val name: String, val toolsEnabled: Boolean = false,
+    val autoModels: Boolean = false, val models: List<RoomModel> = emptyList())
+data class RoomConfigUpdate(val toolsEnabled: Boolean = true, val autoModels: Boolean? = null,
+    val models: List<RoomModel>? = null)
+data class RoomInput(val input: String, val clientMessageId: String, val reasoningLanguage: String)
+data class RoomMessage(val id: String)
+data class RoomSubmission(val jobId: String, val message: RoomMessage?)
+data class EngineTool(val name: String, val description: String? = null, val approval: Boolean = false)
+data class SkillImportResult(val added: Int, val skills: List<String>)

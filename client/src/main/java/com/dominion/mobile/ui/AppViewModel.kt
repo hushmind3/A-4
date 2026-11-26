@@ -3,8 +3,6 @@ package com.dominion.mobile.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.dominion.mobile.data.DemoData
-import com.dominion.mobile.data.DemoReplies
 import com.dominion.mobile.data.MessageSync
 import com.dominion.mobile.data.DominionRepository
 import com.dominion.mobile.data.model.Account
@@ -47,16 +45,6 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
-data class OnboardingProfile(
-    val name: String,
-    val birthday: String,
-    val characterName: String,
-    val color: Long,
-    val shape: CharacterShape,
-    val voice: VoiceTone,
-    val lang: Lang
-)
-
 class AppViewModel(
     private val repo: DominionRepository
 ) : ViewModel() {
@@ -79,104 +67,6 @@ class AppViewModel(
         copy(conversations = conversations.map { if (it.id == id) transform(it) else it })
 
     private fun id(prefix: String) = "${prefix}_${UUID.randomUUID()}"
-
-    // ---------------------------------------------------------------- onboarding
-
-    fun completeOnboarding(profile: OnboardingProfile) {
-        mutate { s ->
-            val mine = s.myCharacter()
-            val updatedMine = if (mine == null) {
-                Character(
-                    id = DemoData.MY_ID,
-                    name = profile.characterName,
-                    tagline = "나의 도미니온",
-                    bio = "나만의 도미니온. 함께 이야기하고 일을 맡겨보세요.",
-                    color = profile.color,
-                    shape = profile.shape,
-                    level = 1,
-                    xp = 0,
-                    mine = true,
-                    voice = profile.voice
-                )
-            } else {
-                mine.copy(
-                    name = profile.characterName,
-                    color = profile.color,
-                    shape = profile.shape,
-                    voice = profile.voice
-                )
-            }
-            val characters = if (mine == null) s.characters + updatedMine
-            else s.characters.map { if (it.id == updatedMine.id) updatedMine else it }
-            var next = s.copy(
-                onboarded = true,
-                account = s.account.copy(name = profile.name, birthday = profile.birthday),
-                characters = characters,
-                settings = s.settings.copy(lang = profile.lang)
-            )
-            if (next.conversations.isEmpty()) {
-                next = next.copy(
-                    conversations = listOf(
-                        Conversation(
-                            id = "conv_welcome",
-                            characterId = updatedMine.id,
-                            messages = listOf(
-                                Message(
-                                    id = "welcome_1",
-                                    conversationId = "conv_welcome",
-                                    sender = MessageSender.ASSISTANT,
-                                    text = "안녕하세요, ${profile.characterName}이에요. 오늘은 무엇을 함께 해볼까요?",
-                                    createdAt = System.currentTimeMillis()
-                                )
-                            ),
-                            updatedAt = System.currentTimeMillis()
-                        )
-                    )
-                )
-            }
-            next
-        }
-    }
-
-    fun enterDemo() {
-        mutate { s ->
-            val mine = s.myCharacter()
-            var next = s.copy(onboarded = true)
-            if (next.conversations.isEmpty() && mine != null) {
-                next = next.copy(
-                    conversations = listOf(
-                        Conversation(
-                            id = "conv_welcome",
-                            characterId = mine.id,
-                            messages = listOf(
-                                Message(
-                                    id = "welcome_1",
-                                    conversationId = "conv_welcome",
-                                    sender = MessageSender.ASSISTANT,
-                                    text = "데모 모드예요. 채팅, 통화, 일정, 금고까지 자유롭게 둘러보세요.",
-                                    createdAt = System.currentTimeMillis()
-                                )
-                            ),
-                            updatedAt = System.currentTimeMillis()
-                        )
-                    )
-                )
-            }
-            next
-        }
-    }
-
-    fun resetAllData() {
-        repo.reset()
-    }
-
-    fun resetDemoContent() {
-        mutate { DemoData.initial(onboarded = true).copy(settings = it.settings) }
-    }
-
-    fun deleteAccount() {
-        mutate { DemoData.freshState() }
-    }
 
     // --------------------------------------------------------------------- shell
 
@@ -235,42 +125,18 @@ class AppViewModel(
             },
             createdAt = now,
             card = card,
-            status = if (repo.isDemo) MessageStatus.SENT else MessageStatus.SENDING
+            status = MessageStatus.SENDING
         )
         mutate { s ->
             s.withConversation(conversationId) {
                 it.copy(messages = it.messages + message, updatedAt = now, unread = 0, draft = "")
-            }.copy(typingConversationId = if (repo.isDemo) conversationId else null)
+            }.copy(typingConversationId = null)
         }
 
-        if (!repo.isDemo) {
-            deliverRemoteMessage(message)
-            return
-        }
-
-        viewModelScope.launch {
-            delay(850)
-            mutate { s ->
-                val conv = s.conversation(conversationId) ?: return@mutate s
-                val character = s.character(conv.characterId) ?: return@mutate s
-                val reply = DemoReplies.replyTo(trimmed, character, lang = s.settings.lang)
-                val replyMessage = Message(
-                    id = id("msg"),
-                    conversationId = conversationId,
-                    sender = MessageSender.ASSISTANT,
-                    text = reply,
-                    createdAt = System.currentTimeMillis()
-                )
-                s.withConversation(conversationId) {
-                    it.copy(messages = it.messages + replyMessage, updatedAt = System.currentTimeMillis())
-                }.copy(typingConversationId = null)
-            }
-        }
+        deliverRemoteMessage(message)
     }
 
-    /** Re-send the same client message id, instead of creating duplicate local messages. */
     fun retryMessage(conversationId: String, messageId: String) {
-        if (repo.isDemo) return
         val message = repo.state.value.conversation(conversationId)?.messages?.firstOrNull {
             it.id == messageId && it.sender == MessageSender.USER && it.status == MessageStatus.FAILED
         } ?: return
@@ -293,6 +159,7 @@ class AppViewModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
+                _notice.value = "본체 연결, 모델 및 도구 설정을 확인하세요."
                 mutate { s ->
                     s.withConversation(conversationId) { conv ->
                         conv.copy(messages = conv.messages.map {
@@ -373,7 +240,6 @@ class AppViewModel(
 
     /** Refresh when entering a room, including messages received while the app was closed. */
     fun refreshConversation(conversationId: String) {
-        if (repo.isDemo) return
         viewModelScope.launch {
             val messages = try {
                 repo.loadMessages(conversationId)
@@ -458,57 +324,27 @@ class AppViewModel(
         s.copy(conversations = s.conversations.filterNot { it.id == conversationId })
     }
 
-    fun createExtraConversation(title: String): String {
-        val s = repo.state.value
-        val mine = s.myCharacter() ?: return ""
-        val convId = id("conv")
-        val conversation = Conversation(
-            id = convId,
-            characterId = mine.id,
-            titleOverride = title.ifBlank { "새 대화" },
-            kind = ConversationKind.EXTRA,
-            messages = listOf(
-                Message(
-                    id = id("sys"),
-                    conversationId = convId,
-                    sender = MessageSender.SYSTEM,
-                    text = "'${title.ifBlank { "새 대화" }}' 대화를 시작했어요.",
-                    kind = MessageKind.SYSTEM,
-                    createdAt = System.currentTimeMillis()
-                )
-            ),
-            updatedAt = System.currentTimeMillis()
-        )
-        mutate { it.copy(conversations = listOf(conversation) + it.conversations) }
-        return convId
+    private val _notice = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    val notice: StateFlow<String?> = _notice
+    fun clearNotice() { _notice.value = null }
+
+    fun createExtraConversation(title: String, onCreated: (String) -> Unit) {
+        val characterId = repo.state.value.myCharacter()?.id
+        if (characterId == null) {
+            _notice.value = "본체를 연결하고 에이전트를 먼저 확인하세요."
+            return
+        }
+        viewModelScope.launch {
+            try { onCreated(repo.createConversation(title, characterId)) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { _notice.value = "본체에서 대화방을 생성하지 못했습니다." }
+        }
     }
 
     fun directConversationFor(characterId: String): String? {
-        val s = repo.state.value
-        s.conversationFor(characterId)?.let { return it.id }
-        val character = s.character(characterId) ?: return null
-        val convId = id("conv")
-        mutate {
-            it.copy(
-                conversations = listOf(
-                    Conversation(
-                        id = convId,
-                        characterId = characterId,
-                        messages = listOf(
-                            Message(
-                                id = id("msg"),
-                                conversationId = convId,
-                                sender = MessageSender.ASSISTANT,
-                                text = "안녕하세요! ${character.name}이에요. 무엇을 도와드릴까요?",
-                                createdAt = System.currentTimeMillis()
-                            )
-                        ),
-                        updatedAt = System.currentTimeMillis()
-                    )
-                ) + it.conversations
-            )
-        }
-        return convId
+        val existing = repo.state.value.conversationFor(characterId)
+        if (existing == null) _notice.value = "새 대화방에서 본체 에이전트를 연결하세요."
+        return existing?.id
     }
 
     // -------------------------------------------------------------------- calls
@@ -516,7 +352,7 @@ class AppViewModel(
     fun startCall(conversationId: String, video: Boolean): Boolean {
         val snapshot = repo.state.value
         val conversation = snapshot.conversation(conversationId) ?: return false
-        if (video || repo.isDemo || repo.connection.value != com.dominion.mobile.data.ConnectionState.CONNECTED ||
+        if (video || repo.connection.value != com.dominion.mobile.data.ConnectionState.CONNECTED ||
             snapshot.call != null) return false
         mutate { it.copy(call = CallSession(
             conversationId = conversationId,

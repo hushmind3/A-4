@@ -140,7 +140,7 @@ fun MainScreen(
                 }
             ) { padding ->
                 Column(Modifier.fillMaxSize().padding(bottom = padding.calculateBottomPadding())) {
-                    ConnectionBanner(connection, vm::retryServerConnection)
+                    ConnectionBanner(connection, vm::retryServerConnection, { onNavigate(Routes.ENGINE_SETTINGS) })
                     state.sharedText?.let { shared ->
                         SharedBanner(
                             text = shared,
@@ -198,8 +198,7 @@ fun MainScreen(
             confirmLabel = tr(lang, "만들기", "Create"),
             onConfirm = {
                 showNewTab = false
-                val conv = vm.createExtraConversation(it)
-                if (conv.isNotBlank()) onNavigate(Routes.chat(conv))
+                vm.createExtraConversation(it) { conv -> onNavigate(Routes.chat(conv)) }
             },
             onDismiss = { showNewTab = false }
         )
@@ -562,12 +561,11 @@ private fun MinimizedCallBar(
 }
 
 @Composable
-private fun ConnectionBanner(state: ConnectionState, onRetry: () -> Unit) {
+private fun ConnectionBanner(state: ConnectionState, onRetry: () -> Unit, onSettings: () -> Unit) {
     val lang = LocalLang.current
     val p = LocalDominionPalette.current
     if (state == ConnectionState.CONNECTED) return
     val message = when (state) {
-        ConnectionState.DEMO -> tr(lang, "데모 모드 · 실제 서버 미연결", "Demo mode · no live server")
         ConnectionState.CONNECTING -> tr(lang, "서버 연결 중", "Connecting to server")
         ConnectionState.OFFLINE -> tr(lang, "서버 연결 끊김 · 저장된 대화", "Offline · cached conversations")
         ConnectionState.AUTH_REQUIRED -> tr(lang, "서버 인증 필요", "Server authorization required")
@@ -580,7 +578,9 @@ private fun ConnectionBanner(state: ConnectionState, onRetry: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(message, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = p.textPrimary)
-        if (state != ConnectionState.DEMO && state != ConnectionState.CONNECTING) {
+        if (state == ConnectionState.AUTH_REQUIRED) {
+            Text(tr(lang, "서버 연결", "Connect"), Modifier.clickable(onClick = onSettings).padding(6.dp), color = p.blue)
+        } else if (state != ConnectionState.CONNECTING) {
             Text(tr(lang, "다시 연결", "Retry"), Modifier.clickable(onClick = onRetry).padding(6.dp), color = p.blue,
                 style = MaterialTheme.typography.labelMedium)
         }

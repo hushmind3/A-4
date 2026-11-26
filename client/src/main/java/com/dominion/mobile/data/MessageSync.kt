@@ -21,7 +21,10 @@ object MessageSync {
                 merged[existingIndex] = remote.copy(
                     status = MessageStatus.SENT,
                     card = remote.card ?: original.card,
-                    replyTo = remote.replyTo ?: original.replyTo
+                    replyTo = remote.replyTo ?: original.replyTo,
+                    jobId = remote.jobId ?: original.jobId,
+                    clientMessageId = remote.clientMessageId ?: original.clientMessageId,
+                    modelId = remote.modelId ?: original.modelId
                 )
             } else {
                 merged.add(remote.copy(status = MessageStatus.SENT))

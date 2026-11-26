@@ -1,86 +1,37 @@
-# DOMINION Mobile — backend integration
+# Backend integration
 
-## Service boundaries
+Source baseline: [DOMINION branch1](https://github.com/hushmind3/dominion/tree/0ebc2d1667982fae6a8396d3bb39c46af361c36a). Inspect the actual deployed version before connecting.
 
-The mobile client sends requests to the user's DOMINION execution server. The DOMINION Cloud Worker is a separate identity, pairing, quota and inference service. Do not use its origin as the execution-server base URL.
+## Authorization
 
-Source baseline inspected: [DOMINION branch1](https://github.com/hushmind3/dominion/tree/0ebc2d1667982fae6a8396d3bb39c46af361c36a), particularly `src/api/mobile.rs`, `src/api/mod.rs` and `cloud/README.md`. Other branches and deployed instances can differ.
+The fixed DOMINION Cloud gateway supports app pairing using a hash of a generated bearer, browser Google approval, status polling, shared quota/model catalogue and revocation. Its current app token has a seven-day lifetime; no automatic refresh contract was found. It does not authorize private engine access.
 
-## Configure the client
+The engine connection settings accept an explicit HTTPS origin and a separate owner token, matching the existing `X-Dominion-Token` guard. Both credential stores use Android Keystore and AES-GCM; redirects and silent request replay are disabled. This is owner-controlled access, not device-scoped authorization or automatic Cloudflare tunnel discovery. Never expose an unauthenticated engine. Server switching preserves old local databases. No provider keys are embedded.
 
-```bash
-./gradlew :client:assembleDebug -PdominionServerUrl=https://your-dominion-server.example
-```
+## Native engine routes
 
-Only an HTTPS origin is accepted; the final slash is normalized. No server URL selects demo mode. The app isolates demo storage from each server origin and does not seed a remote session with fictional demo conversations. A configured URL is not proof of reachability or authentication. While the app is visible, it refreshes the account, agent and room collections concurrently, every 30 seconds after completion. The UI distinguishes connection loss, authorization errors and other server errors. The seven prototype collection reads are not part of the foreground heartbeat. The client does not automatically retry failed network submissions.
+| Method | Path | Client behavior |
+|---|---|---|
+| GET | /v1/me, /v1/characters, /v1/conversations | Owner, agent and room projections |
+| GET | /v1/conversations/{id}/messages | History; merge by server message ID |
+| POST | /api/rooms | Create real room with existing agent, model pool and tools enabled |
+| GET/POST | /api/rooms/{id} | Read/update room tool settings and model pool |
+| POST | /api/rooms/{id}/messages | Durable message/job submission with clientMessageId and reasoningLanguage |
+| GET | /api/providers, /api/providers/{id}/models | Existing configured model catalogue |
+| GET | /api/tools | Existing available tool definitions and approval flags |
+| POST | /api/skills/import-repo | Explicit user-confirmed import of Korean skill repository |
+| POST | /v1/conversations/{id}/calls | Existing LiveKit session token |
 
-The client must be used against an authorized, operator-controlled deployment. The current local server's mobile auth handlers are development stubs; do not expose them as production login.
+The native submission endpoint returns a stored message ID and job ID and implements server-side duplicate protection for stable clientMessageId values. It does not use the older mobile text endpoint's synthetic acknowledgement. The client persists the job ID with the outgoing message and merges subsequent history. Acknowledgement means accepted, not completed. Full job-event restoration, cancellation and approval UI still require integration. Korean UI sends reasoningLanguage=ko; the server's existing agent system prompt and tool policies remain authoritative.
 
-## Existing mobile REST contract
+Existing engine owner settings are not globally changed. New mobile rooms default to tools enabled. Only the dedicated assistant room is initialized automatically on first send; other rooms require explicit configuration. Model pool changes require user action and are verified by a subsequent read. A Cloud model is only usable through the harness when configured as a provider.
 
-| Method | Route | Behavior in inspected branch1 |
-| --- | --- | --- |
-| GET | /v1/me | Local owner projection |
-| GET | /v1/characters | Agent list |
-| GET | /v1/conversations | Room list |
-| GET | /v1/conversations/{id}/messages | Room-session history |
-| POST | /v1/conversations/{id}/messages | Submit text to room execution |
-| POST | /v1/conversations/{id}/calls | Issue LiveKit room token |
-| GET | /v1/tasks, /v1/schedules, /v1/memories | Empty placeholder collections |
-| GET | /v1/friends, /v1/connections, /v1/explore, /v1/vault, /v1/inbox | Empty placeholder collections |
-| POST | /v1/auth/{provider} | Local stub, not Google authentication |
+## Korean skills
 
-Message submission body: `{"text":"...","client_message_id":"..."}`. The current client maintains a stable client message ID. The inspected server reads text but does not implement durable deduplication of client IDs and may return a synthetic acknowledgement ID. Retries after an ambiguous network failure can submit duplicate work. Production must reconcile with a persisted server request ID and guarantee idempotency. The client polls message history after acknowledgement; there is no verified streaming or durable background subscription.
+[NomaDamas/k-skill](https://github.com/NomaDamas/k-skill) has real Korean administrative, legal, travel, public-data and language-oriented skills; the inspected revision is c41a11703b0ea25b8c5c3c62bd0f06f31997f7f8. Many entries are instruction stubs requiring the external CLI, a hosted/self-hosted proxy or credentials. The native settings screen delegates import to DOMINION's existing skill importer. This is not proof that every skill can execute: dependencies, authorization, runtime skill selection and live provider results require verification. Do not bypass identity checks, final-submission approvals or service terms.
 
-Response envelope: `{"data": ...}`. The client friend DTO uses `is_assistant` (optional, defaults to false) to identify assistant accounts. The inspected server currently returns an empty friend collection; this field is a client contract, not a verified server capability.
+## Local history and media
 
-The current client still includes some prototype endpoints not provided by branch1 (for example individual conversation detail). Do not treat them as live.
+The existing Room database stores messages, conversations and local records transactionally with background writes and legacy migration. SQL substring search is bounded. Full paging and job recovery are not implemented. Old prototype/direct-cloud files remain untouched but are not displayed through a separate direct-cloud chat interface.
 
-## Cloud identity and device authorization
-
-The existing Cloud documentation describes Google identity and app pairing:
-
-- POST /v1/apps/start: start pairing with a hash of a generated app bearer.
-- GET /v1/apps/status: poll for approval.
-- POST /v1/apps/disconnect: revoke app access.
-
-The documented pairing grant covers shared account quota and free inference; it does not grant access to the private execution engine or synchronize local history. Android now stores the separate app bearer using AES-GCM and Android Keystore; device authorization and an authenticated route to the selected DOMINION server remain separate work. Never reuse an owner bearer as an external app credential. Do not embed model API keys.
-
-Official references: [Android Google sign-in](https://developer.android.com/identity/sign-in/credential-manager-siwg-implementation), [Android network security](https://developer.android.com/privacy-and-security/security-config).
-
-## Production integration gates
-
-1. Shared Google account and revocable mobile session.
-2. Device-specific authorization and authenticated Cloudflare/private-server route.
-3. Server health/reconnect state; model availability and selection through the engine.
-4. Durable submission ID, history/event stream, cancellation, approval and job recovery.
-5. Voice/video media, microphone/camera permission, audio focus and lifecycle integration.
-6. Secure storage and notification delivery, followed by real device/server/cloud integration testing.
-
-The current source does not implement these gates end-to-end. The REST client is not a second agent harness.
-
-## Voice media connection
-
-The mobile client requests POST /v1/conversations/{id}/calls with video=false. It requires a nonempty room/token, future expiry and a WSS endpoint, then connects to LiveKit and publishes the granted microphone. A connected media room without a remote peer is displayed as waiting, not as a successful AI conversation. The service owns the room and releases it on termination; live call state is not persisted to disk. Demo calls and simulated call records are disabled. Camera and video controls are not offered until video rendering is connected.
-
-The inspected server may return a plain ws:// fallback; a deployed secure WSS endpoint is required. Issuing a room token does not dispatch a voice agent. Actual bidirectional AI speech, interruption and task execution depend on a real agent participant using the DOMINION harness. No server or Cloudflare change was made here.
-
-SDK: [LiveKit Android 2.30.0](https://github.com/livekit/client-sdk-android/releases/tag/v2.30.0), Apache-2.0. See the [official Android integration guide](https://docs.livekit.io/transport/sdk-platforms/android/) and [foreground service restrictions](https://developer.android.com/develop/background-work/services/fgs/service-types).
-
-## Android Cloud account implementation
-
-The fixed gateway origin is `https://dominion-cloud.dominion-hushmind.workers.dev`, matching the existing TypeScript Cloud SDK. The app generates a random 32-byte base64url bearer prefixed with `dapp_`, sends only its SHA-256 base64url hash to `/v1/apps/start`, verifies the exact HTTPS approval URL and opens the system browser. The existing browser page handles Google identity and nonce-bound approval. The app restores its encrypted pending/approved credential, polls `/v1/apps/status` while the Cloud screen is visible, checks `/v1/me` for the matching session and `free_inference` scope, and reads `/v1/billing` and `/v1/models`. Disconnect requires server revocation before clearing local credentials. Expired or revoked sessions are cleared on status refresh. The server controls expiry (10 minutes pending, seven days approved in the inspected implementation).
-
-Cloud tokens are never sent to the execution-server Retrofit client. Cloud-only general chat can now invoke the existing free inference gateway; no separate harness is introduced. Android Google OAuth credentials, server changes, Cloudflare deployment and real-device approval were not performed. The operator's existing Google/Cloud configuration must be available for live approval.
-
-References: [DOMINION Cloud SDK](https://github.com/hushmind3/dominion/blob/0ebc2d1667982fae6a8396d3bb39c46af361c36a/packages/sdk-typescript/src/cloud.ts), [Android Keystore](https://developer.android.com/privacy-and-security/keystore), [RFC 8252](https://www.rfc-editor.org/rfc/rfc8252).
-
-## Mobile database
-
-Room 2.7.2 + KSP for the project's Kotlin 2.0.21 version. Each existing execution origin uses a separate SQLite file, with foreign-key cascade and indexed conversation/message ordering. The metadata row excludes conversations, messages and local task/memory/schedule/vault/archive/activity records; these use separate keyed rows. Changes are applied in one transaction, and unchanged rows are not rewritten. A serialized background writer coalesces snapshots. Startup imports the legacy preference snapshot before displaying the UI; failed imports preserve the old data. The message-search screen runs a bounded SQL substring query (including Korean text), not a full-text index. Interrupted sending state becomes failed on restart rather than automatically resending. The UI still loads existing history into memory, and unsaved asynchronous changes may be lost on abrupt termination. SQLite storage is app-private, not database-level encrypted; cloud authentication is separately protected by Android Keystore. No new server deployment was added.
-
-References: [Room](https://developer.android.com/training/data-storage/room), [SQLite performance](https://developer.android.com/topic/performance/sqlite-performance-best-practices).
-
-## Optional standalone Cloud conversation
-
-The Cloud chat screen calls the existing `/v1/chat/completions` endpoint with its app bearer, after checking live account/session identity. The default `dominion/free-auto` uses server-side candidate selection and failover, not client-side key rotation. Only server-listed free models can be selected. A 429 is surfaced rather than bypassed. The local account-specific database stores requests before network submission and stores replies transactionally; no automatic resubmission occurs after an ambiguous failure. Previously verified account identity is kept with encrypted credentials for offline reading; live authorization is mandatory for new requests. The screen is limited to text conversation: no tool execution, paid routing, or private-engine access is granted. The existing seven-day app-token lifetime is unchanged; there is no existing refresh endpoint. No live inference, device test, or Cloudflare changes were performed.
+Voice uses the existing LiveKit WSS session contract. A connected room does not establish that a voice agent is present. Video, interruption, real attachments, device permissions and background job notifications require further work. No live Android/server/cloud integration test was performed for this update.

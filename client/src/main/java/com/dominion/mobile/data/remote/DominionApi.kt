@@ -36,12 +36,27 @@ data class NotificationDto(
     val read: Boolean = false
 )
 
-/**
- * REST surface of the Dominion client. These paths are a documented, replaceable
- * contract: point [com.dominion.mobile.BuildConfig.API_BASE_URL] at your own server
- * and implement the same shapes, or edit this interface to match your backend.
- */
+/** Existing DOMINION mobile and native engine contracts. */
 interface DominionApi {
+    @GET("api/rooms")
+    suspend fun engineRooms(): List<EngineRoom>
+    @POST("api/rooms")
+    suspend fun createRoom(@Body body: RoomCreate): EngineRoom
+    @GET("api/rooms/{id}")
+    suspend fun engineRoom(@Path("id") id: String): EngineRoom
+    @POST("api/rooms/{id}")
+    suspend fun updateRoom(@Path("id") id: String, @Body body: RoomConfigUpdate): EngineRoom
+    @POST("api/rooms/{id}/messages")
+    suspend fun submitRoomMessage(@Path("id") id: String, @Body body: RoomInput): RoomSubmission
+    @GET("api/providers")
+    suspend fun engineProviders(): List<EngineProvider>
+    @GET("api/providers/{id}/models")
+    suspend fun engineModels(@Path("id") id: String): List<EngineModel>
+    @GET("api/tools")
+    suspend fun engineTools(): List<EngineTool>
+    @POST("api/skills/import-repo")
+    suspend fun importSkillRepository(@Body body: Map<String, String>): SkillImportResult
+
 
     @GET("v1/me")
     suspend fun me(): MeResponse

@@ -96,7 +96,8 @@ data class Message(
     val replyTo: Id? = null,
     val reactions: List<String> = emptyList(),
     val clientMessageId: String? = null,
-    val modelId: String? = null
+    val modelId: String? = null,
+    val jobId: String? = null
 )
 
 enum class ConversationKind { DIRECT, EXTRA, GROUP, TASK }
@@ -315,7 +316,7 @@ data class SettingsState(
     val reduceMotion: Boolean = false,
     val guideDismissed: Boolean = false,
     val tabOrder: List<TabId> = listOf(TabId.CHATS, TabId.EXPLORE, TabId.FRIENDS, TabId.ARCHIVE, TabId.PROFILE),
-    val blockedUserIds: List<String> = listOf("u_spam_1"),
+    val blockedUserIds: List<String> = emptyList(),
     val legalVersion: String = "2026.11"
 )
 
