@@ -767,16 +767,83 @@ class AppViewModel(
 
     // ------------------------------------------------------------------ sharing
 
-    fun receiveSharedText(text: String?) {
-        if (!text.isNullOrBlank()) mutate { it.copy(sharedText = text) }
+    private val _sharedFiles = MutableStateFlow<List<com.dominion.mobile.platform.attachments.LocalAttachment>>(emptyList())
+    val sharedFiles = _sharedFiles.asStateFlow()
+    private val _shareBusy = MutableStateFlow(false)
+    val shareBusy = _shareBusy.asStateFlow()
+    private val _shareArrival = MutableStateFlow(0L)
+    val shareArrival = _shareArrival.asStateFlow()
+
+    fun sharedImportFailed() {
+        _notice.value = "공유 파일을 읽지 못했습니다. 파일 5개 이하, 개별 8MiB 이하로 다시 공유하세요."
     }
 
-    fun clearSharedText() = mutate { it.copy(sharedText = null) }
+    fun importSharedFiles(context: android.content.Context,
+        incoming: com.dominion.mobile.platform.attachments.IncomingShare) {
+        if (_shareBusy.value || _sharedFiles.value.isNotEmpty() || state.value.sharedText != null) {
+            _notice.value = "이미 대기 중인 공유 항목이 있습니다. 먼저 보내거나 닫아주세요."
+            return
+        }
+        _shareBusy.value = true
+        viewModelScope.launch {
+            try {
+                val files = incoming.uris.map { uri ->
+                    require(uri.authority != context.packageName + ".archive")
+                    require(context.checkUriPermission(uri, android.os.Process.myPid(), android.os.Process.myUid(),
+                        android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) == android.content.pm.PackageManager.PERMISSION_GRANTED)
+                    com.dominion.mobile.platform.attachments.LocalAttachment.fromUri(context, uri)
+                }
+                _sharedFiles.value = files
+                mutate { it.copy(sharedText = incoming.text) }
+                _shareArrival.value++
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { sharedImportFailed() }
+            finally { _shareBusy.value = false }
+        }
+    }
 
-    fun shareToConversation(conversationId: String) {
-        val text = repo.state.value.sharedText ?: return
-        sendMessage(conversationId, text)
+    fun receiveSharedText(text: String?) {
+        if (text.isNullOrBlank()) return
+        if (_shareBusy.value || _sharedFiles.value.isNotEmpty() || state.value.sharedText != null) {
+            _notice.value = "기존 공유 항목을 먼저 처리하세요."
+            return
+        }
+        mutate { it.copy(sharedText = text.take(32000)) }
+        _shareArrival.value++
+    }
+
+    fun clearSharedText() {
+        if (_shareBusy.value) return
+        _sharedFiles.value = emptyList()
         mutate { it.copy(sharedText = null) }
+    }
+
+    fun shareToConversation(conversationId: String, onQueued: () -> Unit = {}) {
+        if (_shareBusy.value || conversationId in _roomChanges.value ||
+            state.value.conversation(conversationId) == null) return
+        val text = state.value.sharedText.orEmpty()
+        val files = _sharedFiles.value
+        if (files.isEmpty() && text.isBlank()) return
+        _shareBusy.value = true
+        viewModelScope.launch {
+            try {
+                val attachments = files.map { file ->
+                    repo.uploadAttachment(conversationId, file.name, file.mimeType, file.bytes)
+                }
+                check(state.value.conversation(conversationId) != null && conversationId !in _roomChanges.value)
+                val card = attachments.firstOrNull()?.let { file ->
+                    MessageCard(kind = if (file.mimeType?.startsWith("image/") == true) CardKind.IMAGE else CardKind.FILE,
+                        title = file.name ?: "attachment", subtitle = "첨부 " + attachments.size + "개",
+                        meta = file.size.toString() + " bytes")
+                }
+                sendMessage(conversationId, text, card, attachments.map { requireNotNull(it.id) })
+                _sharedFiles.value = emptyList()
+                mutate { it.copy(sharedText = null) }
+                onQueued()
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { _notice.value = "공유 파일 전송 준비에 실패했습니다. 원본 공유 항목을 유지합니다." }
+            finally { _shareBusy.value = false }
+        }
     }
 
     class Factory(private val repo: DominionRepository) : ViewModelProvider.Factory {

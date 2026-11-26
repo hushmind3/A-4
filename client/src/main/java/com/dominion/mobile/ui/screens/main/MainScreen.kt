@@ -86,6 +86,8 @@ fun MainScreen(
     val scope = rememberCoroutineScope()
     var showNewTab by remember { mutableStateOf(false) }
     var sharedPicker by remember { mutableStateOf(false) }
+    val sharedFiles by vm.sharedFiles.collectAsStateWithLifecycle()
+    val shareBusy by vm.shareBusy.collectAsStateWithLifecycle()
     var deleteTarget by remember { mutableStateOf<Conversation?>(null) }
 
     fun openDrawer() = scope.launch { drawerState.open() }
@@ -146,11 +148,13 @@ fun MainScreen(
                             Text(tr(lang, "숨긴 기본 비서방 다시 표시", "Show hidden assistant room"))
                         }
                     }
-                    state.sharedText?.let { shared ->
+                    if (state.sharedText != null || sharedFiles.isNotEmpty()) {
+                        val preview = listOfNotNull(state.sharedText,
+                            sharedFiles.takeIf { it.isNotEmpty() }?.joinToString(", ") { it.name }).joinToString(" · ")
                         SharedBanner(
-                            text = shared,
+                            text = if (shareBusy) tr(lang, "공유 준비 중…", "Preparing share…") else preview,
                             onDismiss = { vm.clearSharedText() },
-                            onSend = { sharedPicker = true }
+                            onSend = { if (!shareBusy) sharedPicker = true }
                         )
                     }
                     when (state.currentTab) {
@@ -213,18 +217,25 @@ fun MainScreen(
         AppBottomSheet(onDismiss = { sharedPicker = false }) {
             SheetTitle(
                 tr(lang, "어디로 보낼까요?", "Where should it go?"),
-                tr(lang, "공유된 내용을 도미니온과 나눠요", "Share this with a Dominion")
+                tr(lang, "선택한 방으로만 공유합니다.", "Only send to the selected chat.")
             )
-            state.conversations.take(6).forEach { conv ->
+            state.sharedText?.let { Text(it.take(500), modifier = Modifier.padding(horizontal = 20.dp)) }
+            sharedFiles.forEach { file ->
+                Text(file.name + " · " + file.bytes.size.toString() + " bytes", modifier = Modifier.padding(horizontal = 20.dp, vertical = 3.dp))
+            }
+            if (shareBusy) Text(tr(lang, "첨부 준비 중…", "Preparing attachments…"), modifier = Modifier.padding(16.dp))
+            if (state.conversations.isEmpty()) Text(tr(lang, "본체 연결 후 대화방을 먼저 만드세요.", "Connect the engine and create a chat first."), modifier = Modifier.padding(16.dp))
+            state.conversations.forEach { conv ->
                 val character = state.character(conv.characterId)
                 if (character != null) {
                     SheetRow(
                         "${conv.title(state.characters)} · ${character.tagline}",
                         Glyph.SEND
                     ) {
-                        vm.shareToConversation(conv.id)
-                        sharedPicker = false
-                        onNavigate(Routes.chat(conv.id))
+                        if (!shareBusy) vm.shareToConversation(conv.id) {
+                            sharedPicker = false
+                            onNavigate(Routes.chat(conv.id))
+                        }
                     }
                 }
             }
@@ -427,7 +438,7 @@ private fun DrawerContent(
 
         Spacer(Modifier.height(20.dp))
         Text(
-            "Dominion 1.1.20 · ${tr(lang, "소스 재구성", "source rebuild")}",
+            "DOMINION " + com.dominion.mobile.BuildConfig.VERSION_NAME,
             style = MaterialTheme.typography.labelSmall,
             color = p.textTertiary,
             modifier = Modifier.padding(horizontal = 20.dp)

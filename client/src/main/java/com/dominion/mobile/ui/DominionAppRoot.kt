@@ -88,6 +88,13 @@ fun DominionAppRoot(vm: AppViewModel) {
 
     DominionTheme(darkTheme = dark, lang = state.settings.lang) {
         val nav = rememberNavController()
+        val shareArrival by vm.shareArrival.collectAsStateWithLifecycle()
+        LaunchedEffect(shareArrival) {
+            if (shareArrival > 0L) nav.navigate(Routes.MAIN) {
+                popUpTo(Routes.MAIN) { inclusive = false }
+                launchSingleTop = true
+            }
+        }
         val notificationRoom by vm.notificationRoom.collectAsStateWithLifecycle()
         LaunchedEffect(notificationRoom, state.conversations) {
             val roomId = notificationRoom

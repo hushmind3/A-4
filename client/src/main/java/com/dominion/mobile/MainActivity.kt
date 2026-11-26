@@ -65,6 +65,18 @@ class MainActivity : ComponentActivity() {
             }
             return
         }
+        if (intent.action == Intent.ACTION_SEND || intent.action == Intent.ACTION_SEND_MULTIPLE) {
+            val incoming = runCatching {
+                com.dominion.mobile.platform.attachments.IncomingShare.parse(intent)
+            }.getOrElse {
+                viewModel.sharedImportFailed()
+                return
+            }
+            if (incoming.uris.isNotEmpty()) {
+                viewModel.importSharedFiles(applicationContext, incoming)
+                return
+            }
+        }
         val shared = when (intent.action) {
             Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)
             Intent.ACTION_SEND_MULTIPLE ->
@@ -72,6 +84,6 @@ class MainActivity : ComponentActivity() {
             Intent.ACTION_VIEW -> intent.dataString
             else -> null
         }
-        if (!shared.isNullOrBlank()) viewModel.receiveSharedText(shared)
+        if (!shared.isNullOrBlank()) viewModel.receiveSharedText(shared.take(32000))
     }
 }
