@@ -110,6 +110,8 @@ interface DominionApi {
     suspend fun engineModels(@Path("id") id: String): List<EngineModel>
     @GET("api/tools")
     suspend fun engineTools(): List<EngineTool>
+    @GET("api/skills")
+    suspend fun engineSkills(): List<EngineSkillState>
     @POST("api/skills/import-repo")
     suspend fun importSkillRepository(@Body body: Map<String, String>): SkillImportResult
 

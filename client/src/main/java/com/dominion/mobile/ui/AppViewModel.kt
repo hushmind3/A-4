@@ -421,6 +421,8 @@ class AppViewModel(
     private val _taskBusy = MutableStateFlow<Set<String>>(emptySet())
     val taskBusy = _taskBusy.asStateFlow()
 
+    suspend fun loadEngineSkills() = repo.engineSkills()
+
     fun createServiceTask(title: String, characterId: String, details: String, steps: List<String>,
         onAccepted: (String) -> Unit) {
         if (title.isBlank() || details.isBlank() || state.value.character(characterId) == null) {

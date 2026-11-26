@@ -67,6 +67,8 @@ class RemoteBackedRepository(
 
     override suspend fun searchMessages(query: String): List<Message> = store.searchMessages(query)
 
+    override suspend fun engineSkills(): List<EngineSkillState> = api.engineSkills()
+
     private val taskLock = Mutex()
 
     private suspend fun saveTaskLink(item: com.dominion.mobile.data.model.TaskItem) {

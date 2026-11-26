@@ -26,6 +26,16 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
     val connection by vm.connection.collectAsStateWithLifecycle()
     var selected by remember { mutableStateOf<KoreanService?>(null) }
     var query by remember { mutableStateOf("") }
+    var skills by remember { mutableStateOf<List<com.dominion.mobile.data.remote.EngineSkillState>?>(null) }
+    var skillError by remember { mutableStateOf(false) }
+    var refreshKey by remember { mutableIntStateOf(0) }
+    LaunchedEffect(connection, refreshKey) {
+        skills = null
+        skillError = false
+        try { skills = vm.loadEngineSkills() }
+        catch (e: kotlinx.coroutines.CancellationException) { throw e }
+        catch (_: Exception) { skillError = true }
+    }
     val results = KoreanServices.entries.filter {
         query.isBlank() || (it.title + " " + it.summary).contains(query, true)
     }
@@ -39,6 +49,7 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
             AppTextField(query, { query = it }, placeholder = "복지, 민원, 학교 등 검색")
             Row {
                 TextButton(onClick = onTasks) { Text("내가 맡긴 업무") }
+                TextButton(onClick = { refreshKey++ }) { Text("스킬 확인") }
                 TextButton(onClick = { if (!DeviceActions.dial(context, "110")) context.toast("전화 앱을 열 수 없습니다.") }) { Text("정부민원 110") }
             }
         }
@@ -49,10 +60,21 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
                     Column(Modifier.fillMaxWidth().padding(14.dp)) {
                         Text(service.title, style = MaterialTheme.typography.titleMedium)
                         Text(service.summary, style = MaterialTheme.typography.bodySmall)
+                        if (service.skillNames.isNotEmpty()) {
+                            val active = skills?.filter { it.name in service.skillNames && it.isActive() }?.mapNotNull { it.name }?.distinct().orEmpty()
+                            val registered = skills?.filter { it.name in service.skillNames }?.mapNotNull { it.name }?.distinct().orEmpty()
+                            Text(when {
+                                skillError -> "본체 스킬 상태 조회 실패"
+                                skills == null -> "스킬 상태 조회 중"
+                                active.isNotEmpty() -> "활성 스킬 " + active.size + "/" + service.skillNames.size + " · 실행 환경 별도 확인"
+                                registered.isNotEmpty() -> "등록됨 · 활성화 필요"
+                                else -> "관련 스킬 미등록 · 본체의 기존 도구 사용 가능"
+                            }, style = MaterialTheme.typography.labelSmall, color = p.textTertiary)
+                        }
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             TextButton(onClick = {
                                 if (!DeviceActions.openOfficial(context, service)) context.toast("공식 사이트를 열 수 없습니다.")
-                            }) { Text("공식 사이트") }
+                            }) { Text(KoreanServices.sourceLabel(service)) }
                             TextButton(onClick = { selected = service }) { Text("AI에게 맡기기") }
                         }
                     }
@@ -73,6 +95,8 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
                     AppTextField(details, { details = it.take(3000) }, label = "무엇을 처리할까요?",
                         placeholder = service.summary, singleLine = false, maxLines = 4)
                     Text("주민등록번호·인증번호·비밀번호는 입력하지 마세요.", style = MaterialTheme.typography.labelSmall)
+                    if (service.skillNames.isNotEmpty()) Text("관련 도구: " + service.skillNames.joinToString(", "),
+                        style = MaterialTheme.typography.labelSmall)
                     state.characters.forEach { character ->
                         Row {
                             RadioButton(selected = agent == character.id, onClick = { agent = character.id })
