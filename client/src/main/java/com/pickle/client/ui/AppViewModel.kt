@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.pickle.client.data.DemoData
 import com.pickle.client.data.remote.RemoteBackedRepository
 import com.pickle.client.data.DemoReplies
+import com.pickle.client.data.MessageSync
 import com.pickle.client.data.PickleRepository
 import com.pickle.client.data.model.Account
 import com.pickle.client.data.model.ActivityItem
@@ -45,6 +46,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 data class OnboardingProfile(
@@ -72,7 +74,7 @@ class AppViewModel(
     private fun AppState.withConversation(id: String, transform: (Conversation) -> Conversation): AppState =
         copy(conversations = conversations.map { if (it.id == id) transform(it) else it })
 
-    private fun id(prefix: String) = "${prefix}_${System.currentTimeMillis()}"
+    private fun id(prefix: String) = "${prefix}_${UUID.randomUUID()}"
 
     // ---------------------------------------------------------------- onboarding
 
@@ -320,7 +322,13 @@ class AppViewModel(
                 }
             }
 
-            // History fetch is best-effort and must not turn an accepted send into a failure.
+            // Server may acknowledge a send before the assistant response is ready.
+            // Save the pre-fetch IDs so the reply watcher can recognize a new response.
+            if (acknowledgement.sender != MessageSender.ME &&
+                acknowledgement.id.isNotBlank()) return@launch
+            val knownIds = repo.state.value.conversation(conversationId)
+                ?.messages?.map { it.id }?.toSet() ?: return@launch
+            var replied = false
             val latest = try {
                 repo.loadMessages(conversationId)
             } catch (cancelled: CancellationException) {
@@ -328,18 +336,49 @@ class AppViewModel(
             } catch (_: Exception) {
                 null
             }
-            if (latest != null) mutate { s ->
-                s.withConversation(conversationId) { conv ->
-                    val knownIds = conv.messages.map { it.id }.toSet()
-                    val newMessages = latest.filter { it.id.isNotBlank() && it.id !in knownIds }
-                        .distinctBy { it.id }
-                    if (newMessages.isEmpty()) conv
-                    else conv.copy(
-                        messages = (conv.messages + newMessages).sortedBy { it.createdAt },
-                        updatedAt = System.currentTimeMillis()
-                    )
+            if (latest != null) {
+                replied = latest.any {
+                    it.sender == MessageSender.CHARACTER && it.id.isNotBlank() && it.id !in knownIds
+                }
+                applyServerMessages(conversationId, latest)
+            }
+            if (replied) return@launch
+
+            mutate { s -> s.copy(typingConversationId = conversationId) }
+            try {
+                val delayed = repo.pollForReply(conversationId, knownIds)
+                if (delayed.isNotEmpty()) applyServerMessages(conversationId, delayed)
+            } finally {
+                mutate { s ->
+                    if (s.typingConversationId == conversationId)
+                        s.copy(typingConversationId = null) else s
                 }
             }
+        }
+    }
+
+    private fun applyServerMessages(conversationId: String, server: List<Message>) {
+        mutate { s ->
+            s.withConversation(conversationId) { conv ->
+                val merged = MessageSync.reconcile(conv.messages, server)
+                if (merged == conv.messages) conv
+                else conv.copy(messages = merged, updatedAt = System.currentTimeMillis())
+            }
+        }
+    }
+
+    /** Refresh when entering a room, including messages received while the app was closed. */
+    fun refreshConversation(conversationId: String) {
+        if (repo.isDemo) return
+        viewModelScope.launch {
+            val messages = try {
+                repo.loadMessages(conversationId)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+            if (messages != null) applyServerMessages(conversationId, messages)
         }
     }
 
