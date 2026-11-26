@@ -1,0 +1,104 @@
+package com.dominion.mobile.ui.screens.explore
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.dominion.mobile.data.KoreanService
+import com.dominion.mobile.data.KoreanServices
+import com.dominion.mobile.data.model.AppState
+import com.dominion.mobile.platform.DeviceActions
+import com.dominion.mobile.ui.AppViewModel
+import com.dominion.mobile.ui.components.*
+import com.dominion.mobile.ui.theme.LocalDominionPalette
+
+@Composable
+fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
+    onOpenChat: (String) -> Unit, onTasks: () -> Unit) {
+    val p = LocalDominionPalette.current
+    val context = LocalContext.current
+    val connection by vm.connection.collectAsStateWithLifecycle()
+    var selected by remember { mutableStateOf<KoreanService?>(null) }
+    var query by remember { mutableStateOf("") }
+    val results = KoreanServices.entries.filter {
+        query.isBlank() || (it.title + " " + it.summary).contains(query, true)
+    }
+
+    Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding().background(p.screen)) {
+        ScreenTopBar(title = "한국 생활·행정 비서", onBack = onBack)
+        Column(Modifier.padding(horizontal = 16.dp)) {
+            Text("공식 기관 조회 → AI 업무 접수 → 결과·승인 확인", color = p.textSecondary)
+            Text("본체 상태: " + connection.name + " · 인증이 필요한 신청은 직접 확인",
+                style = MaterialTheme.typography.labelSmall, color = p.textTertiary)
+            AppTextField(query, { query = it }, placeholder = "복지, 민원, 학교 등 검색")
+            Row {
+                TextButton(onClick = onTasks) { Text("내가 맡긴 업무") }
+                TextButton(onClick = { if (!DeviceActions.dial(context, "110")) context.toast("전화 앱을 열 수 없습니다.") }) { Text("정부민원 110") }
+            }
+        }
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            items(results, key = { it.id }) { service ->
+                Card(onClick = { selected = service }) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                        Text(service.title, style = MaterialTheme.typography.titleMedium)
+                        Text(service.summary, style = MaterialTheme.typography.bodySmall)
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            TextButton(onClick = {
+                                if (!DeviceActions.openOfficial(context, service)) context.toast("공식 사이트를 열 수 없습니다.")
+                            }) { Text("공식 사이트") }
+                            TextButton(onClick = { selected = service }) { Text("AI에게 맡기기") }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    selected?.let { service ->
+        key(service.id) {
+            var region by remember { mutableStateOf("") }
+            var details by remember { mutableStateOf("") }
+            var agent by remember { mutableStateOf(state.myCharacter()?.id ?: state.characters.firstOrNull()?.id.orEmpty()) }
+            AppBottomSheet(onDismiss = { selected = null }) {
+                SheetTitle(service.title, "사용자가 선택한 내용만 본체에 전달")
+                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AppTextField(region, { region = it.take(100) }, label = "지역 (선택)", placeholder = "시·군·구")
+                    AppTextField(details, { details = it.take(3000) }, label = "무엇을 처리할까요?",
+                        placeholder = service.summary, singleLine = false, maxLines = 4)
+                    Text("주민등록번호·인증번호·비밀번호는 입력하지 마세요.", style = MaterialTheme.typography.labelSmall)
+                    state.characters.forEach { character ->
+                        Row {
+                            RadioButton(selected = agent == character.id, onClick = { agent = character.id })
+                            Text(character.name, modifier = Modifier.padding(top = 12.dp))
+                        }
+                    }
+                    Row {
+                        service.hotline?.let { phone ->
+                            TextButton(onClick = { if (!DeviceActions.dial(context, phone)) context.toast("전화 앱을 열 수 없습니다.") }) { Text("문의 " + phone) }
+                        }
+                        service.mapQuery?.let { query ->
+                            TextButton(onClick = {
+                                if (!DeviceActions.map(context, (region.trim() + " " + query).trim()))
+                                    context.toast("지도 앱을 열 수 없습니다.")
+                            }) { Text("가까운 기관") }
+                        }
+                    }
+                    Button(enabled = details.isNotBlank() && agent.isNotBlank(),
+                        onClick = {
+                            vm.createServiceTask(service.title, agent, service.request(region, details), service.steps, onOpenChat)
+                            selected = null
+                        }) { Text("실제 업무 접수") }
+                    Text("접수 실패 시 할 일 메뉴에서 동일 업무를 재확인할 수 있습니다.",
+                        style = MaterialTheme.typography.labelSmall, color = p.textSecondary)
+                }
+            }
+        }
+    }
+}

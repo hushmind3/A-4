@@ -421,13 +421,26 @@ class AppViewModel(
     private val _taskBusy = MutableStateFlow<Set<String>>(emptySet())
     val taskBusy = _taskBusy.asStateFlow()
 
-    fun dispatchTask(taskId: String) {
+    fun createServiceTask(title: String, characterId: String, details: String, steps: List<String>,
+        onAccepted: (String) -> Unit) {
+        if (title.isBlank() || details.isBlank() || state.value.character(characterId) == null) {
+            _notice.value = "본체 에이전트와 처리할 업무를 지정하세요."
+            return
+        }
+        val task = TaskItem(id("task"), title.trim(), characterId,
+            steps = steps.map { CardStep(it, false) }, requestDetails = details)
+        mutate { it.copy(tasks = listOf(task) + it.tasks) }
+        dispatchTask(task.id, onAccepted)
+    }
+
+    fun dispatchTask(taskId: String, onAccepted: (String) -> Unit = {}) {
         if (taskId in _taskBusy.value) return
         _taskBusy.value = _taskBusy.value + taskId
         viewModelScope.launch {
             try {
                 repo.submitTask(taskId)
                 _notice.value = "본체 작업 접수와 상태 조회를 확인했습니다."
+                state.value.tasks.firstOrNull { it.id == taskId }?.engineRoomId?.let(onAccepted)
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { _notice.value = "접수 결과를 확인하지 못했습니다. 같은 할 일에서 다시 확인하세요." }
             finally { _taskBusy.value = _taskBusy.value - taskId }

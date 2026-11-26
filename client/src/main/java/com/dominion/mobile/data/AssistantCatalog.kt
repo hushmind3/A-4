@@ -125,5 +125,5 @@ object AssistantCatalog {
             listOf("날씨 확인", "이동 시간 계산", "장소 3곳 추천"), "이번 주말 근교 나들이를 추천해줘"),
         ExploreTemplate("ex_meet", "친구 약속 잡기", "Make a plan", "모두 가능한 시간 찾기", "Find a time that works for everyone", ExploreCategory.PEOPLE, 0xFFFF8FB1,
             listOf("친구 목록", "가능한 시간 묻기", "일정 만들기"), "친구들과 저녁 약속을 잡아줘")
-    )
+    ) + KoreanServices.entries.map { it.template() }
 }

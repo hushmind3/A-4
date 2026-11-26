@@ -59,7 +59,8 @@ import androidx.compose.ui.platform.LocalContext
 fun ExploreScreen(
     state: AppState,
     vm: AppViewModel,
-    onOpenChat: (String) -> Unit
+    onOpenChat: (String) -> Unit,
+    onKoreanServices: () -> Unit
 ) {
     val p = LocalDominionPalette.current
     val lang = LocalLang.current
@@ -159,6 +160,13 @@ fun ExploreScreen(
                     }
                 }
             }
+            item {
+                Spacer(Modifier.height(12.dp))
+                androidx.compose.material3.OutlinedButton(onClick = onKoreanServices,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                    Text(tr(lang, "🇰🇷 한국 생활·행정 비서", "Korean daily and public services"))
+                }
+            }
             item { Spacer(Modifier.height(16.dp)) }
             item {
                 LazyRow(
@@ -184,7 +192,7 @@ fun ExploreScreen(
                         ExploreCard(
                             template = template,
                             modifier = Modifier.weight(1f),
-                            onClick = { detail = template }
+                            onClick = { if (template.category == ExploreCategory.KOREA) onKoreanServices() else detail = template }
                         )
                     }
                     if (row.size == 1) Spacer(Modifier.weight(1f))
@@ -221,6 +229,10 @@ fun ExploreScreen(
     }
 
     detail?.let { template ->
+        if (template.category == ExploreCategory.KOREA) {
+            androidx.compose.runtime.LaunchedEffect(template.id) { detail = null; onKoreanServices() }
+            return@let
+        }
         AppBottomSheet(onDismiss = { detail = null }) {
             SheetTitle(template.title(lang), template.subtitle(lang))
             Column(Modifier.padding(horizontal = 24.dp)) {

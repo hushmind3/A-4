@@ -602,6 +602,14 @@ fun SchedulesScreen(
                             color = p.textTertiary
                         )
                     }
+                    if (schedule.scheduledAt != null) {
+                        TextButton(onClick = {
+                            val due = ReminderTiming.nextUndelivered(schedule, System.currentTimeMillis()) ?: schedule.scheduledAt
+                            if (!com.dominion.mobile.platform.DeviceActions.calendar(context, schedule.title,
+                                    due, schedule.whenText, schedule.repeat))
+                                context.toast(tr(lang, "캘린더 앱을 열 수 없습니다.", "Calendar app unavailable"))
+                        }) { Text(tr(lang, "달력", "Calendar")) }
+                    }
                     TextButton(onClick = { deleteTarget = schedule.id }) { Text("⋯") }
                     Switch(
                         checked = schedule.enabled && schedule.scheduledAt != null,

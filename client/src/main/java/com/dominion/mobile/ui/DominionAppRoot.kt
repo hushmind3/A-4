@@ -145,6 +145,11 @@ fun DominionAppRoot(vm: AppViewModel) {
                     state = state, vm = vm, onDone = { nav.popBackStack() },
                     onCloudAccount = { nav.navigate(Routes.CLOUD_ACCOUNT) })
             }
+            composable(Routes.KOREAN_SERVICES) {
+                com.dominion.mobile.ui.screens.explore.KoreanServicesScreen(state, vm,
+                    onBack = { nav.popBackStack() }, onOpenChat = { nav.navigate(Routes.chat(it)) },
+                    onTasks = { nav.navigate(Routes.TASKS) })
+            }
             composable(Routes.MAIN) {
                 MainScreen(state = state, vm = vm, onNavigate = { nav.navigate(it) })
             }

@@ -176,7 +176,8 @@ fun MainScreen(
                         TabId.EXPLORE -> ExploreScreen(
                             state = state,
                             vm = vm,
-                            onOpenChat = { onNavigate(Routes.chat(it)) }
+                            onOpenChat = { onNavigate(Routes.chat(it)) },
+                            onKoreanServices = { onNavigate(Routes.KOREAN_SERVICES) }
                         )
                         TabId.FRIENDS -> FriendsScreen(
                             state = state,

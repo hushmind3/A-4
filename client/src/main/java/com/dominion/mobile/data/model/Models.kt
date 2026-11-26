@@ -154,7 +154,8 @@ data class TaskItem(
     val engineMessageId: String? = null,
     val engineStatus: String? = null,
     val enginePrompt: String? = null,
-    val engineLanguage: String? = null
+    val engineLanguage: String? = null,
+    val requestDetails: String? = null
 ) {
     val progress: Float
         get() = if (steps.isEmpty()) (if (done) 1f else 0f)
@@ -301,7 +302,8 @@ enum class ExploreCategory(val ko: String, val en: String) {
     SHOPPING("쇼핑", "Shopping"),
     TRAVEL("여행", "Travel"),
     FUN("놀거리", "Fun"),
-    PEOPLE("사람", "People");
+    PEOPLE("사람", "People"),
+    KOREA("생활·행정", "Korean daily services");
 
     fun label(lang: Lang) = if (lang == Lang.KO) ko else en
 }
