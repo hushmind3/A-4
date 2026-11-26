@@ -32,7 +32,7 @@ The client must be used against an authorized, operator-controlled deployment. T
 
 Message submission body: `{"text":"...","client_message_id":"..."}`. The current client maintains a stable client message ID. The inspected server reads text but does not implement durable deduplication of client IDs and may return a synthetic acknowledgement ID. Retries after an ambiguous network failure can submit duplicate work. Production must reconcile with a persisted server request ID and guarantee idempotency. The client polls message history after acknowledgement; there is no verified streaming or durable background subscription.
 
-Response envelope: `{"data": ...}`. Wire field names are preserved for compatibility, including the legacy `is_pickle` field in the friend DTO. That field is not a product name.
+Response envelope: `{"data": ...}`. The client friend DTO uses `is_assistant` (optional, defaults to false) to identify assistant accounts. The inspected server currently returns an empty friend collection; this field is a client contract, not a verified server capability.
 
 The current client still includes some prototype endpoints not provided by branch1 (for example individual conversation detail). Do not treat them as live.
 

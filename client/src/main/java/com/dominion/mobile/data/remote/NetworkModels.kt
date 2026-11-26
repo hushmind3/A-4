@@ -228,7 +228,7 @@ data class FriendDto(
     val name: String = "",
     val handle: String = "",
     val color: String? = null,
-    val is_pickle: Boolean = false,
+    val is_assistant: Boolean = false,
     val relation: String = "",
     val favorite: Boolean = false,
     val character_id: String? = null
@@ -238,7 +238,7 @@ data class FriendDto(
         name = name,
         handle = handle,
         color = parseHex(color) ?: 0xFF4797EF,
-        isAssistant = is_pickle,
+        isAssistant = is_assistant,
         relation = relation,
         favorite = favorite,
         characterId = character_id
