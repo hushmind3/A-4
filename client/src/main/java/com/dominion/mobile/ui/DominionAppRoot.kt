@@ -148,7 +148,8 @@ fun DominionAppRoot(vm: AppViewModel) {
             composable(Routes.KOREAN_SERVICES) {
                 com.dominion.mobile.ui.screens.explore.KoreanServicesScreen(state, vm,
                     onBack = { nav.popBackStack() }, onOpenChat = { nav.navigate(Routes.chat(it)) },
-                    onTasks = { nav.navigate(Routes.TASKS) })
+                    onTasks = { nav.navigate(Routes.TASKS) },
+                    onAgenda = { nav.navigate(Routes.DEVICE_AGENDA) })
             }
             composable(Routes.MAIN) {
                 MainScreen(state = state, vm = vm, onNavigate = { nav.navigate(it) })
@@ -318,7 +319,12 @@ fun DominionAppRoot(vm: AppViewModel) {
                 TasksScreen(state = state, vm = vm, onBack = { nav.popBackStack() }, onOpenChat = { nav.navigate(Routes.chat(it)) })
             }
             composable(Routes.SCHEDULES) {
-                SchedulesScreen(state = state, vm = vm, onBack = { nav.popBackStack() })
+                SchedulesScreen(state = state, vm = vm, onBack = { nav.popBackStack() },
+                    onAgenda = { nav.navigate(Routes.DEVICE_AGENDA) })
+            }
+            composable(Routes.DEVICE_AGENDA) {
+                com.dominion.mobile.ui.screens.profile.DeviceAgendaScreen(state, vm,
+                    onBack = { nav.popBackStack() }, onOpenChat = { nav.navigate(Routes.chat(it)) })
             }
             composable(Routes.VAULT) {
                 VaultScreen(state = state, vm = vm, onBack = { nav.popBackStack() })

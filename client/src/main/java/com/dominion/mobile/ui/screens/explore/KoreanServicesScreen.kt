@@ -25,7 +25,7 @@ import com.dominion.mobile.ui.theme.LocalDominionPalette
 
 @Composable
 fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
-    onOpenChat: (String) -> Unit, onTasks: () -> Unit) {
+    onOpenChat: (String) -> Unit, onTasks: () -> Unit, onAgenda: () -> Unit) {
     val p = LocalDominionPalette.current
     val context = LocalContext.current
     val connection by vm.connection.collectAsStateWithLifecycle()
@@ -68,8 +68,9 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
             AppTextField(query, { query = it }, placeholder = "복지, 민원, 학교 등 검색")
             Row {
                 TextButton(onClick = onTasks) { Text("내가 맡긴 업무") }
+                TextButton(onClick = onAgenda) { Text("내 일정") }
                 TextButton(onClick = { refreshKey++ }) { Text("스킬 확인") }
-                TextButton(onClick = { if (!DeviceActions.dial(context, "110")) context.toast("전화 앱을 열 수 없습니다.") }) { Text("정부민원 110") }
+                TextButton(onClick = { if (!DeviceActions.dial(context, "110")) context.toast("전화 앱을 열 수 없습니다.") }) { Text("110") }
             }
         }
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp),
@@ -137,7 +138,8 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
             var agent by remember { mutableStateOf(state.myCharacter()?.id ?: state.characters.firstOrNull()?.id.orEmpty()) }
             AppBottomSheet(onDismiss = { selected = null }) {
                 SheetTitle(service.title, "사용자가 선택한 내용만 본체에 전달")
-                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.fillMaxWidth().heightIn(max = 480.dp).verticalScroll(rememberScrollState()).padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     AppTextField(region, { region = it.take(100) }, label = "지역 (선택)", placeholder = "시·군·구")
                     AppTextField(details, { details = it.take(3000) }, label = "무엇을 처리할까요?",
                         placeholder = service.summary, singleLine = false, maxLines = 4)

@@ -509,7 +509,8 @@ private fun AddTaskDialog(
 fun SchedulesScreen(
     state: AppState,
     vm: AppViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onAgenda: () -> Unit
 ) {
     val p = LocalDominionPalette.current
     val lang = LocalLang.current
@@ -534,6 +535,9 @@ fun SchedulesScreen(
         )
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 30.dp)) {
             item {
+                TextButton(onClick = onAgenda, modifier = Modifier.padding(horizontal = 16.dp)) {
+                    Text(tr(lang, "휴대폰 캘린더 일정 확인", "View phone calendar"))
+                }
                 Text(tr(lang, "기기에서 알림을 예약합니다. 배터리 정책으로 시간이 늦어질 수 있습니다.", "Device reminders may be delayed by Android battery policies."),
                     modifier = Modifier.padding(horizontal = 18.dp, vertical = 6.dp), color = p.textTertiary)
                 if (!permission || !state.settings.notifications) {
