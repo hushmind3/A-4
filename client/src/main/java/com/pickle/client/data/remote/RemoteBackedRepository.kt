@@ -5,6 +5,8 @@ import com.pickle.client.data.PickleRepository
 import com.pickle.client.data.local.LocalStore
 import com.pickle.client.data.model.AppState
 import com.pickle.client.data.model.Message
+import com.pickle.client.data.model.MessageSender
+import com.pickle.client.data.model.Message
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,6 +20,19 @@ class RemoteBackedRepository(
 
     private val _state = MutableStateFlow((store.loadState() ?: DemoData.initial(onboarded = true)).copy(onboarded = true))
     override val state: StateFlow<AppState> = _state.asStateFlow()
+
+    override suspend fun deliverMessage(conversationId: String, message: Message): Message {
+        // Keep the stable client id across retries so cooperating servers can deduplicate.
+        val dto = api.sendMessage(
+            conversationId,
+            SendMessageRequest(text = message.text, client_message_id = message.id)
+        ).data
+        return dto?.toDomain()?.takeIf { it.id.isNotBlank() }
+            ?: message.copy(status = com.pickle.client.data.model.MessageStatus.SENT)
+    }
+
+    override suspend fun loadMessages(conversationId: String): List<Message> =
+        api.messages(conversationId).data.map { it.toDomain() }
 
     override fun update(transform: (AppState) -> AppState) {
         _state.update(transform)
