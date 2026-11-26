@@ -13,6 +13,7 @@ import com.dominion.mobile.data.model.CallSession
 import com.dominion.mobile.data.model.CardKind
 import com.dominion.mobile.data.model.CardStep
 import com.dominion.mobile.data.model.Character
+import com.dominion.mobile.data.model.CharacterPreference
 import com.dominion.mobile.data.model.CharacterShape
 import com.dominion.mobile.data.model.Connection
 import com.dominion.mobile.data.model.Conversation
@@ -90,15 +91,13 @@ class AppViewModel(
         bio: String? = null
     ) {
         mutate { s ->
-            s.copy(characters = s.characters.map {
-                if (it.id == characterId) it.copy(
-                    name = name ?: it.name,
-                    color = color ?: it.color,
-                    shape = shape ?: it.shape,
-                    voice = voice ?: it.voice,
-                    bio = bio ?: it.bio
-                ) else it
-            })
+            val previous = s.characterPreferences.orEmpty()[characterId] ?: CharacterPreference()
+            val preference = previous.copy(
+                name = name ?: previous.name, color = color ?: previous.color,
+                shape = shape ?: previous.shape, voice = voice ?: previous.voice, bio = bio ?: previous.bio
+            )
+            s.copy(characters = s.characters.map { if (it.id == characterId) preference.applyTo(it) else it },
+                characterPreferences = s.characterPreferences.orEmpty() + (characterId to preference))
         }
     }
 
@@ -264,7 +263,7 @@ class AppViewModel(
             meta = "탐색에서 추가",
             steps = steps.map { CardStep(it, false) }
         )
-        sendMessage(conversationId, "이걸 같이 해볼까요?", card)
+        if (prompt.isNotBlank()) sendMessage(conversationId, prompt, card)
     }
 
     fun setDraft(conversationId: String, draft: String) = mutate { s ->
@@ -336,6 +335,16 @@ class AppViewModel(
         }
         viewModelScope.launch {
             try { onCreated(repo.createConversation(title, characterId)) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { _notice.value = "본체에서 대화방을 생성하지 못했습니다." }
+        }
+    }
+
+    fun openConversationFor(characterId: String, onCreated: (String) -> Unit) {
+        val character = repo.state.value.character(characterId) ?: return
+        repo.state.value.conversationFor(characterId)?.let { onCreated(it.id); return }
+        viewModelScope.launch {
+            try { onCreated(repo.createConversation(character.name, characterId)) }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { _notice.value = "본체에서 대화방을 생성하지 못했습니다." }
         }

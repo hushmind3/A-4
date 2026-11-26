@@ -3,6 +3,7 @@ package com.dominion.mobile.data.remote
 import com.dominion.mobile.data.model.Account
 import com.dominion.mobile.data.model.Plan
 import com.dominion.mobile.data.DominionRepository
+import com.dominion.mobile.data.AssistantCatalog
 import com.dominion.mobile.data.ConnectionState
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -30,6 +31,8 @@ class RemoteBackedRepository(
     private fun emptyRemoteState() = AppState(
         onboarded = true,
         characters = emptyList(),
+        explore = AssistantCatalog.explore(),
+        connections = AssistantCatalog.connections(),
         account = Account(
             name = "DOMINION", birthday = "", phone = "", email = "",
             plan = Plan.FREE, jelly = 0, energy = 0, energyMax = 0,
@@ -37,7 +40,12 @@ class RemoteBackedRepository(
         )
     )
 
-    private val _state = MutableStateFlow((store.loadState() ?: emptyRemoteState()).copy(onboarded = true))
+    private val _state = MutableStateFlow((store.loadState() ?: emptyRemoteState()).let { cached ->
+        cached.copy(onboarded = true,
+            explore = (AssistantCatalog.explore() + cached.explore).distinctBy { it.id },
+            connections = (AssistantCatalog.connections() + cached.connections).distinctBy { it.id }
+                .map { it.copy(connected = false, lastUsed = null) })
+    })
     override val state: StateFlow<AppState> = _state.asStateFlow()
     private val _connection = MutableStateFlow(if (endpoint == null) ConnectionState.AUTH_REQUIRED else ConnectionState.CONNECTING)
     override val connection = _connection.asStateFlow()
@@ -131,12 +139,16 @@ class RemoteBackedRepository(
                 update { current ->
                     current.copy(
                         account = account,
-                        characters = characters,
+                        characters = characters.map { character ->
+                            current.characterPreferences.orEmpty()[character.id]?.applyTo(character) ?: character
+                        },
                         conversations = conversations.map { serverConv ->
                             val existing = current.conversation(serverConv.id)
                             if (existing != null) serverConv.copy(
                                 messages = com.dominion.mobile.data.MessageSync.reconcile(existing.messages, serverConv.messages),
                                 draft = existing.draft,
+                                pinned = existing.pinned,
+                                muted = existing.muted,
                                 updatedAt = maxOf(serverConv.updatedAt, existing.updatedAt)
                             ) else serverConv
                         }

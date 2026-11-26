@@ -97,9 +97,9 @@ fun ConnectionsScreen(
                         GlyphIcon(Glyph.PLUG, p.blue, size = 20.dp)
                         Spacer(Modifier.width(10.dp))
                         Column {
-                            Text(tr(lang, "연결한 도구만 사용해요", "Only connected tools are used"), style = MaterialTheme.typography.titleSmall, color = p.textPrimary)
+                            Text(tr(lang, "도구 목록과 연결 상태", "Tool catalog and connection status"), style = MaterialTheme.typography.titleSmall, color = p.textPrimary)
                             Text(
-                                tr(lang, "언제든 연결을 해제하고 권한을 바꿀 수 있어요.", "You can disconnect or change permissions anytime."),
+                                tr(lang, "실제 연결과 권한은 본체에서 확인합니다.", "Verify connections and permissions on the engine."),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = p.textTertiary
                             )
@@ -149,7 +149,7 @@ fun ConnectionsScreen(
                 ) {
                     Column {
                         Text(
-                            tr(lang, "도미니온이 바로 쓸 수 있는 도구", "Ready to use"),
+                            tr(lang, "기본 도구 목록", "Built-in tool catalog"),
                             style = MaterialTheme.typography.labelMedium,
                             color = p.textTertiary,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
@@ -160,7 +160,7 @@ fun ConnectionsScreen(
                                 subtitle = tool.scopes.joinToString(" · "),
                                 leading = { GlyphIcon(iconForConnection(tool.provider), Color(tool.color), size = 18.dp) },
                                 trailing = {
-                                    Box(Modifier.size(7.dp).clip(CircleShape).background(p.success))
+                                    Box(Modifier.size(7.dp).clip(CircleShape).background(if (tool.connected) p.success else p.textTertiary))
                                 },
                                 onClick = { onOpenConnection(tool.id) }
                             )
@@ -173,8 +173,8 @@ fun ConnectionsScreen(
                 Text(
                     tr(
                         lang,
-                        "연결은 OAuth로 이루어지며, 토큰은 서버에서 암호화해 보관해요.",
-                        "Connections use OAuth; tokens are encrypted on the server."
+                        "이 목록은 지원 예정 도구를 포함합니다. 실제 인증 상태는 본체에서 확인하세요.",
+                        "This catalog includes planned tools. Verify actual authorization on the engine."
                     ),
                     style = MaterialTheme.typography.labelSmall,
                     color = p.textTertiary,
@@ -321,20 +321,15 @@ fun ConnectionDetailScreen(
             Column(Modifier.padding(16.dp)) {
                 if (connection.builtIn) {
                     Text(
-                        tr(lang, "기본 도구는 연결을 해제할 수 없지만 사용 범위는 바꿀 수 있어요.", "Built-in tools cannot be disconnected, but you can limit their scope."),
+                        tr(lang, "기본 도구의 실행 가능 여부는 본체 설정에서 확인하세요.", "Check engine settings for actual tool availability."),
                         style = MaterialTheme.typography.bodySmall,
                         color = p.textTertiary
                     )
                 } else {
                     PrimaryButton(
-                        text = if (connection.connected) tr(lang, "연결 해제", "Disconnect") else tr(lang, "연결하기", "Connect"),
+                        text = tr(lang, "본체에서 연결 설정", "Configure on engine"),
                         onClick = {
-                            vm.saveConnectionScopes(connection.id, scopes.toList())
-                            vm.toggleConnection(connection.id)
-                            context.toast(
-                                if (connection.connected) tr(lang, "연결을 해제했어요", "Disconnected")
-                                else tr(lang, "연결했어요 (데모 OAuth)", "Connected (demo OAuth)")
-                            )
+                            context.toast(tr(lang, "본체 설정에서 실제 서비스 인증이 필요합니다.", "Service authorization must be configured on the engine."))
                             onBack()
                         }
                     )

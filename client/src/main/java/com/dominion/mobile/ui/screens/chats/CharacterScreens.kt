@@ -341,6 +341,7 @@ fun CustomizeScreen(
     var shape by remember(character.id) { mutableStateOf(character.shape) }
     var voice by remember(character.id) { mutableStateOf(character.voice) }
     var name by remember(character.id) { mutableStateOf(character.name) }
+    var bio by remember(character.id) { mutableStateOf(character.bio) }
     val context = LocalContext.current
 
     Column(
@@ -354,12 +355,28 @@ fun CustomizeScreen(
                 AssistantAvatar(Color(color), shape, size = 124.dp, breathing = true)
             }
             Spacer(Modifier.height(20.dp))
+            Text(tr(lang, "개인화 프리셋", "Personalization presets"), style = MaterialTheme.typography.labelMedium, color = p.textTertiary)
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                com.dominion.mobile.data.AssistantCatalog.assistantPresets().forEach { preset ->
+                    Column(Modifier.clickable {
+                        name = preset.name
+                        bio = preset.bio
+                        color = preset.color
+                        shape = preset.shape
+                        voice = preset.voice
+                    }.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        AssistantAvatar(Color(preset.color), preset.shape, size = 42.dp)
+                        Text(preset.name, color = p.textPrimary)
+                    }
+                }
+            }
             AppTextField(
                 value = name,
                 onValueChange = { name = it.take(12) },
                 label = tr(lang, "이름", "Name")
             )
             Spacer(Modifier.height(20.dp))
+            AppTextField(value = bio, onValueChange = { bio = it.take(4000) }, label = tr(lang, "소개·성격 설정 (기기 내)", "Profile and personality (local)"))
             Text(tr(lang, "색", "Color"), style = MaterialTheme.typography.labelMedium, color = p.textTertiary)
             Spacer(Modifier.height(8.dp))
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -415,7 +432,7 @@ fun CustomizeScreen(
             PrimaryButton(
                 text = tr(lang, "저장", "Save"),
                 onClick = {
-                    vm.updateCharacter(character.id, name = name.ifBlank { character.name }, color = color, shape = shape, voice = voice)
+                    vm.updateCharacter(character.id, name = name.ifBlank { character.name }, color = color, shape = shape, voice = voice, bio = bio)
                     context.toast(tr(lang, "저장했어요", "Saved"))
                     onBack()
                 }
@@ -423,7 +440,7 @@ fun CustomizeScreen(
             Spacer(Modifier.height(14.dp))
             SecondaryButton(
                 text = tr(lang, "미리 듣기", "Preview voice"),
-                onClick = { context.toast(tr(lang, "미리 듣기는 데모 음성으로 재생돼요", "Playing a demo voice sample")) }
+                onClick = { context.toast(tr(lang, "실제 음성 미리 듣기 연결 필요", "Voice preview is not connected")) }
             )
             Spacer(Modifier.height(30.dp))
         }

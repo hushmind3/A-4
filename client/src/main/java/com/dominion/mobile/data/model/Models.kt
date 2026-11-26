@@ -59,6 +59,17 @@ data class Character(
     val relation: String? = null
 )
 
+data class CharacterPreference(
+    val name: String? = null, val color: Long? = null,
+    val shape: CharacterShape? = null, val voice: VoiceTone? = null, val bio: String? = null
+) {
+    fun applyTo(character: Character) = character.copy(
+        name = name ?: character.name, color = color ?: character.color,
+        shape = shape ?: character.shape, voice = voice ?: character.voice,
+        bio = bio ?: character.bio
+    )
+}
+
 enum class MessageSender {
     @com.google.gson.annotations.SerializedName(value = "USER", alternate = ["ME"])
     USER,
@@ -358,7 +369,8 @@ data class AppState(
     val call: CallSession? = null,
     val typingConversationId: Id? = null,
     val sharedText: String? = null,
-    val vaultUnlocked: Boolean = false
+    val vaultUnlocked: Boolean = false,
+    val characterPreferences: Map<Id, CharacterPreference>? = emptyMap()
 ) {
     fun character(id: Id): Character? = characters.firstOrNull { it.id == id }
     fun myCharacter(): Character? = characters.firstOrNull { it.mine }

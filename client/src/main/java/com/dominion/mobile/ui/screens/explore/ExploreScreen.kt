@@ -200,8 +200,7 @@ fun ExploreScreen(
                         .clip(RoundedCornerShape(18.dp))
                         .background(p.cardSoft)
                         .clickable {
-                            val conv = vm.createExtraConversation(tr(lang, "새로운 시도", "New idea"))
-                            if (conv.isNotBlank()) onOpenChat(conv)
+                            vm.createExtraConversation(tr(lang, "새로운 시도", "New idea"), onOpenChat)
                         }
                         .padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -276,13 +275,11 @@ fun ExploreScreen(
                     text = tr(lang, "대화에 추가하기", "Add to a chat"),
                     onClick = {
                         val characterId = selectedCharacter ?: state.myCharacter()?.id
-                        val convId = characterId?.let { vm.directConversationFor(it) }
-                        if (convId != null) {
+                        if (characterId != null) vm.openConversationFor(characterId) { convId ->
                             vm.addExploreToChat(convId, template.title(lang), template.steps, template.prompt)
                             detail = null
-                            context.toast(tr(lang, "대화에 추가했어요", "Added to your chat"))
                             onOpenChat(convId)
-                        }
+                        } else context.toast(tr(lang, "본체 에이전트를 먼저 연결하세요", "Connect an engine agent first"))
                     }
                 )
             }
