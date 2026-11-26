@@ -20,5 +20,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "PickleClient"
+rootProject.name = "DominionMobile"
 include(":client")

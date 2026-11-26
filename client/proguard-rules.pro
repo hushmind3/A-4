@@ -1,5 +1,5 @@
 # Keep model classes used by Gson / Retrofit.
--keep class com.pickle.client.data.model.** { *; }
--keep class com.pickle.client.data.remote.** { *; }
+-keep class com.dominion.mobile.data.model.** { *; }
+-keep class com.dominion.mobile.data.remote.** { *; }
 -keepattributes Signature
 -keepattributes *Annotation*

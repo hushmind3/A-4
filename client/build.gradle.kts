@@ -4,20 +4,32 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// A remote build must explicitly identify its own DOMINION server.
+val dominionServerUrl = providers.gradleProperty("dominionServerUrl").orNull?.trim()?.takeIf { it.isNotEmpty() }
+val configuredServer = dominionServerUrl?.let { raw ->
+    val uri = java.net.URI(raw)
+    require(uri.scheme == "https" && !uri.host.isNullOrBlank() &&
+        uri.userInfo == null && uri.query == null && uri.fragment == null &&
+        (uri.path.isNullOrEmpty() || uri.path == "/")) {
+        "dominionServerUrl must be an HTTPS origin without credentials, path, query or fragment"
+    }
+    raw.trimEnd('/') + "/"
+}
+
 android {
-    namespace = "com.pickle.client"
+    namespace = "com.dominion.mobile"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.pickle.client"
+        applicationId = "com.dominion.mobile"
         minSdk = 32
         targetSdk = 35
         versionCode = 1
-        versionName = "1.1.20-source.1"
+        versionName = "0.1.0-dev"
 
         vectorDrawables.useSupportLibrary = true
-        buildConfigField("String", "API_BASE_URL", "\"https://api.pickle.invalid/\"")
-        buildConfigField("boolean", "USE_DEMO_DATA", "true")
+        buildConfigField("String", "API_BASE_URL", "\"${configuredServer ?: "https://dominion.invalid/"}\"")
+        buildConfigField("boolean", "USE_DEMO_DATA", (configuredServer == null).toString())
     }
 
     buildTypes {

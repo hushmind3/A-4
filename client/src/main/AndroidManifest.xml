@@ -24,13 +24,13 @@
         android:required="false" />
 
     <application
-        android:name=".PickleApplication"
-        android:allowBackup="true"
+        android:name=".DominionApplication"
+        android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Pickle">
+        android:theme="@style/Theme.Dominion">
 
         <activity
             android:name=".MainActivity"
@@ -54,14 +54,11 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
 
-            <intent-filter android:autoVerify="true">
+            <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="pickle" />
-                <data android:scheme="https" />
-                <data android:host="pickle.com" />
-                <data android:pathPrefix="/u/" />
+                <data android:scheme="dominion" />
             </intent-filter>
         </activity>
 
@@ -79,7 +76,7 @@
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
-                android:resource="@xml/widget_pickle_info" />
+                android:resource="@xml/widget_dominion_info" />
         </receiver>
 
         <receiver
@@ -91,7 +88,7 @@
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
-                android:resource="@xml/widget_pickle_2x1_info" />
+                android:resource="@xml/widget_dominion_2x1_info" />
         </receiver>
     </application>
 </manifest>

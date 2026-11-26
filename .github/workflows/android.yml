@@ -36,5 +36,5 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: pickle-client-debug
+          name: dominion-mobile-debug
           path: client/build/outputs/apk/debug/client-debug.apk
