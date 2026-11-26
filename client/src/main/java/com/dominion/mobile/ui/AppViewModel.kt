@@ -422,6 +422,9 @@ class AppViewModel(
     val taskBusy = _taskBusy.asStateFlow()
 
     suspend fun loadEngineSkills() = repo.engineSkills()
+    suspend fun inspectEngineSkill(id: String) = repo.inspectEngineSkill(id)
+    suspend fun changeEngineSkill(review: com.dominion.mobile.data.remote.SkillReview, enabled: Boolean) =
+        repo.changeEngineSkill(review, enabled)
 
     fun createServiceTask(title: String, characterId: String, details: String, steps: List<String>,
         onAccepted: (String) -> Unit) {

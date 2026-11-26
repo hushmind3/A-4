@@ -356,5 +356,6 @@ private fun iconFor(category: ExploreCategory): Glyph = when (category) {
     ExploreCategory.TRAVEL -> Glyph.GLOBE
     ExploreCategory.FUN -> Glyph.SPARK
     ExploreCategory.PEOPLE -> Glyph.IMAGE
+    ExploreCategory.KOREA -> Glyph.SHIELD
     ExploreCategory.RECOMMENDED -> Glyph.SPARK
 }

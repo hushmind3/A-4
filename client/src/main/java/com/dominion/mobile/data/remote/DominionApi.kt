@@ -112,6 +112,10 @@ interface DominionApi {
     suspend fun engineTools(): List<EngineTool>
     @GET("api/skills")
     suspend fun engineSkills(): List<EngineSkillState>
+    @GET("api/skills/{id}")
+    suspend fun engineSkill(@Path("id") id: String): com.google.gson.JsonObject
+    @POST("api/skills/{id}")
+    suspend fun saveEngineSkill(@Path("id") id: String, @Body record: com.google.gson.JsonObject): com.google.gson.JsonObject
     @POST("api/skills/import-repo")
     suspend fun importSkillRepository(@Body body: Map<String, String>): SkillImportResult
 

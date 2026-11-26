@@ -69,6 +69,30 @@ class RemoteBackedRepository(
 
     override suspend fun engineSkills(): List<EngineSkillState> = api.engineSkills()
 
+    private val skillChangeLock = Mutex()
+
+    override suspend fun inspectEngineSkill(id: String): SkillReview {
+        require(id.isNotBlank() && id.length <= 200 && id.none { it.isISOControl() })
+        return SkillReview.fromRecord(api.engineSkill(id)).also { check(it.id == id) }
+    }
+
+    override suspend fun changeEngineSkill(review: SkillReview, enabled: Boolean) = skillChangeLock.withLock {
+        val record = api.engineSkill(review.id)
+        check(SkillReview.fromRecord(record) == review) { "Skill changed; review again" }
+        // Retain all server fields, including skill instructions and path.
+        val next = record.deepCopy().apply {
+            addProperty("enabled", enabled)
+            if (enabled && (review.status.isNullOrBlank() || review.status == "draft")) addProperty("status", "active")
+        }
+        if (enabled) check(SkillReview.fromRecord(next).status == "active")
+        val saved = SkillReview.fromRecord(api.saveEngineSkill(review.id, next))
+        check(saved.id == review.id && saved.enabled == enabled &&
+            saved.instructions == review.instructions && saved.name == review.name)
+        val confirmed = SkillReview.fromRecord(api.engineSkill(review.id))
+        check(confirmed.id == review.id && confirmed.enabled == enabled &&
+            confirmed.instructions == review.instructions && (!enabled || confirmed.status == "active"))
+    }
+
     private val taskLock = Mutex()
 
     private suspend fun saveTaskLink(item: com.dominion.mobile.data.model.TaskItem) {

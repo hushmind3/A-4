@@ -1,6 +1,11 @@
 package com.dominion.mobile.ui.screens.explore
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.selection.SelectionContainer
+import kotlinx.coroutines.launch
+import com.dominion.mobile.data.remote.SkillReview
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -29,6 +34,20 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
     var skills by remember { mutableStateOf<List<com.dominion.mobile.data.remote.EngineSkillState>?>(null) }
     var skillError by remember { mutableStateOf(false) }
     var refreshKey by remember { mutableIntStateOf(0) }
+    val scope = rememberCoroutineScope()
+    var skillReview by remember { mutableStateOf<SkillReview?>(null) }
+    var skillBusy by remember { mutableStateOf(false) }
+
+    fun reviewSkill(id: String) {
+        if (skillBusy) return
+        skillBusy = true
+        scope.launch {
+            try { skillReview = vm.inspectEngineSkill(id) }
+            catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (_: Exception) { context.toast("스킬 원문 조회 실패") }
+            finally { skillBusy = false }
+        }
+    }
     LaunchedEffect(connection, refreshKey) {
         skills = null
         skillError = false
@@ -83,6 +102,34 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
         }
     }
 
+    skillReview?.let { review ->
+        AlertDialog(onDismissRequest = { if (!skillBusy) skillReview = null },
+            title = { Text(review.name + " · 실행 지시문 확인") },
+            text = {
+                Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
+                    Text("활성화는 본체 전체 스킬 설정에 반영됩니다. 외부 코드와 API 사용 여부를 확인하세요. 활성화만으로 실행 환경이 준비되지는 않습니다.")
+                    Spacer(Modifier.height(8.dp))
+                    SelectionContainer { Text(review.instructions) }
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = !skillBusy, onClick = {
+                    skillBusy = true
+                    scope.launch {
+                        try {
+                            vm.changeEngineSkill(review, !review.enabled)
+                            skillReview = null
+                            refreshKey++
+                            context.toast("본체 스킬 설정 저장 및 재조회 확인")
+                        } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                        catch (_: Exception) { context.toast("설정 변경을 확인하지 못했습니다. 다시 조회하세요.") }
+                        finally { skillBusy = false }
+                    }
+                }) { Text(if (review.enabled) "비활성화" else "내용 확인 후 활성화") }
+            },
+            dismissButton = { TextButton(enabled = !skillBusy, onClick = { skillReview = null }) { Text("닫기") } })
+    }
+
     selected?.let { service ->
         key(service.id) {
             var region by remember { mutableStateOf("") }
@@ -95,8 +142,14 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
                     AppTextField(details, { details = it.take(3000) }, label = "무엇을 처리할까요?",
                         placeholder = service.summary, singleLine = false, maxLines = 4)
                     Text("주민등록번호·인증번호·비밀번호는 입력하지 마세요.", style = MaterialTheme.typography.labelSmall)
-                    if (service.skillNames.isNotEmpty()) Text("관련 도구: " + service.skillNames.joinToString(", "),
-                        style = MaterialTheme.typography.labelSmall)
+                    if (service.skillNames.isNotEmpty()) {
+                        Text("관련 도구: " + service.skillNames.joinToString(", "), style = MaterialTheme.typography.labelSmall)
+                        skills.orEmpty().filter { it.name in service.skillNames && !it.id.isNullOrBlank() }.forEach { item ->
+                            TextButton(enabled = !skillBusy, onClick = { reviewSkill(requireNotNull(item.id)) }) {
+                                Text(item.name.orEmpty() + if (item.isActive()) " · 활성" else " · 원문 확인 및 설정")
+                            }
+                        }
+                    }
                     state.characters.forEach { character ->
                         Row {
                             RadioButton(selected = agent == character.id, onClick = { agent = character.id })
