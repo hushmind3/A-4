@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="pickle_screen">#FFFFFF</color>
+    <color name="pickle_screen_dark">#101114</color>
+    <color name="pickle_blue">#4797EF</color>
+    <color name="pickle_ink">#000000</color>
+</resources>

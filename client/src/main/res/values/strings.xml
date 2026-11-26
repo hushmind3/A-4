@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Pickle</string>
+    <string name="widget_name">My Pickle</string>
+    <string name="widget_description">See your Pickle and start a chat or call in one tap.</string>
+</resources>
