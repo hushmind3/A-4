@@ -318,6 +318,8 @@ data class SettingsState(
     val legalVersion: String = "2026.11"
 )
 
+enum class CallPhase { PERMISSION, CONNECTING, WAITING_PEER, PEER_PRESENT, RECONNECTING, FAILED }
+
 data class CallSession(
     val conversationId: Id,
     val characterId: Id,
@@ -325,7 +327,10 @@ data class CallSession(
     val startedAt: Long = System.currentTimeMillis(),
     val muted: Boolean = false,
     val speaker: Boolean = true,
-    val minimized: Boolean = false
+    val minimized: Boolean = false,
+    val phase: CallPhase = CallPhase.PERMISSION,
+    val error: String? = null,
+    val sessionId: String = java.util.UUID.randomUUID().toString()
 )
 
 data class AppState(

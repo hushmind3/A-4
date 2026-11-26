@@ -17,7 +17,16 @@ data class CallTokenResponse(
     val token: String = "",
     val url: String = "",
     val expires_at: Long = 0
-)
+) {
+    fun requireUsable(now: Long = System.currentTimeMillis()): CallTokenResponse {
+        val endpoint = java.net.URI(url)
+        require(endpoint.scheme == "wss" && !endpoint.host.isNullOrBlank() && endpoint.userInfo == null) {
+            "Voice endpoint requires secure WebSocket (wss)"
+        }
+        require(room.isNotBlank() && token.isNotBlank() && expires_at > now) { "Invalid or expired call session" }
+        return this
+    }
+}
 data class NotificationDto(
     val id: String = "",
     val type: String = "",

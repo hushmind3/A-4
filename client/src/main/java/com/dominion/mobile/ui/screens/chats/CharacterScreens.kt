@@ -154,7 +154,7 @@ fun CharacterScreen(
                             .clickable {
                                 val conv = vm.directConversationFor(character.id)
                                 if (conv != null && vm.startCall(conv, false)) onStartCall()
-                                else context.toast(tr(lang, "에너지가 부족해요", "Not enough energy"))
+                                else context.toast(tr(lang, "음성 통화는 연결된 서버에서 사용할 수 있어요", "Voice calls require a connected server"))
                             }
                             .padding(horizontal = 16.dp, vertical = 10.dp)
                     ) {

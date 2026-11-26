@@ -193,11 +193,7 @@ fun ChatRoomScreen(
             }
             GlyphButton(Glyph.PHONE, onClick = {
                 if (vm.startCall(conversationId, false)) onStartCall(false)
-                else context.toast(tr(lang, "에너지가 부족해요", "Not enough energy"))
-            })
-            GlyphButton(Glyph.VIDEO, onClick = {
-                if (vm.startCall(conversationId, true)) onStartCall(true)
-                else context.toast(tr(lang, "에너지가 부족해요", "Not enough energy"))
+                else context.toast(tr(lang, "음성 통화는 연결된 서버에서 사용할 수 있어요", "Voice calls require a connected server"))
             })
             IconButton(onClick = { showMenu = true }) {
                 Icon(Icons.Filled.MoreVert, "More", tint = p.textPrimary, modifier = Modifier.size(21.dp))

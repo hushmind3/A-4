@@ -40,7 +40,6 @@ import com.dominion.mobile.data.model.TxKind
 import com.dominion.mobile.data.model.VaultItem
 import com.dominion.mobile.data.model.VaultType
 import com.dominion.mobile.data.model.VoiceTone
-import com.dominion.mobile.util.formatDuration
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
@@ -513,69 +512,31 @@ class AppViewModel(
     // -------------------------------------------------------------------- calls
 
     fun startCall(conversationId: String, video: Boolean): Boolean {
-        val s = repo.state.value
-        val conv = s.conversation(conversationId) ?: return false
-        if (s.account.energy <= 0) return false
-        val session = CallSession(
+        val snapshot = repo.state.value
+        val conversation = snapshot.conversation(conversationId) ?: return false
+        if (video || repo.isDemo || repo.connection.value != com.dominion.mobile.data.ConnectionState.CONNECTED ||
+            snapshot.call != null) return false
+        mutate { it.copy(call = CallSession(
             conversationId = conversationId,
-            characterId = conv.characterId,
-            video = video,
-            startedAt = System.currentTimeMillis()
-        )
-        mutate {
-            it.copy(
-                call = session,
-                account = it.account.copy(energy = (it.account.energy - 1).coerceAtLeast(0)),
-                conversations = it.conversations.map { c -> if (c.id == conversationId) c.copy(unread = 0) else c }
-            )
-        }
+            characterId = conversation.characterId,
+            video = false
+        )) }
         return true
     }
 
-    fun toggleCallMute() = mutate { s -> s.call?.let { s.copy(call = it.copy(muted = !it.muted)) } ?: s }
-    fun toggleCallSpeaker() = mutate { s -> s.call?.let { s.copy(call = it.copy(speaker = !it.speaker)) } ?: s }
-    fun toggleCallVideo() = mutate { s -> s.call?.let { s.copy(call = it.copy(video = !it.video)) } ?: s }
-
-    fun endCall() {
-        val s = repo.state.value
-        val call = s.call ?: return
-        val elapsed = System.currentTimeMillis() - call.startedAt
-        val character = s.character(call.characterId)
-        val card = MessageCard(
-            kind = CardKind.CALL,
-            title = if (call.video) "영상 통화" else "음성 통화",
-            subtitle = formatDuration(elapsed),
-            meta = "방금 전"
-        )
-        val message = Message(
-            id = id("msg"),
-            conversationId = call.conversationId,
-            sender = MessageSender.ASSISTANT,
-            kind = MessageKind.CALL,
-            createdAt = System.currentTimeMillis(),
-            card = card
-        )
-        mutate { st ->
-            st.copy(
-                call = null,
-                conversations = st.conversations.map { c ->
-                    if (c.id == call.conversationId) c.copy(
-                        messages = c.messages + message,
-                        updatedAt = System.currentTimeMillis()
-                    ) else c
-                },
-                activity = listOf(
-                    ActivityItem(
-                        id = id("act"),
-                        type = ActivityType.CALL,
-                        title = "${character?.name ?: "도미니온"}와 통화했어요",
-                        body = "${formatDuration(elapsed)} 동안 이야기를 나눴어요.",
-                        createdAt = System.currentTimeMillis()
-                    )
-                ) + st.activity
-            )
-        }
+    fun toggleCallMute() = mutate { s ->
+        s.call?.takeIf { it.phase == com.dominion.mobile.data.model.CallPhase.WAITING_PEER ||
+            it.phase == com.dominion.mobile.data.model.CallPhase.PEER_PRESENT }
+            ?.let { s.copy(call = it.copy(muted = !it.muted)) } ?: s
     }
+
+    fun failCall(sessionId: String, message: String) = mutate { s ->
+        s.call?.takeIf { it.sessionId == sessionId }?.let {
+            s.copy(call = it.copy(phase = com.dominion.mobile.data.model.CallPhase.FAILED, error = message))
+        } ?: s
+    }
+
+    fun endCall() = mutate { it.copy(call = null) }
 
     fun minimizeCall(minimized: Boolean) = mutate { s ->
         s.call?.let { s.copy(call = it.copy(minimized = minimized)) } ?: s

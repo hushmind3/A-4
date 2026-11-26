@@ -14,11 +14,11 @@ class LocalStore(context: Context, scope: String = "demo") {
     private val gson = GsonBuilder().serializeNulls().create()
 
     fun loadState(): AppState? = runCatching {
-        prefs.getString(KEY_STATE, null)?.let { gson.fromJson(it, AppState::class.java) }
+        prefs.getString(KEY_STATE, null)?.let { gson.fromJson(it, AppState::class.java)?.copy(call = null, typingConversationId = null, vaultUnlocked = false) }
     }.getOrNull()
 
     fun saveState(state: AppState) {
-        runCatching { prefs.edit().putString(KEY_STATE, gson.toJson(state)).apply() }
+        runCatching { prefs.edit().putString(KEY_STATE, gson.toJson(state.copy(call = null, typingConversationId = null, vaultUnlocked = false))).apply() }
     }
 
     fun clearState() {

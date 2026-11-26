@@ -58,3 +58,11 @@ Official references: [Android Google sign-in](https://developer.android.com/iden
 6. Secure storage and notification delivery, followed by real device/server/cloud integration testing.
 
 The current source does not implement these gates end-to-end. The REST client is not a second agent harness.
+
+## Voice media connection
+
+The mobile client requests POST /v1/conversations/{id}/calls with video=false. It requires a nonempty room/token, future expiry and a WSS endpoint, then connects to LiveKit and publishes the granted microphone. A connected media room without a remote peer is displayed as waiting, not as a successful AI conversation. The service owns the room and releases it on termination; live call state is not persisted to disk. Demo calls and simulated call records are disabled. Camera and video controls are not offered until video rendering is connected.
+
+The inspected server may return a plain ws:// fallback; a deployed secure WSS endpoint is required. Issuing a room token does not dispatch a voice agent. Actual bidirectional AI speech, interruption and task execution depend on a real agent participant using the DOMINION harness. No server or Cloudflare change was made here.
+
+SDK: [LiveKit Android 2.30.0](https://github.com/livekit/client-sdk-android/releases/tag/v2.30.0), Apache-2.0. See the [official Android integration guide](https://docs.livekit.io/transport/sdk-platforms/android/) and [foreground service restrictions](https://developer.android.com/develop/background-work/services/fgs/service-types).

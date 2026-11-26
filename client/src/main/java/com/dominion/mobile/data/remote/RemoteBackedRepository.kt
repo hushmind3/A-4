@@ -51,6 +51,11 @@ class RemoteBackedRepository(
         }
     }
 
+    override suspend fun requestVoiceCall(conversationId: String): CallTokenResponse =
+        requireNotNull(api.startCall(conversationId, StartCallRequest(video = false)).data) {
+            "Server did not issue a call session"
+        }.requireUsable()
+
     override suspend fun loadMessages(conversationId: String): List<Message> =
         api.messages(conversationId).data.map { it.toDomain() }
 

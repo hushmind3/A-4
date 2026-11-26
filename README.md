@@ -4,7 +4,7 @@
 
 Native Android companion for [DOMINION](https://github.com/hushmind3/dominion). Talk to your assistant, delegate work, review its progress and return to the same conversations across devices. The Android client is the interaction layer; DOMINION owns model selection, agent execution, tools, memory and verification.
 
-> Development preview · 0.1.0-dev. The native interface and server-mode REST messaging are implemented in source; production cloud authentication, remote job recovery and real-time media still require integration and end-to-end testing.
+> Development preview · 0.1.0-dev. The native interface and server-mode REST messaging are implemented in source; production cloud authentication, remote job recovery and real-time media still require integration and end-to-end testing. The Android voice path uses LiveKit 2.30.0; video is not yet offered.
 
 ## Architecture
 
@@ -57,7 +57,7 @@ For the actual server routes and limitations, see [Backend integration](docs/BAC
 | Failed-send state and retry | Implemented client; server idempotency not yet guaranteed |
 | Server response polling | Implemented; not streaming |
 | Profile, tasks, schedules, memory, attachments | Demo/interface or partial read contracts |
-| Voice/video calling | Interface and foreground service; media not connected |
+| Voice calling | LiveKit native transport, permissions and foreground service implemented; live peer/agent integration unverified |
 | Shared Google account, Cloudflare routing | Integration pending |
 | Background execution, approval, reconnect recovery | Integration pending |
 | Widgets and share intent | Native interface; deep links not fully routed |

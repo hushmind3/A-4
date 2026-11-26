@@ -29,6 +29,9 @@ interface DominionRepository {
     suspend fun pollForReply(conversationId: String, knownIds: Set<String>): List<Message> =
         emptyList()
 
+    suspend fun requestVoiceCall(conversationId: String): com.dominion.mobile.data.remote.CallTokenResponse =
+        error("Voice calls require a connected server")
+
     fun update(transform: (AppState) -> AppState)
     suspend fun refresh() = Unit
     fun reset()

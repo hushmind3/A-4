@@ -31,7 +31,6 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -72,7 +71,6 @@ import com.dominion.mobile.ui.screens.friends.FriendsScreen
 import com.dominion.mobile.ui.screens.profile.ProfileScreen
 import com.dominion.mobile.ui.theme.LocalDominionPalette
 import com.dominion.mobile.ui.tr
-import com.dominion.mobile.util.formatDuration
 import kotlinx.coroutines.launch
 
 @Composable
@@ -527,13 +525,6 @@ private fun MinimizedCallBar(
     val stateContext = androidx.compose.ui.platform.LocalContext.current
     val call = state.call ?: return
     val character = state.character(call.characterId) ?: return
-    var elapsed by remember(call.startedAt) { mutableLongStateOf(System.currentTimeMillis() - call.startedAt) }
-    LaunchedEffect(call.startedAt) {
-        while (true) {
-            elapsed = System.currentTimeMillis() - call.startedAt
-            kotlinx.coroutines.delay(1000)
-        }
-    }
     Row(
         Modifier
             .fillMaxWidth()
@@ -546,16 +537,22 @@ private fun MinimizedCallBar(
         Spacer(Modifier.width(9.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                tr(lang, "${character.name}와 통화 중", "In a call with ${character.name}"),
+                tr(lang, "${character.name} · 음성 세션", "${character.name} · Voice session"),
                 style = MaterialTheme.typography.labelMedium,
                 color = Color.White
             )
-            Text(formatDuration(elapsed), style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.55f))
+            Text(when (call.phase) {
+                com.dominion.mobile.data.model.CallPhase.WAITING_PEER -> tr(lang, "상대 대기 중", "Waiting for peer")
+                com.dominion.mobile.data.model.CallPhase.PEER_PRESENT -> tr(lang, "상대 접속", "Peer joined")
+                com.dominion.mobile.data.model.CallPhase.RECONNECTING -> tr(lang, "재연결 중", "Reconnecting")
+                com.dominion.mobile.data.model.CallPhase.FAILED -> tr(lang, "연결 실패", "Connection failed")
+                else -> tr(lang, "연결 중", "Connecting")
+            }, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.55f))
         }
         Box(
             Modifier.size(34.dp).clip(CircleShape).background(Color(0xFFEE1717)).clickable {
-                com.dominion.mobile.platform.audio.CallForegroundService.stop(stateContext)
                 onEnd()
+                com.dominion.mobile.platform.audio.CallForegroundService.stop(stateContext)
             },
             contentAlignment = Alignment.Center
         ) {

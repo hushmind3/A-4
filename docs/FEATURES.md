@@ -11,7 +11,7 @@ Status means source implementation, not a claim of production readiness. Server 
 | Models | Server-driven conversation execution | Model catalog/selection UI not connected |
 | Login | Prototype onboarding | Google cloud account and device authorization pending |
 | Server connection | Build-time HTTPS origin, isolated cache, foreground connection status and retry | Runtime pairing and tunnel authorization pending |
-| Calls | UI, controls, timer, foreground service | Actual LiveKit/WebRTC media, interruption and voice agent pending |
+| Calls | LiveKit 2.30.0 voice transport, microphone permission, mute, foreground service and connection states | Live agent, interruption and video rendering pending; end-to-end test not run |
 | Attachments | Cards, share intent | Real file selection/upload and result viewer incomplete |
 | Tasks, memory, schedules | Local demo screens | Mobile server endpoints currently placeholder collections |
 | Job progress/approval/cancel/resume | Not integrated | Needs real engine event and job contracts |
