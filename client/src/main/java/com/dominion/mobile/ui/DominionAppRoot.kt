@@ -122,6 +122,14 @@ fun DominionAppRoot(vm: AppViewModel) {
         }
 
         val locked = state.settings.appLock && !appUnlocked
+        val focus = androidx.compose.ui.platform.LocalFocusManager.current
+        val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+        LaunchedEffect(locked) {
+            if (locked) {
+                focus.clearFocus(force = true)
+                keyboard?.hide()
+            }
+        }
         Box(Modifier.fillMaxSize()) {
         NavHost(navController = nav, startDestination = Routes.MAIN,
             modifier = if (locked) Modifier.alpha(0f).clearAndSetSemantics {} else Modifier) {

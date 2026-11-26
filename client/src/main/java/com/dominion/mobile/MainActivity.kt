@@ -55,8 +55,14 @@ class MainActivity : ComponentActivity() {
     private fun handleIntent(intent: Intent?) {
         if (intent == null) return
         intent.getStringExtra("dominion_notification_room")?.let { roomId ->
+            val originKey = intent.getStringExtra("dominion_notification_origin")
             intent.removeExtra("dominion_notification_room")
-            viewModel.openRoomFromNotification(roomId)
+            intent.removeExtra("dominion_notification_origin")
+            val current = (application as DominionApplication).container.engine
+            if (current != null && originKey ==
+                com.dominion.mobile.platform.background.BackgroundJobMonitor.originKey(current.origin)) {
+                viewModel.openRoomFromNotification(roomId)
+            }
             return
         }
         val shared = when (intent.action) {

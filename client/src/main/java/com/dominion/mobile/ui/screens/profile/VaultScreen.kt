@@ -1,6 +1,7 @@
 package com.dominion.mobile.ui.screens.profile
 
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import com.dominion.mobile.platform.security.rememberDeviceAuthentication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -82,6 +83,13 @@ fun VaultScreen(
     var revealed by remember { mutableStateOf(emptySet<String>()) }
 
     DisposableEffect(vm) { onDispose { vm.lockVault() } }
+    LaunchedEffect(state.vaultUnlocked) {
+        if (!state.vaultUnlocked) {
+            revealed = emptySet()
+            showAdd = false
+            deleteTarget = null
+        }
+    }
     val authenticate = rememberDeviceAuthentication(
         title = tr(lang, "DOMINION 금고 잠금 해제", "Unlock DOMINION vault"),
         onSuccess = vm::unlockVault,

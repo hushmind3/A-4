@@ -335,6 +335,11 @@ fun NotificationsSettingsScreen(
                 checked = state.settings.notifications,
                 onCheckedChange = { enabled ->
                     vm.setNotifications(enabled)
+                    if (!enabled) {
+                        val manager = context.getSystemService(android.app.NotificationManager::class.java)
+                        manager.activeNotifications.filter { it.notification.channelId == "dominion_job_updates" }
+                            .forEach { manager.cancel(it.tag, it.id) }
+                    }
                     if (enabled && android.os.Build.VERSION.SDK_INT >= 33 &&
                         androidx.core.content.ContextCompat.checkSelfPermission(
                             context,

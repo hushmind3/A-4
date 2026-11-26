@@ -75,6 +75,11 @@ class BackgroundJobWorker(context: Context, params: WorkerParameters) : Coroutin
             catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { return Result.success() } // next scheduled poll
 
+        val currentEngine = (applicationContext as DominionApplication).container.engine
+        if (currentEngine !== engine) {
+            if (currentEngine?.origin != engine.origin) WorkManager.getInstance(applicationContext).cancelWorkById(id)
+            return Result.success()
+        }
         if (!job.belongsToRoom(roomId, jobId)) {
             BackgroundJobMonitor.stop(applicationContext, engine.origin, roomId, jobId)
             return Result.success()
@@ -113,9 +118,17 @@ class BackgroundJobWorker(context: Context, params: WorkerParameters) : Coroutin
         return Result.success()
     }
 
-    private fun canNotify(): Boolean = Build.VERSION.SDK_INT < 33 ||
-        ContextCompat.checkSelfPermission(applicationContext, Manifest.permission.POST_NOTIFICATIONS) ==
-        PackageManager.PERMISSION_GRANTED
+    private fun canNotify(): Boolean {
+        val container = (applicationContext as DominionApplication).container
+        val room = inputData.getString(BackgroundJobMonitor.ROOM)
+        if (container.engine?.origin?.let(BackgroundJobMonitor::originKey) != inputData.getString(BackgroundJobMonitor.ORIGIN))
+            return false
+        val state = container.repository.state.value
+        if (!state.settings.notifications || (room != null && state.conversation(room)?.muted == true)) return false
+        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(applicationContext,
+                Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return false
+        return androidx.core.app.NotificationManagerCompat.from(applicationContext).areNotificationsEnabled()
+    }
 
     private fun notifyOnce(key: String, phase: String, title: String, body: String) {
         if (!canNotify()) return
@@ -128,14 +141,18 @@ class BackgroundJobWorker(context: Context, params: WorkerParameters) : Coroutin
         val open = Intent(applicationContext, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra("dominion_notification_room", inputData.getString(BackgroundJobMonitor.ROOM))
+            putExtra("dominion_notification_origin", inputData.getString(BackgroundJobMonitor.ORIGIN))
         }
         val id = key.hashCode() and 0x7fffffff
         val destination = PendingIntent.getActivity(applicationContext, id, open,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val settings = (applicationContext as DominionApplication).container.repository.state.value.settings
+        val privateContent = settings.hideContent || !settings.messagePreview
         val notification = NotificationCompat.Builder(applicationContext, channelId)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(title)
-            .setContentText(body)
+            .setVisibility(if (privateContent) NotificationCompat.VISIBILITY_SECRET else NotificationCompat.VISIBILITY_PRIVATE)
+            .setContentTitle(if (privateContent) "DOMINION" else title)
+            .setContentText(if (privateContent) "새 작업 소식이 있습니다." else body)
             .setContentIntent(destination)
             .setAutoCancel(true)
             .build()
