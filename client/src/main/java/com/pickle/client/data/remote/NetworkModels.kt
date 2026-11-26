@@ -124,7 +124,8 @@ data class MessageDto(
     val kind: String = "text",
     val created_at: Long = 0,
     val card: CardDto? = null,
-    val reply_to: String? = null
+    val reply_to: String? = null,
+    val client_message_id: String? = null
 ) {
     fun toDomain(): Message = Message(
         id = id,
@@ -138,7 +139,8 @@ data class MessageDto(
         kind = runCatching { MessageKind.valueOf(kind.uppercase()) }.getOrDefault(MessageKind.TEXT),
         createdAt = if (created_at > 0) created_at else System.currentTimeMillis(),
         card = card?.toDomain(),
-        replyTo = reply_to
+        replyTo = reply_to,
+        clientMessageId = client_message_id
     )
 }
 
