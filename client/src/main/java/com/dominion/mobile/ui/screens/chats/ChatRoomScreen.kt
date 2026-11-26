@@ -126,7 +126,7 @@ fun ChatRoomScreen(
 
     LaunchedEffect(conversationId) { vm.refreshConversation(conversationId) }
 
-    var draft by remember(conversationId) { mutableStateOf(conversation.draft) }
+    var draft by remember(conversationId, conversation.sessionId) { mutableStateOf(conversation.draft) }
     var showAttach by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     var messageMenu by remember { mutableStateOf<Message?>(null) }
@@ -514,7 +514,7 @@ fun ChatRoomScreen(
                 tr(lang, if (conversation.muted) "알림 켜기" else "알림 끄기", if (conversation.muted) "Unmute" else "Mute"),
                 Glyph.SPEAKER_OFF
             ) { vm.setMuted(conversationId, !conversation.muted); showMenu = false }
-            SheetRow(tr(lang, "대화 되감기 (티켓 1장)", "Rewind (1 ticket)"), Glyph.REWIND) { showMenu = false; confirmRewind = true }
+            SheetRow(tr(lang, "대화 되감기 · 마지막 요청 복원", "Rewind · restore last request"), Glyph.REWIND) { showMenu = false; confirmRewind = true }
             SheetRow(tr(lang, "대화 비우기", "Clear chat"), Glyph.CLOSE) { showMenu = false; confirmClear = true }
             SheetRow(tr(lang, "신고하기", "Report"), Glyph.SHIELD) {
                 showMenu = false
@@ -565,13 +565,11 @@ fun ChatRoomScreen(
     if (confirmRewind) {
         PrimaryDialog(
             title = tr(lang, "대화를 되감을까요?", "Rewind this chat?"),
-            body = tr(lang, "리셋 티켓 1장을 사용해 마지막 요청으로 돌아가요.", "Uses 1 reset ticket to go back to your last request."),
+            body = tr(lang, "이전 기록을 본체에 보존하고 새 세션의 입력창에 마지막 요청을 복원합니다. 이전 맥락은 이어지지 않으며 자동 실행하지 않습니다.", "Archive history on the engine and restore the last request in a fresh session. Previous context is not restored; nothing runs automatically."),
             confirmLabel = tr(lang, "되감기", "Rewind"),
             onConfirm = {
                 confirmRewind = false
-                if (!vm.useResetTicket(conversationId)) {
-                    context.toast(tr(lang, "리셋 티켓이 없어요", "No reset tickets left"))
-                }
+                vm.rewindConversation(conversationId)
             },
             dismissLabel = tr(lang, "취소", "Cancel"),
             onDismiss = { confirmRewind = false }
@@ -580,7 +578,7 @@ fun ChatRoomScreen(
     if (confirmClear) {
         PrimaryDialog(
             title = tr(lang, "대화를 비울까요?", "Clear this chat?"),
-            body = tr(lang, "메시지가 모두 사라져요. 이 작업은 되돌릴 수 없어요.", "All messages will be removed. This cannot be undone."),
+            body = tr(lang, "본체의 실행을 중단하고 새 대화 세션을 시작합니다. 이전 대화 기록은 본체에 보존됩니다.", "Stop active engine work and start a new session. Previous history stays on the engine."),
             confirmLabel = tr(lang, "비우기", "Clear"),
             onConfirm = { confirmClear = false; vm.clearConversation(conversationId) },
             dismissLabel = tr(lang, "취소", "Cancel"),

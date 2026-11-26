@@ -120,7 +120,7 @@ class AppViewModel(
         attachmentIds: List<String> = emptyList()) {
         val trimmed = text.trim()
         if (trimmed.isEmpty() && card == null) return
-        if (repo.state.value.conversation(conversationId) == null) return
+        if (repo.state.value.conversation(conversationId) == null || conversationId in _roomChanges.value) return
         val now = System.currentTimeMillis()
         val message = Message(
             id = id("msg"),
@@ -222,7 +222,9 @@ class AppViewModel(
 
             // A history refresh can win the race with POST acknowledgement.
             // Merge the durable job ID into the already reconciled row as well.
-            applyServerMessages(conversationId, listOf(acknowledgement))
+            if (state.value.conversation(conversationId)?.messages?.any {
+                it.id == message.id || it.clientMessageId == message.id || it.id == acknowledgement.id
+            } == true) applyServerMessages(conversationId, listOf(acknowledgement))
             // The room execution controller tracks actual server job state and
             // refreshes history. Never infer this job is complete from another
             // assistant message, and never impose the old one-minute cutoff.
@@ -251,8 +253,7 @@ class AppViewModel(
         val lock = historyLocks.getOrPut(conversationId) { kotlinx.coroutines.sync.Mutex() }
         if (!lock.tryLock()) return false
         try {
-            val messages = repo.loadMessages(conversationId) ?: return false
-            applyServerMessages(conversationId, messages)
+            repo.refreshRoomHistory(conversationId)
             return true
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { return false }
@@ -305,41 +306,36 @@ class AppViewModel(
         }
     }
 
-    fun clearConversation(conversationId: String) = mutate { s ->
-        s.withConversation(conversationId) {
-            it.copy(messages = listOf(
-                Message(
-                    id = id("sys"),
-                    conversationId = conversationId,
-                    sender = MessageSender.SYSTEM,
-                    text = "대화가 비워졌어요.",
-                    kind = MessageKind.SYSTEM,
-                    createdAt = System.currentTimeMillis()
-                )
-            ))
+    private val _roomChanges = MutableStateFlow<Set<String>>(emptySet())
+    val roomChanges = _roomChanges.asStateFlow()
+
+    private fun changeRoom(id: String, action: suspend () -> Unit, success: String) {
+        if (id in _roomChanges.value) return
+        _roomChanges.value = _roomChanges.value + id
+        viewModelScope.launch {
+            try {
+                action()
+                _notice.value = success
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) {
+                _notice.value = "본체 처리 결과를 확인하지 못했습니다. 미전송 메시지와 연결을 확인하세요."
+                refreshConversation(id)
+            } finally { _roomChanges.value = _roomChanges.value - id }
         }
     }
 
-    fun rewindConversation(conversationId: String): Boolean {
-        val conv = repo.state.value.conversation(conversationId) ?: return false
-        val keep = conv.messages.filter { it.sender == MessageSender.USER }.takeLast(2)
-        mutate { s ->
-            s.withConversation(conversationId) {
-                it.copy(messages = keep + Message(
-                    id = id("sys"),
-                    conversationId = conversationId,
-                    sender = MessageSender.SYSTEM,
-                    text = "마지막 두 번의 요청으로 되감았어요.",
-                    kind = MessageKind.SYSTEM,
-                    createdAt = System.currentTimeMillis()
-                ))
-            }
-        }
-        return true
-    }
+    fun clearConversation(conversationId: String) = changeRoom(conversationId,
+        { repo.resetRoom(conversationId, false) }, "이전 기록을 본체에 보존하고 새 대화 세션을 열었습니다.")
 
-    fun deleteConversation(conversationId: String) = mutate { s ->
-        s.copy(conversations = s.conversations.filterNot { it.id == conversationId })
+    fun rewindConversation(conversationId: String) = changeRoom(conversationId,
+        { repo.resetRoom(conversationId, true) }, "새 세션에 마지막 요청을 복원했습니다. 검토 후 다시 보내세요.")
+
+    fun deleteConversation(conversationId: String) = changeRoom(conversationId,
+        { repo.removeRoom(conversationId) }, "대화방을 목록에서 제거했습니다. 본체의 기존 기록은 보존됩니다.")
+
+    fun restoreHiddenRooms() {
+        mutate { it.copy(hiddenRooms = emptySet()) }
+        retryServerConnection()
     }
 
     private val _notice = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
@@ -725,18 +721,11 @@ class AppViewModel(
         return true
     }
 
+    // Legacy ticket action now invokes the native session restart, not a fabricated purchase.
     fun useResetTicket(conversationId: String): Boolean {
-        val s = repo.state.value
-        if (s.account.tickets <= 0) return false
-        mutate { st ->
-            st.copy(
-                account = st.account.copy(tickets = st.account.tickets - 1),
-                transactions = listOf(
-                    CreditTransaction(id = id("tx"), title = "리셋 티켓 사용", amount = -1, kind = TxKind.USE)
-                ) + st.transactions
-            )
-        }
-        return rewindConversation(conversationId)
+        if (state.value.conversation(conversationId) == null) return false
+        rewindConversation(conversationId)
+        return true
     }
 
     // ----------------------------------------------------------------- settings

@@ -141,6 +141,11 @@ fun MainScreen(
             ) { padding ->
                 Column(Modifier.fillMaxSize().padding(bottom = padding.calculateBottomPadding())) {
                     ConnectionBanner(connection, vm::retryServerConnection, { onNavigate(Routes.ENGINE_SETTINGS) })
+                    if ("assistant" in state.hiddenRooms.orEmpty()) {
+                        androidx.compose.material3.TextButton(onClick = vm::restoreHiddenRooms) {
+                            Text(tr(lang, "숨긴 기본 비서방 다시 표시", "Show hidden assistant room"))
+                        }
+                    }
                     state.sharedText?.let { shared ->
                         SharedBanner(
                             text = shared,
@@ -229,7 +234,7 @@ fun MainScreen(
     deleteTarget?.let { conv ->
         PrimaryDialog(
             title = tr(lang, "대화를 삭제할까요?", "Delete this chat?"),
-            body = tr(lang, "대화가 목록에서 사라져요.", "This chat will be removed."),
+            body = tr(lang, "기본 비서방은 기기에서 숨기고, 다른 방은 본체에서 제거합니다. 기존 기록은 본체에 보존됩니다.", "Hide the default assistant locally; remove other rooms from the engine. Prior history is preserved."),
             confirmLabel = tr(lang, "삭제", "Delete"),
             onConfirm = {
                 vm.deleteConversation(conv.id)

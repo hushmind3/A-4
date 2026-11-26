@@ -131,7 +131,8 @@ data class Conversation(
     val draft: String = "",
     val updatedAt: Long = System.currentTimeMillis(),
     val request: Boolean = false,
-    val tab: String = "all"
+    val tab: String = "all",
+    val sessionId: String? = null
 ) {
     fun title(characters: List<Character>): String =
         titleOverride ?: characters.firstOrNull { it.id == characterId }?.name ?: "Dominion"
@@ -395,7 +396,8 @@ data class AppState(
     val typingConversationId: Id? = null,
     val sharedText: String? = null,
     val vaultUnlocked: Boolean = false,
-    val characterPreferences: Map<Id, CharacterPreference>? = emptyMap()
+    val characterPreferences: Map<Id, CharacterPreference>? = emptyMap(),
+    val hiddenRooms: Set<Id>? = emptySet()
 ) {
     fun character(id: Id): Character? = characters.firstOrNull { it.id == id }
     fun myCharacter(): Character? = characters.firstOrNull { it.mine }

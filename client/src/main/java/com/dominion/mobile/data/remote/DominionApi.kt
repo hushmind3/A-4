@@ -96,6 +96,10 @@ interface DominionApi {
     suspend fun engineRoom(@Path("id") id: String): EngineRoom
     @POST("api/rooms/{id}")
     suspend fun updateRoom(@Path("id") id: String, @Body body: RoomConfigUpdate): EngineRoom
+    @POST("api/rooms/{id}/reset")
+    suspend fun resetEngineRoom(@Path("id") id: String): RoomResetReceipt
+    @retrofit2.http.DELETE("api/rooms/{id}")
+    suspend fun removeEngineRoom(@Path("id") id: String): com.google.gson.JsonObject
     @GET("api/rooms/{id}/messages")
     suspend fun nativeRoomMessages(@Path("id") id: String): List<NativeRoomMessage>
     @POST("api/rooms/{id}/messages")

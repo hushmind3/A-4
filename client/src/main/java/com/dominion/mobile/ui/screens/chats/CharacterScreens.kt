@@ -472,6 +472,7 @@ fun RoomInfoScreen(
     androidx.compose.runtime.LaunchedEffect(conversationId) { vm.refreshConversationNow(conversationId) }
     var confirmLeave by remember { mutableStateOf(false) }
     var confirmRewind by remember { mutableStateOf(false) }
+    var confirmClear by remember { mutableStateOf(false) }
 
     Column(
         Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().background(p.screen)
@@ -525,7 +526,7 @@ fun RoomInfoScreen(
                     Hairline()
                     SettingsRow(
                         title = tr(lang, "대화 되감기", "Rewind chat"),
-                        subtitle = tr(lang, "리셋 티켓 1장을 사용해요", "Uses 1 reset ticket"),
+                        subtitle = tr(lang, "새 세션에서 마지막 요청 복원", "Restore last request in a new session"),
                         leading = { GlyphIcon(Glyph.REWIND, p.textPrimary, size = 18.dp) },
                         onClick = { confirmRewind = true }
                     )
@@ -533,10 +534,7 @@ fun RoomInfoScreen(
                     SettingsRow(
                         title = tr(lang, "대화 비우기", "Clear chat"),
                         leading = { GlyphIcon(Glyph.CLOSE, p.textPrimary, size = 18.dp) },
-                        onClick = {
-                            vm.clearConversation(conversationId)
-                            context.toast(tr(lang, "대화를 비웠어요", "Chat cleared"))
-                        }
+                        onClick = { confirmClear = true }
                     )
                 }
             }
@@ -577,14 +575,21 @@ fun RoomInfoScreen(
         }
     }
 
+    if (confirmClear) {
+        PrimaryDialog(title = tr(lang, "대화를 비울까요?", "Clear chat?"),
+            body = tr(lang, "실행을 중단하고 새 세션을 시작합니다. 이전 기록은 본체에 보존합니다.", "Stop active work and start a new session, preserving old history on the engine."),
+            confirmLabel = tr(lang, "비우기", "Clear"),
+            onConfirm = { confirmClear = false; vm.clearConversation(conversationId) },
+            dismissLabel = tr(lang, "취소", "Cancel"), onDismiss = { confirmClear = false }, destructive = true)
+    }
     if (confirmRewind) {
         PrimaryDialog(
             title = tr(lang, "대화를 되감을까요?", "Rewind this chat?"),
-            body = tr(lang, "리셋 티켓 1장이 사용돼요.", "1 reset ticket will be used."),
+            body = tr(lang, "이전 기록은 보존하고 새 세션 입력창에 마지막 요청만 복원합니다.", "Preserve previous history and restore only the last request in a fresh session."),
             confirmLabel = tr(lang, "되감기", "Rewind"),
             onConfirm = {
                 confirmRewind = false
-                if (!vm.useResetTicket(conversationId)) context.toast(tr(lang, "리셋 티켓이 없어요", "No reset tickets"))
+                vm.rewindConversation(conversationId)
             },
             dismissLabel = tr(lang, "취소", "Cancel"),
             onDismiss = { confirmRewind = false }
@@ -593,12 +598,11 @@ fun RoomInfoScreen(
     if (confirmLeave) {
         PrimaryDialog(
             title = tr(lang, "대화방을 나갈까요?", "Leave this chat?"),
-            body = tr(lang, "대화 목록에서 사라져요.", "It will disappear from your chats."),
+            body = tr(lang, "기본 비서방은 이 기기에서 숨깁니다. 다른 방은 본체에서 제거하고 실행을 중단합니다. 기존 기록은 본체에 보존됩니다.", "Hide the default assistant locally; remove other rooms from the engine and stop their work. Prior history is preserved."),
             confirmLabel = tr(lang, "나가기", "Leave"),
             onConfirm = {
                 confirmLeave = false
                 vm.deleteConversation(conversationId)
-                onBack()
             },
             dismissLabel = tr(lang, "취소", "Cancel"),
             onDismiss = { confirmLeave = false },

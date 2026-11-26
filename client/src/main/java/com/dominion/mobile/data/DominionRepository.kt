@@ -60,6 +60,9 @@ interface DominionRepository {
     suspend fun syncMemory(id: String): Unit = error("Engine not connected")
     suspend fun deleteMemory(id: String): Unit = error("Memory storage unavailable")
     suspend fun renameRoom(id: String, title: String): Unit = error("Engine not connected")
+    suspend fun refreshRoomHistory(id: String): Unit = error("Engine not connected")
+    suspend fun resetRoom(id: String, restoreLastRequest: Boolean): Unit = error("Engine not connected")
+    suspend fun removeRoom(id: String): Unit = error("Engine not connected")
 
     suspend fun submitTask(id: String): Unit = error("Engine not connected")
     suspend fun refreshTask(id: String): Unit = error("Engine not connected")

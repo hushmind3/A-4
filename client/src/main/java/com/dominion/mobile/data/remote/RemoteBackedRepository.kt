@@ -393,6 +393,63 @@ class RemoteBackedRepository(
             "Server did not issue a call session"
         }.requireUsable()
 
+    private val roomMutationLock = Mutex()
+
+    override suspend fun refreshRoomHistory(id: String) = roomMutationLock.withLock {
+        val before = api.roomExecution(id)
+        val session = requireNotNull(before.sessionId).also { require(it.isNotBlank()) }
+        check(before.room?.id == id)
+        val messages = loadMessages(id)
+        val after = api.engineRoom(id)
+        check(after.id == id && after.sessionId == session)
+        update { current -> current.copy(conversations = current.conversations.map { room ->
+            if (room.id != id) room else com.dominion.mobile.data.RoomHistory.reconcile(room, session, messages)
+        }) }
+    }
+
+    override suspend fun resetRoom(id: String, restoreLastRequest: Boolean) = roomMutationLock.withLock {
+        refreshLock.withLock {
+            val local = requireNotNull(state.value.conversation(id))
+            check(local.messages.none { it.status != com.dominion.mobile.data.model.MessageStatus.SENT }) {
+                "Resolve pending messages before reset"
+            }
+            val before = api.roomExecution(id)
+            check(before.room?.id == id)
+            val previous = requireNotNull(before.sessionId).also { require(it.isNotBlank()) }
+            val draft = if (restoreLastRequest) loadMessages(id).lastOrNull {
+                it.sender == MessageSender.USER && it.text.isNotBlank()
+            }?.text ?: error("No previous request") else ""
+            val receipt = api.resetEngineRoom(id)
+            check(receipt.ok && receipt.roomId == id && receipt.previousSessionId == previous &&
+                !receipt.sessionId.isNullOrBlank() && receipt.sessionId != previous)
+            val session = requireNotNull(receipt.sessionId)
+            val confirmed = api.engineRoom(id)
+            check(confirmed.id == id && confirmed.sessionId == session)
+            val messages = loadMessages(id)
+            check(api.engineRoom(id).sessionId == session)
+            update { current -> current.copy(conversations = current.conversations.map { room ->
+                if (room.id != id) room else room.copy(sessionId = session, messages = messages, draft = draft)
+            }) }
+            store.saveStateNow(state.value)
+        }
+    }
+
+    override suspend fun removeRoom(id: String) = roomMutationLock.withLock {
+        refreshLock.withLock {
+            val local = requireNotNull(state.value.conversation(id))
+            check(local.messages.none { it.status != com.dominion.mobile.data.model.MessageStatus.SENT })
+            // The legacy mobile list automatically recreates its assistant room.
+            // Leaving that default room is a local hide; do not delete it remotely.
+            if (id != "assistant") {
+                check(api.removeEngineRoom(id).get("ok")?.asBoolean == true)
+                check(api.engineRooms().none { it.id == id })
+            }
+            update { current -> current.copy(hiddenRooms = current.hiddenRooms.orEmpty() + id,
+                conversations = current.conversations.filterNot { it.id == id }) }
+            store.saveStateNow(state.value)
+        }
+    }
+
     override suspend fun loadMessages(conversationId: String): List<Message> =
         api.nativeRoomMessages(conversationId).mapNotNull { it.toDomain(conversationId) }
 
@@ -452,11 +509,12 @@ class RemoteBackedRepository(
                         characters = characters.map { character ->
                             current.characterPreferences.orEmpty()[character.id]?.applyTo(character) ?: character
                         },
-                        conversations = conversations.map { serverConv ->
+                        conversations = conversations.filterNot { it.id in current.hiddenRooms.orEmpty() }.map { serverConv ->
                             val existing = current.conversation(serverConv.id)
                             if (existing != null) serverConv.copy(
                                 messages = com.dominion.mobile.data.MessageSync.reconcile(existing.messages, serverConv.messages),
                                 draft = existing.draft,
+                                sessionId = existing.sessionId,
                                 pinned = existing.pinned,
                                 muted = existing.muted,
                                 updatedAt = maxOf(serverConv.updatedAt, existing.updatedAt)

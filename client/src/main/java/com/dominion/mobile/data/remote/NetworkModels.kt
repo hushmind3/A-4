@@ -343,7 +343,7 @@ data class RoomCreate(val id: String, val name: String, val agentIds: List<Strin
     val models: List<RoomModel> = emptyList())
 data class EngineRoom(val id: String, val name: String, val toolsEnabled: Boolean = false,
     val autoModels: Boolean = false, val models: List<RoomModel> = emptyList(),
-    val agentIds: List<String>? = null)
+    val agentIds: List<String>? = null, val sessionId: String? = null)
 data class RoomConfigUpdate(val toolsEnabled: Boolean = true, val autoModels: Boolean? = null,
     val models: List<RoomModel>? = null)
 data class RoomInput(val input: String, val clientMessageId: String, val reasoningLanguage: String,
