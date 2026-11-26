@@ -22,6 +22,10 @@ interface PickleRepository {
     /** Fetch messages after a successful send; null means not supported. */
     suspend fun loadMessages(conversationId: String): List<Message>? = null
 
+    /** Wait for an asynchronous server reply, without sending the message again. */
+    suspend fun pollForReply(conversationId: String, knownIds: Set<String>): List<Message> =
+        emptyList()
+
     fun update(transform: (AppState) -> AppState)
     suspend fun refresh() = Unit
     fun reset()
