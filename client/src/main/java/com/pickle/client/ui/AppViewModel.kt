@@ -27,6 +27,7 @@ import com.pickle.client.data.model.Message
 import com.pickle.client.data.model.MessageCard
 import com.pickle.client.data.model.MessageKind
 import com.pickle.client.data.model.MessageSender
+import com.pickle.client.data.model.MessageStatus
 import com.pickle.client.data.model.ProductKind
 import com.pickle.client.data.model.Repeat
 import com.pickle.client.data.model.ScheduleItem
@@ -40,6 +41,7 @@ import com.pickle.client.data.model.VaultItem
 import com.pickle.client.data.model.VaultType
 import com.pickle.client.data.model.VoiceTone
 import com.pickle.client.util.formatDuration
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -209,7 +211,7 @@ class AppViewModel(
     fun sendMessage(conversationId: String, text: String, card: MessageCard? = null) {
         val trimmed = text.trim()
         if (trimmed.isEmpty() && card == null) return
-        val conversation = repo.state.value.conversation(conversationId) ?: return
+        if (repo.state.value.conversation(conversationId) == null) return
         val now = System.currentTimeMillis()
         val message = Message(
             id = id("msg"),
@@ -226,36 +228,116 @@ class AppViewModel(
                 else -> MessageKind.TEXT
             },
             createdAt = now,
-            card = card
+            card = card,
+            status = if (repo.isDemo) MessageStatus.SENT else MessageStatus.SENDING
         )
         mutate { s ->
             s.withConversation(conversationId) {
                 it.copy(messages = it.messages + message, updatedAt = now, unread = 0, draft = "")
-            }.copy(typingConversationId = conversationId)
+            }.copy(typingConversationId = if (repo.isDemo) conversationId else null)
         }
 
-        if (repo is RemoteBackedRepository) {
-            viewModelScope.launch {
-                runCatching { repo.sendRemote(conversationId, trimmed) }
-                mutate { s -> s.copy(typingConversationId = null) }
+        if (!repo.isDemo) {
+            deliverRemoteMessage(message)
+            return
+        }
+
+        viewModelScope.launch {
+            delay(850)
+            mutate { s ->
+                val conv = s.conversation(conversationId) ?: return@mutate s
+                val character = s.character(conv.characterId) ?: return@mutate s
+                val reply = DemoReplies.replyTo(trimmed, character, lang = s.settings.lang)
+                val replyMessage = Message(
+                    id = id("msg"),
+                    conversationId = conversationId,
+                    sender = MessageSender.CHARACTER,
+                    text = reply,
+                    createdAt = System.currentTimeMillis()
+                )
+                s.withConversation(conversationId) {
+                    it.copy(messages = it.messages + replyMessage, updatedAt = System.currentTimeMillis())
+                }.copy(typingConversationId = null)
             }
-        } else {
-            viewModelScope.launch {
-                delay(850)
+        }
+    }
+
+    /** Re-send the same client message id, instead of creating duplicate local messages. */
+    fun retryMessage(conversationId: String, messageId: String) {
+        if (repo.isDemo) return
+        val message = repo.state.value.conversation(conversationId)?.messages?.firstOrNull {
+            it.id == messageId && it.sender == MessageSender.ME && it.status == MessageStatus.FAILED
+        } ?: return
+        mutate { s ->
+            s.withConversation(conversationId) { conv ->
+                conv.copy(messages = conv.messages.map {
+                    if (it.id == messageId && it.status == MessageStatus.FAILED)
+                        it.copy(status = MessageStatus.SENDING) else it
+                })
+            }
+        }
+        deliverRemoteMessage(message)
+    }
+
+    private fun deliverRemoteMessage(message: Message) {
+        val conversationId = message.conversationId
+        viewModelScope.launch {
+            val acknowledgement = try {
+                repo.deliverMessage(conversationId, message)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
                 mutate { s ->
-                    val conv = s.conversation(conversationId) ?: return@mutate s
-                    val character = s.character(conv.characterId) ?: return@mutate s
-                    val reply = DemoReplies.replyTo(trimmed, character, lang = s.settings.lang)
-                    val replyMessage = Message(
-                        id = id("msg"),
-                        conversationId = conversationId,
-                        sender = MessageSender.CHARACTER,
-                        text = reply,
-                        createdAt = System.currentTimeMillis()
+                    s.withConversation(conversationId) { conv ->
+                        conv.copy(messages = conv.messages.map {
+                            if (it.id == message.id && it.status == MessageStatus.SENDING)
+                                it.copy(status = MessageStatus.FAILED) else it
+                        })
+                    }
+                }
+                return@launch
+            }
+
+            mutate { s ->
+                val conversation = s.conversation(conversationId) ?: return@mutate s
+                if (conversation.messages.none { it.id == message.id }) return@mutate s
+                s.withConversation(conversationId) { conv ->
+                    val acknowledged = conv.messages.map { local ->
+                        if (local.id != message.id) local
+                        else if (acknowledgement.sender == MessageSender.ME && acknowledgement.id.isNotBlank()) {
+                            acknowledgement.copy(
+                                status = MessageStatus.SENT,
+                                card = acknowledgement.card ?: local.card
+                            )
+                        } else local.copy(status = MessageStatus.SENT)
+                    }
+                    val withReply = if (
+                        acknowledgement.sender != MessageSender.ME &&
+                        acknowledgement.id.isNotBlank() &&
+                        acknowledged.none { it.id == acknowledgement.id }
+                    ) acknowledged + acknowledgement else acknowledged
+                    conv.copy(messages = withReply, updatedAt = System.currentTimeMillis())
+                }
+            }
+
+            // History fetch is best-effort and must not turn an accepted send into a failure.
+            val latest = try {
+                repo.loadMessages(conversationId)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+            if (latest != null) mutate { s ->
+                s.withConversation(conversationId) { conv ->
+                    val knownIds = conv.messages.map { it.id }.toSet()
+                    val newMessages = latest.filter { it.id.isNotBlank() && it.id !in knownIds }
+                        .distinctBy { it.id }
+                    if (newMessages.isEmpty()) conv
+                    else conv.copy(
+                        messages = (conv.messages + newMessages).sortedBy { it.createdAt },
+                        updatedAt = System.currentTimeMillis()
                     )
-                    s.withConversation(conversationId) {
-                        it.copy(messages = it.messages + replyMessage, updatedAt = System.currentTimeMillis())
-                    }.copy(typingConversationId = null)
                 }
             }
         }
