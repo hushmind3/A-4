@@ -87,6 +87,7 @@ fun MainScreen(
     var showNewTab by remember { mutableStateOf(false) }
     var sharedPicker by remember { mutableStateOf(false) }
     val sharedFiles by vm.sharedFiles.collectAsStateWithLifecycle()
+    val sharedCaption by vm.sharedCaption.collectAsStateWithLifecycle()
     val shareBusy by vm.shareBusy.collectAsStateWithLifecycle()
     var deleteTarget by remember { mutableStateOf<Conversation?>(null) }
 
@@ -149,7 +150,7 @@ fun MainScreen(
                         }
                     }
                     if (state.sharedText != null || sharedFiles.isNotEmpty()) {
-                        val preview = listOfNotNull(state.sharedText,
+                        val preview = listOfNotNull(if (sharedFiles.isNotEmpty()) sharedCaption else state.sharedText,
                             sharedFiles.takeIf { it.isNotEmpty() }?.joinToString(", ") { it.name }).joinToString(" · ")
                         SharedBanner(
                             text = if (shareBusy) tr(lang, "공유 준비 중…", "Preparing share…") else preview,
@@ -219,7 +220,7 @@ fun MainScreen(
                 tr(lang, "어디로 보낼까요?", "Where should it go?"),
                 tr(lang, "선택한 방으로만 공유합니다.", "Only send to the selected chat.")
             )
-            state.sharedText?.let { Text(it.take(500), modifier = Modifier.padding(horizontal = 20.dp)) }
+            (if (sharedFiles.isNotEmpty()) sharedCaption else state.sharedText)?.let { Text(it.take(500), modifier = Modifier.padding(horizontal = 20.dp)) }
             sharedFiles.forEach { file ->
                 Text(file.name + " · " + file.bytes.size.toString() + " bytes", modifier = Modifier.padding(horizontal = 20.dp, vertical = 3.dp))
             }

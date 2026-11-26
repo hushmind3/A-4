@@ -769,6 +769,8 @@ class AppViewModel(
 
     private val _sharedFiles = MutableStateFlow<List<com.dominion.mobile.platform.attachments.LocalAttachment>>(emptyList())
     val sharedFiles = _sharedFiles.asStateFlow()
+    private val _sharedCaption = MutableStateFlow<String?>(null)
+    val sharedCaption = _sharedCaption.asStateFlow()
     private val _shareBusy = MutableStateFlow(false)
     val shareBusy = _shareBusy.asStateFlow()
     private val _shareArrival = MutableStateFlow(0L)
@@ -794,7 +796,7 @@ class AppViewModel(
                     com.dominion.mobile.platform.attachments.LocalAttachment.fromUri(context, uri)
                 }
                 _sharedFiles.value = files
-                mutate { it.copy(sharedText = incoming.text) }
+                _sharedCaption.value = incoming.text
                 _shareArrival.value++
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { sharedImportFailed() }
@@ -815,14 +817,15 @@ class AppViewModel(
     fun clearSharedText() {
         if (_shareBusy.value) return
         _sharedFiles.value = emptyList()
+        _sharedCaption.value = null
         mutate { it.copy(sharedText = null) }
     }
 
     fun shareToConversation(conversationId: String, onQueued: () -> Unit = {}) {
         if (_shareBusy.value || conversationId in _roomChanges.value ||
             state.value.conversation(conversationId) == null) return
-        val text = state.value.sharedText.orEmpty()
         val files = _sharedFiles.value
+        val text = if (files.isNotEmpty()) _sharedCaption.value.orEmpty() else state.value.sharedText.orEmpty()
         if (files.isEmpty() && text.isBlank()) return
         _shareBusy.value = true
         viewModelScope.launch {
@@ -838,6 +841,7 @@ class AppViewModel(
                 }
                 sendMessage(conversationId, text, card, attachments.map { requireNotNull(it.id) })
                 _sharedFiles.value = emptyList()
+                _sharedCaption.value = null
                 mutate { it.copy(sharedText = null) }
                 onQueued()
             } catch (cancelled: CancellationException) { throw cancelled }

@@ -244,7 +244,7 @@ fun ChatsScreen(
     deleteTarget?.let { conv ->
         PrimaryDialog(
             title = tr(lang, "대화를 삭제할까요?", "Delete this chat?"),
-            body = tr(lang, "이 대화의 메시지가 목록에서 사라져요. 기억에 저장된 내용은 남아 있어요.", "Messages disappear from your list. Saved memories stay."),
+            body = tr(lang, "기본 비서방은 기기에서 숨기고 다른 방은 본체에서 제거합니다. 기존 기록은 본체에 보존됩니다.", "Hide the default assistant locally; remove other rooms from the engine. Prior history is preserved."),
             confirmLabel = tr(lang, "삭제", "Delete"),
             onConfirm = { onDelete(conv.id); deleteTarget = null },
             dismissLabel = tr(lang, "취소", "Cancel"),
