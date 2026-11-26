@@ -109,6 +109,8 @@ fun ChatRoomScreen(
         return
     }
 
+    LaunchedEffect(conversationId) { vm.refreshConversation(conversationId) }
+
     var draft by remember(conversationId) { mutableStateOf(conversation.draft) }
     var showAttach by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
