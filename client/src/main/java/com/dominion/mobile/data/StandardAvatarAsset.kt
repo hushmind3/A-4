@@ -12,6 +12,7 @@ import java.io.ByteArrayOutputStream
 class StandardAvatarAsset private constructor(val source: ByteArray, val binary: Boolean,
     private val resources: Map<String,ByteArray>, private val prefix: String,
     val vrm: Boolean) {
+    val expressionRig: VrmExpressions? by lazy { if(vrm) VrmExpressions.parse(source,binary) else null }
     fun resource(uri: String): ByteBuffer? {
         if (uri.startsWith("data:")) {
             val comma=uri.indexOf(',')

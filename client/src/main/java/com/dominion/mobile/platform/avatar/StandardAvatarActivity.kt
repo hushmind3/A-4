@@ -23,6 +23,9 @@ class StandardAvatarActivity: ComponentActivity() {
     private var animations by mutableStateOf<List<String>>(emptyList())
     private var index by mutableIntStateOf(0)
     private var failed by mutableStateOf(false)
+    private var expression by mutableStateOf<String?>(null)
+    private var strength by mutableFloatStateOf(1f)
+    private var viseme by mutableStateOf<String?>("aa")
     private var speech:Job?=null
     private val picker=registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if(uri!=null && !loading) {
@@ -40,7 +43,7 @@ class StandardAvatarActivity: ComponentActivity() {
                         }
                         store.save(keyId,bytes)
                     }
-                    animations=emptyList();index=0;failed=false;asset=result
+                    animations=emptyList();index=0;failed=false;expression=null;asset=result
                     status="저장 완료 · 렌더러에서 모델 확인"
                 } catch(e:CancellationException){throw e}
                 catch(_:Exception){status="가져오기 실패 · 모델 형식·리소스·32MB 한도를 확인하세요."}
@@ -71,7 +74,8 @@ class StandardAvatarActivity: ComponentActivity() {
                         Box(Modifier.weight(1f).fillMaxWidth()) {
                             val model=asset
                             if(model!=null && !failed) StandardAvatarView(model,Modifier.fillMaxSize(),speechLevel,index,
-                                onAnimations={animations=it},onFailure={failed=true;status="그래픽 모델 로드·렌더링 실패"})
+                                onAnimations={animations=it},onFailure={failed=true;status="그래픽 모델 로드·렌더링 실패"},
+                                expression=expression,expressionStrength=strength,viseme=viseme)
                             else Text(if(failed)"모델 렌더링 실패" else "저장된 모델 없음")
                         }
                         Text(status)
@@ -93,9 +97,24 @@ class StandardAvatarActivity: ComponentActivity() {
                                 TextButton(onClick={index=(index+1)%animations.size}){Text("다음")}
                             }
                         }
+                        val expressionNames=remember(asset) {
+                            runCatching{asset?.expressionRig?.expressions?.keys?.filter{it !in setOf("aa","ih","ou","ee","oh")}?.toList().orEmpty()}
+                                .getOrDefault(emptyList())
+                        }
+                        if(expressionNames.isNotEmpty()){
+                            Row(horizontalArrangement=Arrangement.spacedBy(6.dp)){
+                                var open by remember{mutableStateOf(false)}
+                                TextButton(onClick={open=true}){Text("표정: "+(expression?:"기본"))}
+                                DropdownMenu(expanded=open,onDismissRequest={open=false}){
+                                    DropdownMenuItem(text={Text("기본")},onClick={expression=null;open=false})
+                                    expressionNames.forEach{label->DropdownMenuItem(text={Text(label)},onClick={expression=label;open=false})}
+                                }
+                            }
+                            Slider(strength,{strength=it})
+                        }
                         Text("입 모양 확인")
                         Slider(speechLevel,{speechLevel=it},enabled=speech?.isActive!=true)
-                        Text("저장 모델은 음성 통화 캐릭터에도 연결됩니다. VRM 고유 물리 효과가 아닌 glTF 형상·재질·스킨·애니메이션을 지원합니다.",
+                        Text("VRM 표정과 음성 모프를 사용합니다. 스프링 본·재질 표정은 미지원입니다.",
                             style=MaterialTheme.typography.bodySmall)
                     }
                 }
@@ -107,13 +126,20 @@ class StandardAvatarActivity: ComponentActivity() {
         speech=lifecycleScope.launch {
             try {
                 val repo=(application as com.dominion.mobile.DominionApplication).container.repository
-                val wave=repo.synthesizeVoice("안녕하세요. 저는 $name 입니다.")
+                val text="안녕하세요. 저는 $name 입니다."
+                val aligned=repo.synthesizeAlignedVoice(text)
+                val wave=aligned?.wav?:repo.synthesizeVoice(text)
                 com.dominion.mobile.platform.audio.EngineVoiceAudio.play(this@StandardAvatarActivity,wave,
-                    onSpeechLevel={speechLevel=it})
+                    onSpeechLevel={if(aligned==null)speechLevel=it},
+                    onPositionMs=aligned?.let{speech->{ms:Int->
+                        val cue=speech.timeline.at(ms)
+                        viseme=when(cue?.viseme){"a"->"aa";"i"->"ih";"u"->"ou";"e"->"ee";"o"->"oh";else->null}
+                        speechLevel=cue?.openness?:0f
+                    }})
                 status="음성 재생 완료"
             } catch(e:CancellationException){throw e}
             catch(_:Exception){status="본체 음성 재생 실패"}
-            finally{speechLevel=0f}
+            finally{speechLevel=0f;viseme="aa"}
         }
     }
     override fun onPause(){speech?.cancel();super.onPause()}

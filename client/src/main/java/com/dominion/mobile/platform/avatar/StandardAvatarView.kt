@@ -30,6 +30,11 @@ private class StandardAvatarSurface(context: Context): FrameLayout(context) {
     private var animationIndex=0
     private var previousIndex=-1
     private var mouth=0f
+    private var expression:String?=null
+    private var expressionStrength=1f
+    private var viseme:String?="aa"
+    private var rig:com.dominion.mobile.data.VrmExpressions?=null
+    private var rigTargets=emptyMap<Pair<Int,Int>,Int>()
     private var failure: ()->Unit={}
     private var animationInfo: (List<String>)->Unit={}
     private var morphs=emptyList<Triple<Int,Int,Int>>()
@@ -39,7 +44,9 @@ private class StandardAvatarSurface(context: Context): FrameLayout(context) {
     }
 
     fun update(asset: StandardAvatarAsset, level: Float, index: Int,
-        onAnimations: (List<String>)->Unit, onFailure: ()->Unit) {
+        onAnimations: (List<String>)->Unit, onFailure: ()->Unit,
+        expressionName:String?,strength:Float,voiceShape:String?) {
+        expression=expressionName;expressionStrength=strength;viseme=voiceShape
         source=asset
         mouth=level.coerceIn(0f,1f)
         animationIndex=index
@@ -64,11 +71,23 @@ private class StandardAvatarSurface(context: Context): FrameLayout(context) {
             }
             val v=requireNotNull(viewer)
             if (loaded!==data) {
-                if(data.binary) v.loadModelGlb(ByteBuffer.wrap(data.source))
-                else v.loadModelGltf(ByteBuffer.wrap(data.source), data::resource)
+                rig=data.expressionRig
+                val renderSource=rig?.renderSource?:data.source
+                if(data.binary) v.loadModelGlb(ByteBuffer.wrap(renderSource))
+                else v.loadModelGltf(ByteBuffer.wrap(renderSource), data::resource)
                 val asset=requireNotNull(v.asset) { "Filament asset unavailable" }
                 v.transformToUnitCube()
                 val manager=v.engine.renderableManager
+                rigTargets=rig?.let { bindings ->
+                    val result=linkedMapOf<Pair<Int,Int>,Int>()
+                    bindings.expressions.values.flatMap{it.binds}.forEach { bind ->
+                        val entities=asset.getEntitiesByName(bindings.nodeNames.getValue(bind.node))
+                        val matching=entities.filter{manager.hasComponent(it)}.map{manager.getInstance(it)}
+                            .filter{bind.index<manager.getMorphTargetCount(it)}
+                        if(matching.size==1)result[bind.node to bind.index]=matching.single()
+                    }
+                    result
+                }.orEmpty()
                 morphs=asset.renderableEntities.asIterable().mapNotNull { entity ->
                     val ri=manager.getInstance(entity)
                     val names=asset.getMorphTargetNames(entity)
@@ -105,7 +124,11 @@ private class StandardAvatarSurface(context: Context): FrameLayout(context) {
             }
             val manager=v.engine.renderableManager
             // Use a named authored jaw/open-vowel target only; preserve other animation weights.
-            morphs.forEach { (instance,index,_) -> manager.setMorphWeights(instance,floatArrayOf(mouth),index) }
+            if(rigTargets.isNotEmpty()) {
+                rig?.weights(expression,expressionStrength,viseme,mouth)?.forEach{(key,value)->
+                    rigTargets[key]?.let{instance->manager.setMorphWeights(instance,floatArrayOf(value),key.second)}
+                }
+            }else morphs.forEach { (instance,index,_) -> manager.setMorphWeights(instance,floatArrayOf(mouth),index) }
             v.render(now)
             schedule()
         } catch (_:Exception) { failure() }
@@ -135,7 +158,8 @@ private class StandardAvatarSurface(context: Context): FrameLayout(context) {
 @Composable
 fun StandardAvatarView(asset: StandardAvatarAsset, modifier: Modifier,
     speechLevel: Float=0f, animationIndex: Int=0,
-    onAnimations: (List<String>)->Unit={}, onFailure: ()->Unit={}) {
+    onAnimations: (List<String>)->Unit={}, onFailure: ()->Unit={},
+    expression:String?=null,expressionStrength:Float=1f,viseme:String?="aa") {
     val context=LocalContext.current
     val lifecycle=LocalLifecycleOwner.current.lifecycle
     val view=remember(context,asset) { StandardAvatarSurface(context) }
@@ -149,7 +173,7 @@ fun StandardAvatarView(asset: StandardAvatarAsset, modifier: Modifier,
     }
     key(asset) {
         AndroidView(factory={view}, modifier=modifier,update={
-            it.update(asset,speechLevel,animationIndex,onAnimations,onFailure)
+            it.update(asset,speechLevel,animationIndex,onAnimations,onFailure,expression,expressionStrength,viseme)
         })
     }
 }
