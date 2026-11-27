@@ -31,7 +31,7 @@ class OfficeDocumentTest {
         assertFalse(doc.fields[1].editable)
         val edited=OfficeDocument.parse(OfficeFormat.SHEET,doc.export(mapOf(doc.fields[0].id to "15.5")))
         assertEquals("15.5",edited.fields[0].text)
-        assertEquals("=A1*2 → 20",edited.fields[1].text)
+        assertEquals("=A1*2 → 31",edited.fields[1].text)
         assertTrue(runCatching { doc.export(mapOf(doc.fields[1].id to "0")) }.isFailure)
     }
     @Test fun rejectsExternalEntityAndTraversal() {

@@ -76,8 +76,38 @@ class OfficeDocument private constructor(val format:OfficeFormat,
             val doc=edits.values.first { it.part==part }.node.ownerDocument
             result[part]=xmlBytes(doc)
         }
-        // Formula caches are not recalculated on Android; request recalculation in the office suite.
+        // Recalculate supported same-sheet numeric formulas. Remove stale caches for
+        // unsupported formulas, including dependent formulas in other worksheets.
         if(format==OfficeFormat.SHEET && dirty.isNotEmpty()) {
+            for (part in result.keys.filter { it.matches(Regex("xl/worksheets/sheet[0-9]+\\.xml")) }) {
+                val doc=xml(result.getValue(part))
+                val rows=elements(doc,S,"c")
+                val cells=rows.associate { cell ->
+                    val f=children(cell).firstOrNull { it.namespaceURI==S && it.localName=="f" }
+                    val v=children(cell).firstOrNull { it.namespaceURI==S && it.localName=="v" }
+                    val type=cell.getAttribute("t")
+                    cell.getAttribute("r") to SheetFormula.Cell(
+                        number=if(f==null && type in setOf("","n")) v?.textContent?.toBigDecimalOrNull() else null,
+                        formula=f?.textContent,
+                        unsupported=if(f!=null) f.hasAttribute("t") && f.getAttribute("t")!="normal" ||
+                            type !in setOf("","n") else type !in setOf("","n") || v!=null && v.textContent.toBigDecimalOrNull()==null)
+                }
+                val evaluator=SheetFormula(cells)
+                var changed=false
+                for(cell in rows) {
+                    if(children(cell).none { it.namespaceURI==S && it.localName=="f" })continue
+                    val value=evaluator.evaluate(cell.getAttribute("r"))
+                    children(cell).filter { it.namespaceURI==S && it.localName=="v" }.forEach { cell.removeChild(it) }
+                    if(value!=null) {
+                        val prefix=cell.prefix?.let { "$it:" }.orEmpty()
+                        val v=doc.createElementNS(S,prefix+"v")
+                        v.textContent=value.stripTrailingZeros().toPlainString()
+                        cell.appendChild(v)
+                    }
+                    changed=true
+                }
+                if(changed)result[part]=xmlBytes(doc)
+            }
             val book=result["xl/workbook.xml"]?.let(::xml)
             if(book!=null) {
                 val calc=elements(book,S,"calcPr").firstOrNull()

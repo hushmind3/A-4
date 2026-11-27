@@ -63,7 +63,7 @@ fun OfficeEditorPanel(format:OfficeFormat,name:String,bytes:ByteArray,onPicker:(
         }
         Text("원본 보존 · 편집 가능한 텍스트·셀만 변경",style=MaterialTheme.typography.labelMedium)
         if(doc.truncated)Text("최대 500개 항목을 표시합니다. 나머지 원본은 유지합니다.")
-        if(format==OfficeFormat.SHEET)Text("수식은 읽기 전용이며 계산은 Excel에서 다시 수행합니다.",style=MaterialTheme.typography.bodySmall)
+        if(format==OfficeFormat.SHEET)Text("수식 원본은 보존합니다. 저장 시 지원하는 기본 계산식은 다시 계산하고, 미지원 수식의 이전 결과는 제거합니다.",style=MaterialTheme.typography.bodySmall)
         OutlinedTextField(filter,{filter=it.take(150)},label={Text("문단·셀 검색")},singleLine=true,modifier=Modifier.fillMaxWidth())
         val visible=doc.fields.filter { filter.isBlank() || (it.section+" "+it.label+" "+(changes[it.id]?:it.text)).contains(filter,true) }
         LazyColumn(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(6.dp)) {
