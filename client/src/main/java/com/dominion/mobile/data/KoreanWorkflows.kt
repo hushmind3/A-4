@@ -65,3 +65,44 @@ object KoreanWorkflows {
         else -> emptyList()
     }
 }
+
+
+/** Private-service tasks reuse the existing selected-app navigation executor.
+ * Never infer installation from a catalogue entry. For providers without a
+ * verified package, the user must explicitly select an installed app. */
+data class KoreanErrand(val id:String,val title:String,val examples:String,
+    val packages:Set<String>,val labels:Set<String>,val goal:String){
+    fun matches(pkg:String,label:String):Boolean =
+        pkg in packages || (packages.isEmpty() && labels.any{label.equals(it,true)})
+}
+object KoreanErrands {
+    val entries=listOf(
+        KoreanErrand("messenger","카카오톡 · 메시지·약속","상대와 약속 잡기",setOf("com.kakao.talk"),emptySet(),
+            "정확한 대화방과 상대를 확인하고 약속 내용을 준비한다. 실제 발송은 사용자에게 넘긴다."),
+        KoreanErrand("search","네이버 · 검색·업체","업체 또는 장소 찾기",setOf("com.nhn.android.search","com.nhn.android.nmap"),emptySet(),
+            "검색 결과를 탐색하고 업체 이름·장소·영업 정보의 실제 화면을 확인한다."),
+        KoreanErrand("shopping","쿠팡·네이버쇼핑 · 주문 준비","상품명·옵션·예산",setOf("com.coupang.mobile","com.nhn.android.search"),emptySet(),
+            "상품 검색, 옵션·가격·배송 조건 확인, 주문 전 화면까지 준비한다. 결제는 사용자에게 넘긴다."),
+        KoreanErrand("delivery","배달의민족·요기요 · 주문 준비","메뉴·예산",setOf("com.sampleapp","com.fineapp.yogiyo","com.coupang.mobile.eats"),emptySet(),
+            "메뉴와 가게, 가격 및 배달 조건을 탐색한다. 실제 주문 확정은 사용자에게 넘긴다."),
+        KoreanErrand("transport","카카오T·티맵 · 이동","목적지·이동 조건",setOf("com.kakao.taxi","com.skt.tmap.ku"),emptySet(),
+            "출발지·도착지와 표시된 이동 조건을 확인한다. 호출이나 결제는 사용자에게 넘긴다."),
+        KoreanErrand("stay","NOL·여기어때 · 숙박","지역·숙박일·인원",emptySet(),setOf("NOL","야놀자","여기어때"),
+            "지역·날짜·인원에 맞는 숙소와 객실 조건을 검색한다. 예약 확정은 사용자에게 넘긴다."),
+        KoreanErrand("finance","토스·은행 · 금융 앱 탐색","필요한 메뉴 또는 문의",setOf("viva.republica.toss"),emptySet(),
+            "사용자가 선택한 금융 앱의 공개 메뉴·고객센터를 탐색한다. 계좌·인증·송금·결제는 사용자 직접 처리."),
+        KoreanErrand("used","당근 · 중고거래","상품명·지역·희망 가격",setOf("com.towneers.www"),emptySet(),
+            "상품 후보와 판매 조건을 탐색하고 문의할 내용을 준비한다. 메시지 발송은 사용자에게 넘긴다."),
+        KoreanErrand("clinic","똑닥 · 진료 예약 준비","병원·진료 시간",emptySet(),setOf("똑닥"),
+            "병원과 예약 가능한 화면을 탐색한다. 의료 개인정보 입력 및 예약 확정은 사용자에게 넘긴다."),
+        KoreanErrand("telecom","SKT·KT·LG U+ · 고객센터","요금·서비스 문의",setOf("Com.sktelecom.minit","com.ktshow.cs","com.lguplus.mobile.cs"),emptySet(),
+            "공개 고객센터와 요금 안내 메뉴를 탐색한다. 로그인이나 개인 청구내역 확인·변경은 사용자 직접 처리.")
+    )
+    fun request(id:String,pkg:String,label:String,details:String):String {
+        val entry=entries.single{it.id==id}
+        require(PhoneNavigationPlan.eligiblePackage(pkg)&&details.isNotBlank()&&details.length<=2000)
+        return "국내 민간 서비스 업무: "+entry.title+"\n대상 앱: "+label.take(100)+" ("+pkg+")\n사용자 요청: "+
+            details.trim()+"\n업무 범위: "+entry.goal+"\n실제 화면의 조작 요소만 근거로 다음 계획을 작성. " +
+            "검색·탐색 결과와 최종 직접 확인이 필요한 내용을 구분한다. 완료 근거 없이 주문·예약·발송 성공을 주장하지 않는다."
+    }
+}

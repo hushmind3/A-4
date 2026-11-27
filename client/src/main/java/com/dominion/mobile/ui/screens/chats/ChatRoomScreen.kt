@@ -425,6 +425,15 @@ fun ChatRoomScreen(
                             androidx.compose.material3.OutlinedButton(onClick = { miniAppMessage = entry.message },
                                 modifier = Modifier.padding(start = 40.dp, bottom = 8.dp)) { Text("미니앱 실행") }
                         }
+                        if(entry.message.sender==MessageSender.ASSISTANT &&
+                            remember(entry.message.id,entry.message.text){com.dominion.mobile.data.PhoneNavigationPlan.fromMessage(entry.message.text)!=null}){
+                            val owner=conversation.messages.firstOrNull{it.id==entry.message.replyTo}
+                            val phoneTask=state.tasks.firstOrNull{it.engineRoomId==conversationId&&it.phonePackage!=null}
+                            if(phoneTask==null||owner?.jobStatus=="needs_review"){
+                                androidx.compose.material3.OutlinedButton(onClick={phonePlanMessage=entry.message},
+                                    modifier=Modifier.padding(start=40.dp,bottom=8.dp)){Text("앱 업무 실행")}
+                            }
+                        }
                         if (entry.message.sender == MessageSender.USER && entry.message.jobStatus != null &&
                             entry.message.status == MessageStatus.SENT) {
                             val jobLabel = when (entry.message.jobStatus) {
@@ -719,6 +728,7 @@ fun ChatRoomScreen(
     phonePlanMessage?.let { message ->
         val plan = remember(message.id, message.text) { com.dominion.mobile.data.PhoneNavigationPlan.fromMessage(message.text) }
         if (plan != null) com.dominion.mobile.ui.components.PhoneNavigationDialog(plan,
+            preferReplan=state.tasks.any{it.engineRoomId==conversationId&&it.phonePackage==plan.app},
             replanContext=conversation.sessionId?.takeIf{it.isNotBlank()}?.let{ session ->
                 conversation.messages.firstOrNull{it.id==message.replyTo &&
                     it.sender==com.dominion.mobile.data.model.MessageSender.USER && it.text.isNotBlank()}?.let{ owner ->

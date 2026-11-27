@@ -135,7 +135,12 @@ class PhoneNavigationService : AccessibilityService() {
         _status.value = "대상 앱 열기 요청"
         work = scope.launch {
             var completed = 0
+            val initialRepo=(application as com.dominion.mobile.DominionApplication).container.repository
+            var recorded=false
+            var endStatus="paused"
+            val verified=mutableListOf<String>()
             try {
+                if(replan!=null)recorded=initialRepo.recordPhoneErrand(replan,"running","기기 업무 실행 시작 · "+plan.app)
                 showStop()
                 check(DeviceActions.openInstalledApp(this@PhoneNavigationService,plan.app))
                 withTimeout(300_000L) {
@@ -226,6 +231,7 @@ class PhoneNavigationService : AccessibilityService() {
                         }
                         check(success) { "Expected unique accessible control missing" }
                         completed++;localCompleted++
+                        if(step.action=="expect")verified.add(step.label)
                         if(engine==null && replan!=null && step.action=="inspect")
                             needsSemanticReplan=true
                         delay(500)
@@ -290,11 +296,20 @@ class PhoneNavigationService : AccessibilityService() {
                     }
                 }
             } catch (e: CancellationException) {
+                endStatus="cancelled"
                 _status.value = "중단 · 확인된 단계 " + completed
                 if (e !is TimeoutCancellationException) throw e
             } catch (_: Exception) {
+                endStatus="failed"
                 _status.value = "중단 · 화면/권한/대상 불일치. 확인된 단계 " + completed
             } finally {
+                if(recorded&&replan!=null)withContext(NonCancellable){
+                    val detail="실제 앱: "+plan.app+"\n"+_status.value+
+                        "\n확인한 화면 문구: "+verified.distinct().joinToString(", ").ifBlank{"없음"}+
+                        "\n주문·예약·발송·인증은 자동 확정되지 않았습니다. 실제 최종 결과를 확인하세요."
+                    try{initialRepo.recordPhoneErrand(replan,endStatus,detail)}
+                    catch(_:Exception){_status.value+=" · 업무 기록 저장 실패"}
+                }
                 removeStop()
                 runCatching {
                     val restored = serviceInfo

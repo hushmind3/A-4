@@ -117,6 +117,9 @@ interface DominionRepository {
     suspend fun engineSkills(): List<com.dominion.mobile.data.remote.EngineSkillState> = error("Engine not connected")
     suspend fun inspectEngineSkill(id: String): com.dominion.mobile.data.remote.SkillReview = error("Engine not connected")
     suspend fun changeEngineSkill(review: com.dominion.mobile.data.remote.SkillReview, enabled: Boolean): Unit = error("Engine not connected")
+    suspend fun createPhoneErrand(title:String,characterId:String,request:String,pkg:String):String =
+        error("Native phone errand unavailable")
+    suspend fun recordPhoneErrand(context:PhoneReplanContext,status:String,detail:String):Boolean = false
     suspend fun submitTask(id: String): Unit = error("Engine not connected")
     suspend fun dispatchScheduledTask(id: String, occurrence: Long): Unit = error("Engine not connected")
     suspend fun refreshTask(id: String): Unit = error("Engine not connected")

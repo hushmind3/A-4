@@ -217,8 +217,78 @@ class RemoteBackedRepository(
         store.saveStateNow(state.value)
     }
 
+    override suspend fun createPhoneErrand(title:String,characterId:String,request:String,pkg:String):String=taskLock.withLock{
+        check(localExecution)
+        require(title.isNotBlank()&&title.length<=160&&request.isNotBlank()&&request.length<=4000)
+        require(com.dominion.mobile.data.PhoneNavigationPlan.eligiblePackage(pkg))
+        require(com.dominion.mobile.platform.DeviceActions.isLaunchable(requireNotNull(mobileContext),pkg))
+        val taskId="phone-errand:"+java.util.UUID.randomUUID()
+        val roomId=TaskDispatch.roomId(taskId)
+        val nonce=TaskDispatch.messageNonce(taskId)
+        val session=java.util.UUID.randomUUID().toString()
+        val job="mobile:"+nonce
+        val plan=com.google.gson.JsonObject().apply{
+            addProperty("schema","dominion-phone-plan/v2");addProperty("app",pkg)
+            add("steps",com.google.gson.JsonArray().apply{add(com.google.gson.JsonObject().apply{
+                addProperty("action","inspect");addProperty("label","화면")
+            })})
+        }.toString()
+        val owner=Message(nonce,roomId,MessageSender.USER,request,
+            kind=com.dominion.mobile.data.model.MessageKind.TASK,clientMessageId=nonce,jobId=job,jobStatus="needs_review")
+        val reply=Message("phone-plan:"+nonce,roomId,MessageSender.ASSISTANT,plan,replyTo=nonce,jobId=job,
+            authorAgentId=characterId)
+        val task=com.dominion.mobile.data.model.TaskItem(taskId,title,characterId,
+            engineRoomId=roomId,engineSessionId=session,engineMessageId=nonce,engineJobId=job,
+            enginePrompt=request,engineStatus="needs_review",requestDetails=request,phonePackage=pkg)
+        update{st->
+            check(st.character(characterId)!=null)
+            st.copy(tasks=listOf(task)+st.tasks,conversations=listOf(com.dominion.mobile.data.model.Conversation(
+                roomId,characterId,titleOverride=title,kind=com.dominion.mobile.data.model.ConversationKind.TASK,
+                sessionId=session,messages=listOf(owner,reply)))+st.conversations)
+        }
+        store.saveStateNow(state.value)
+        roomId
+    }
+
+    override suspend fun recordPhoneErrand(context:com.dominion.mobile.data.PhoneReplanContext,status:String,detail:String):Boolean =
+        taskLock.withLock{
+            if(!localExecution)return@withLock false
+            val task=state.value.tasks.firstOrNull{it.phonePackage==context.app&&it.engineRoomId==context.roomId&&
+                it.engineSessionId==context.sessionId}?:return@withLock false
+            require(status in setOf("running","paused","failed","cancelled"))
+            val room=state.value.conversation(context.roomId)?:return@withLock false
+            check(room.sessionId==context.sessionId && task.enginePrompt==context.initialRequest)
+            val owner=room.messages.single{it.id==task.engineMessageId}
+            check(room.messages.any{it.id==context.initialMessageId&&it.replyTo==owner.id})
+            val actionId="phone-errand-execution:"+owner.id
+            val args=com.google.gson.JsonObject().apply{addProperty("package",context.app)}
+            val previous=state.value.mobileActions.orEmpty().firstOrNull{it.id==actionId}
+            if(status=="running")check(previous==null&&owner.jobStatus=="needs_review"){"이미 실행한 업무는 새 요청으로 등록하세요"}
+            else check(previous?.status=="launching"&&owner.jobStatus=="running")
+            val action=com.dominion.mobile.data.harness.MobileActionRecord(actionId,room.id,context.sessionId,
+                owner.id,task.characterId,"phone.navigate",args,
+                com.dominion.mobile.data.harness.MobileCore.digest(context.initialMessageId+"\n"+context.app),
+                if(status=="running")"launching" else if(status=="paused")"completed" else status,detail.take(3000))
+            update{st->
+                check(st.conversation(room.id)?.sessionId==context.sessionId)
+                val record=Message("phone-receipt:"+owner.id,room.id,MessageSender.ASSISTANT,detail.take(3000),
+                    replyTo=owner.id,jobId=owner.jobId,authorAgentId=task.characterId)
+                st.copy(tasks=st.tasks.map{if(it.id==task.id)it.copy(engineStatus=status)else it},
+                    mobileActions=st.mobileActions.orEmpty().filterNot{it.id==actionId}+action,
+                    conversations=st.conversations.map{c->if(c.id==room.id)c.copy(
+                        messages=c.messages.map{if(it.id==owner.id)it.copy(jobStatus=status)else it}
+                            .let{if(status=="running")it else it+record})else c})
+            }
+            store.saveStateNow(state.value)
+            true
+        }
+
     override suspend fun submitTask(id: String) = taskLock.withLock {
         var task = state.value.tasks.firstOrNull { it.id == id } ?: error("Task not found")
+        if(localExecution&&task.phonePackage!=null){
+            verifyTask(task)
+            return@withLock
+        }
         if(localExecution){
             if(task.koreanLookup==null&&(task.engineJobId==null || task.engineJobId?.startsWith("cloud:")==true)){
                 val cloud=requireNotNull(mobileCloud){"DOMINION Cloud account required"}
@@ -1125,7 +1195,7 @@ class RemoteBackedRepository(
             if(localExecution){
                 check(state.value.tasks.none{it.engineRoomId==id&&it.engineJobId?.startsWith("cloud:")==true&&
                     it.engineStatus in setOf("queued","running")}){"Cancel active cloud work before resetting its room"}
-                check(state.value.mobileActions.orEmpty().none{it.roomId==id&&it.status=="pending"})
+                check(state.value.mobileActions.orEmpty().none{it.roomId==id&&it.status in setOf("pending","launching")})
                 val draft=if(restoreLastRequest)local.messages.lastOrNull{it.sender==MessageSender.USER}?.text?:error("No previous request")else ""
                 update{current->current.copy(conversations=current.conversations.map{if(it.id==id)it.copy(messages=emptyList(),
                     sessionId=java.util.UUID.randomUUID().toString(),draft=draft)else it},
@@ -1161,7 +1231,7 @@ class RemoteBackedRepository(
             // The legacy mobile list automatically recreates its assistant room.
             // Leaving that default room is a local hide; do not delete it remotely.
             if(localExecution){
-                check(state.value.mobileActions.orEmpty().none{it.roomId==id&&it.status=="pending"})
+                check(state.value.mobileActions.orEmpty().none{it.roomId==id&&it.status in setOf("pending","launching")})
                 update{current->current.copy(hiddenRooms=current.hiddenRooms.orEmpty()+id,conversations=current.conversations.filterNot{it.id==id},
                     mobileActions=current.mobileActions.orEmpty().filterNot{it.roomId==id})}
                 store.saveStateNow(state.value);return@withLock

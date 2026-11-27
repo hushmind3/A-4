@@ -18,7 +18,7 @@ import com.dominion.mobile.platform.automation.PhoneNavigationService
 fun PhoneNavigationDialog(plan: PhoneNavigationPlan, onDismiss: () -> Unit,
     onResult: ((String) -> Unit)? = null,
     onVisualResult: (suspend (PhoneNavigationService.VisualFrame) -> Unit)? = null,
-    replanContext:com.dominion.mobile.data.PhoneReplanContext?=null) {
+    replanContext:com.dominion.mobile.data.PhoneReplanContext?=null,preferReplan:Boolean=false) {
     val context = LocalContext.current
     val connected by PhoneNavigationService.connected.collectAsState()
     val status by PhoneNavigationService.status.collectAsState()
@@ -34,7 +34,7 @@ fun PhoneNavigationDialog(plan: PhoneNavigationPlan, onDismiss: () -> Unit,
     }
     var approved by remember(plan) { mutableStateOf(false) }
     var reviewedBatch by remember(plan) { mutableStateOf(false) }
-    var automaticReplan by remember(plan) { mutableStateOf(false) }
+    var automaticReplan by remember(plan) { mutableStateOf(preferReplan&&replanContext!=null) }
     var started by remember(plan) { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
     val installed = remember(plan.app) {
@@ -53,7 +53,7 @@ fun PhoneNavigationDialog(plan: PhoneNavigationPlan, onDismiss: () -> Unit,
                     ((context.applicationContext as com.dominion.mobile.DominionApplication).container.engine==null ||
                     android.os.Build.VERSION.SDK_INT>=34)) {
                     Row {
-                        Checkbox(automaticReplan,{automaticReplan=it;approved=false},enabled=!started)
+                        Checkbox(automaticReplan,{automaticReplan=it;approved=false},enabled=!started&&!preferReplan)
                         Text(if((context.applicationContext as com.dominion.mobile.DominionApplication).container.engine==null)
                             "모바일 AI 재계획 (최대 6회)" else "본체와 자동 재계획 (최대 6회)",modifier=Modifier.padding(top=12.dp))
                     }

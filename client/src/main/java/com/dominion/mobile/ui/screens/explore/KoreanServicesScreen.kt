@@ -31,9 +31,14 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
     val p = LocalDominionPalette.current
     val context = LocalContext.current
     var selected by remember { mutableStateOf<KoreanService?>(null) }
+    var privateErrand by remember { mutableStateOf<com.dominion.mobile.data.KoreanErrand?>(null) }
+ 
     var institutionDraft by remember { mutableStateOf<Pair<String, String>?>(null) }
     var scheduleDraft by remember { mutableStateOf<ServiceScheduleDraft?>(null) }
     var query by remember { mutableStateOf("") }
+    val errands=com.dominion.mobile.data.KoreanErrands.entries.filter{
+        query.isBlank() || (it.title+" "+it.examples).contains(query,true)
+    }
     val results = KoreanServices.entries.filter {
         query.isBlank() || (it.title + " " + it.summary).contains(query, true)
     }
@@ -54,6 +59,15 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
         }
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if(vm.localExecution)items(errands,key={"private:"+it.id}){errand->
+                Card(onClick={privateErrand=errand}){
+                    Column(Modifier.fillMaxWidth().padding(14.dp)){
+                        Text(errand.title,style=MaterialTheme.typography.titleMedium)
+                        Text(errand.examples,style=MaterialTheme.typography.bodySmall)
+                        TextButton(onClick={privateErrand=errand}){Text("AI 앱 업무 실행")}
+                    }
+                }
+            }
             items(results, key = { it.id }) { service ->
                 Card(onClick = { selected = service }) {
                     Column(Modifier.fillMaxWidth().padding(14.dp)) {
@@ -66,6 +80,48 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
                             TextButton(onClick = { selected = service }) { Text("AI에게 맡기기") }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    privateErrand?.let{errand->
+        key(errand.id){
+            val installed=remember(errand.id){DeviceActions.launchableApps(context)}
+            val preferred=installed.filter{errand.matches(it.packageName,it.label)}
+            var selectedApp by remember{mutableStateOf(preferred.singleOrNull())}
+            var allApps by remember{mutableStateOf(preferred.isEmpty())}
+            var appQuery by remember{mutableStateOf("")}
+            var details by remember{mutableStateOf("")}
+            var agent by remember{mutableStateOf(state.myCharacter()?.id?:state.characters.firstOrNull()?.id.orEmpty())}
+            AppBottomSheet(onDismiss={privateErrand=null}){
+                SheetTitle(errand.title,"설치된 앱에서 실제 탐색")
+                Column(Modifier.heightIn(max=500.dp).verticalScroll(rememberScrollState()).padding(18.dp),
+                    verticalArrangement=Arrangement.spacedBy(8.dp)){
+                    Text("대상 앱을 선택하면 AI가 실제 화면을 관찰하고 다음 단계를 계획합니다. 최종 거래·인증은 직접 확인합니다.")
+                    TextButton(onClick={allApps=!allApps}){Text(if(allApps)"추천 앱만 보기" else "다른 설치 앱 선택")}
+                    if(allApps)AppTextField(appQuery,{appQuery=it.take(100)},placeholder="설치 앱 이름")
+                    (if(allApps)installed.filter{it.label.contains(appQuery,true)||it.packageName.contains(appQuery,true)}
+                        else preferred).take(80).forEach{app->
+                        Row{
+                            RadioButton(selected=selectedApp==app,onClick={selectedApp=app})
+                            Column(Modifier.padding(top=8.dp)){
+                                Text(app.label);Text(app.packageName,style=MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+                    if(preferred.isEmpty())Text("추천 앱을 자동 확인하지 못했습니다. 설치된 공식 앱을 직접 선택하세요.")
+                    selectedApp?.let{Text("실행 대상: "+it.label+" ("+it.packageName+")")}
+                    AppTextField(details,{details=it.take(2000)},label="맡길 업무",placeholder=errand.examples,singleLine=false,maxLines=5)
+                    state.characters.forEach{character->
+                        Row{RadioButton(selected=agent==character.id,onClick={agent=character.id});Text(character.name,Modifier.padding(top=12.dp))}
+                    }
+                    Button(enabled=selectedApp!=null&&details.isNotBlank()&&state.character(agent)!=null,onClick={
+                        val app=requireNotNull(selectedApp)
+                        val request=com.dominion.mobile.data.KoreanErrands.request(errand.id,app.packageName,app.label,details)
+                        vm.createPrivateErrand(errand.title,agent,request,app.packageName,onOpenChat)
+                        privateErrand=null
+                    }){Text("업무 등록 및 실행 검토")}
                 }
             }
         }
