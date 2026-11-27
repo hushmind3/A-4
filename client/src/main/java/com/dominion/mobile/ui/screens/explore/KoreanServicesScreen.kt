@@ -93,6 +93,10 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
             var allApps by remember{mutableStateOf(preferred.isEmpty())}
             var appQuery by remember{mutableStateOf("")}
             var details by remember{mutableStateOf("")}
+            var sendMessage by remember{mutableStateOf(false)}
+            var recipient by remember{mutableStateOf("")}
+            var messageBody by remember{mutableStateOf("")}
+            val isKakao=errand.id=="messenger"&&selectedApp?.packageName=="com.kakao.talk"
             var agent by remember{mutableStateOf(state.myCharacter()?.id?:state.characters.firstOrNull()?.id.orEmpty())}
             AppBottomSheet(onDismiss={privateErrand=null}){
                 SheetTitle(errand.title,"설치된 앱에서 실제 탐색")
@@ -112,14 +116,27 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
                     }
                     if(preferred.isEmpty())Text("추천 앱을 자동 확인하지 못했습니다. 설치된 공식 앱을 직접 선택하세요.")
                     selectedApp?.let{Text("실행 대상: "+it.label+" ("+it.packageName+")")}
-                    AppTextField(details,{details=it.take(2000)},label="맡길 업무",placeholder=errand.examples,singleLine=false,maxLines=5)
+                    if(isKakao){
+                        Row{Checkbox(sendMessage,{sendMessage=it});Text("직접 지정한 메시지 발송",Modifier.padding(top=12.dp))}
+                    }
+                    if(isKakao&&sendMessage){
+                        AppTextField(recipient,{recipient=it.take(60)},label="정확한 대화방 이름")
+                        AppTextField(messageBody,{messageBody=it.take(500)},label="발송할 메시지",singleLine=false,maxLines=5)
+                        Text("메시지 원문은 기기에 저장합니다. 실제 대화방과 입력 내용을 확인한 뒤 발송 직전에 별도로 승인합니다.")
+                    }else AppTextField(details,{details=it.take(2000)},label="맡길 업무",placeholder=errand.examples,singleLine=false,maxLines=5)
                     state.characters.forEach{character->
                         Row{RadioButton(selected=agent==character.id,onClick={agent=character.id});Text(character.name,Modifier.padding(top=12.dp))}
                     }
-                    Button(enabled=selectedApp!=null&&details.isNotBlank()&&state.character(agent)!=null,onClick={
+                    val payload=if(isKakao&&sendMessage)runCatching{
+                        com.dominion.mobile.data.KakaoMessageRequest(recipient.trim(),messageBody.trim()).checked()
+                    }.getOrNull() else null
+                    Button(enabled=selectedApp!=null&&state.character(agent)!=null&&
+                        (if(isKakao&&sendMessage)payload!=null else details.isNotBlank()),onClick={
                         val app=requireNotNull(selectedApp)
-                        val request=com.dominion.mobile.data.KoreanErrands.request(errand.id,app.packageName,app.label,details)
-                        vm.createPrivateErrand(errand.title,agent,request,app.packageName,onOpenChat)
+                        val request=if(payload!=null)"카카오톡 대화방 이름: "+payload.recipient+
+                            "\n지정한 대화방을 찾아 사용자 입력 메시지를 별도 승인 후 발송합니다. 메시지 본문은 기기에만 저장되어 있습니다."
+                            else com.dominion.mobile.data.KoreanErrands.request(errand.id,app.packageName,app.label,details)
+                        vm.createPrivateErrand(errand.title,agent,request,app.packageName,onOpenChat,payload)
                         privateErrand=null
                     }){Text("업무 등록 및 실행 검토")}
                 }

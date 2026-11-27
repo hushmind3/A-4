@@ -141,6 +141,7 @@ class PhoneNavigationService : AccessibilityService() {
             val initialRepo=(application as com.dominion.mobile.DominionApplication).container.repository
             var recorded=false
             var endStatus="paused"
+            var sendAttempted=false
             val verified=mutableListOf<String>()
             try {
                 if(replan!=null)recorded=initialRepo.recordPhoneErrand(replan,"running","기기 업무 실행 시작 · "+plan.app)
@@ -175,6 +176,48 @@ class PhoneNavigationService : AccessibilityService() {
                     var localCompleted=0
                     for (step in activePlan.steps) {
                         validRoom()
+                        if(step.action=="send_message"){
+                            val intent=requireNotNull(replan?.kakaoMessage){"No explicit message payload"}
+                            check(recorded&&plan.app=="com.kakao.talk"&&!sendAttempted)
+                            intent.checked()
+                            approveStep(PhoneNavigationStep("메시지 준비",intent.recipient,intent.body),
+                                plan.app,1,2)
+                            validRoom()
+                            val priorCount=withKakaoChat(intent){editor,_,count->
+                                check(editor.text.isNullOrBlank()||editor.text?.toString()==editor.hintText?.toString()){"기존 작성 내용이 있습니다"}
+                                check(editor.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT,Bundle().apply{
+                                    putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,intent.body)
+                                })){"메시지 입력 실패"}
+                                count
+                            }
+                            delay(350)
+                            approveStep(PhoneNavigationStep("실제 메시지 발송",intent.recipient,intent.body),plan.app,2,2)
+                            validRoom()
+                            withKakaoChat(intent){editor,send,_->
+                                check(editor.text?.toString()==intent.body){"작성 내용 변경"}
+                                val button=requireNotNull(send){"전송 버튼 없음"}
+                                sendAttempted=true
+                                check(button.performAction(AccessibilityNodeInfo.ACTION_CLICK)){"전송 버튼 실행 확인 실패"}
+                            }
+                            val deadline=android.os.SystemClock.elapsedRealtime()+6000
+                            var sent=false
+                            while(!sent&&android.os.SystemClock.elapsedRealtime()<deadline){
+                                validRoom()
+                                sent=runCatching{withKakaoChat(intent){editor,_,count->
+                                    (editor.text.isNullOrBlank()||editor.text?.toString()==editor.hintText?.toString())&&count>priorCount
+                                }}.getOrDefault(false)
+                                if(!sent)delay(250)
+                            }
+                            if(sent){
+                                verified.add("새 메시지 표시 · "+intent.recipient)
+                                completed++;endStatus="completed"
+                                _status.value="메시지 발송 화면 확인 · 새 메시지 표시됨 · 상대 수신/읽음 미확인"
+                            }else{
+                                endStatus="paused"
+                                _status.value="발송 버튼 실행 후 결과 확인 필요 · 자동 재발송 금지"
+                            }
+                            break
+                        }
                         _status.value = "기기 단계 " + (localCompleted + 1) + "/" + activePlan.steps.size + " · " + step.action
                         // Show the real target on the foreground app and require a fresh tap for every step.
                         if (reviewedBatch) {
@@ -245,6 +288,7 @@ class PhoneNavigationService : AccessibilityService() {
                             needsSemanticReplan=true
                         delay(500)
                     }
+                    if(sendAttempted)break
                     val frame=nextFrame
                     val mobileReplan=engine==null && replan!=null &&
                         (needsSemanticReplan || frame!=null || activePlan.steps.last().action=="inspect" ||
@@ -305,17 +349,18 @@ class PhoneNavigationService : AccessibilityService() {
                     }
                 }
             } catch (e: CancellationException) {
-                endStatus="cancelled"
-                _status.value = "중단 · 확인된 단계 " + completed
+                endStatus=if(sendAttempted)"paused" else "cancelled"
+                _status.value = if(sendAttempted)"발송 시도 후 중단 · 결과 확인 필요 · 재발송 금지" else "중단 · 확인된 단계 " + completed
                 if (e !is TimeoutCancellationException) throw e
             } catch (_: Exception) {
-                endStatus="failed"
-                _status.value = "중단 · 화면/권한/대상 불일치. 확인된 단계 " + completed
+                endStatus=if(sendAttempted)"paused" else "failed"
+                _status.value = if(sendAttempted)"발송 시도 결과 불명 · 재발송 금지" else "중단 · 화면/권한/대상 불일치. 확인된 단계 " + completed
             } finally {
                 if(recorded&&replan!=null)withContext(NonCancellable){
                     val detail="실제 앱: "+plan.app+"\n"+_status.value+
                         "\n확인한 화면 문구: "+verified.distinct().joinToString(", ").ifBlank{"없음"}+
-                        "\n주문·예약·발송·인증은 자동 확정되지 않았습니다. 실제 최종 결과를 확인하세요."
+                        (if(endStatus=="completed")"\n기기 화면에서 새 메시지를 확인했습니다. 서버 수신·읽음은 확인하지 않았습니다."
+                         else "\n최종 외부 결과는 확인되지 않았습니다. 발송을 시도했다면 재발송 전에 직접 확인하세요.")
                     try{initialRepo.recordPhoneErrand(replan,endStatus,detail)}
                     catch(_:Exception){_status.value+=" · 업무 기록 저장 실패"}
                 }
@@ -432,6 +477,45 @@ class PhoneNavigationService : AccessibilityService() {
         }
     }
 
+    /** Fresh, unique semantic controls in the foreground Kakao conversation.
+     * No passwords, coordinate guesses, clipboard or recipient inference. */
+    private fun <T> withKakaoChat(intent:com.dominion.mobile.data.KakaoMessageRequest,
+        block:(AccessibilityNodeInfo,AccessibilityNodeInfo?,Int)->T):T{
+        check(unlocked())
+        val pkg="com.kakao.talk"
+        val root=requireNotNull(rootInActiveWindow)
+        val nodes=ArrayList<AccessibilityNodeInfo>()
+        val queue=java.util.ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        try{
+            check(root.packageName?.toString()==pkg)
+            val bounds=Rect().also{root.getBoundsInScreen(it)}
+            check(bounds.height()>0)
+            while(queue.isNotEmpty()&&nodes.size<600){
+                val n=queue.removeFirst();nodes.add(n)
+                if(n.packageName?.toString()!=pkg||n.isPassword)continue
+                for(i in 0 until minOf(n.childCount,80))if(nodes.size+queue.size<600)n.getChild(i)?.let(queue::addLast)
+            }
+            check(nodes.none{it.isPassword})
+            val visible=nodes.filter{it.packageName?.toString()==pkg&&it.isVisibleToUser&&it.isEnabled}
+            fun names(n:AccessibilityNodeInfo)=listOfNotNull(n.text?.toString(),n.contentDescription?.toString(),n.hintText?.toString()).map{it.trim()}
+            fun rect(n:AccessibilityNodeInfo)=Rect().also{n.getBoundsInScreen(it)}
+            val titles=visible.filter{!it.isEditable&&intent.recipient in names(it)&&rect(it).centerY()<=bounds.top+bounds.height()/3}
+            check(titles.size==1){"대화방 이름을 유일하게 확인하지 못했습니다"}
+            val hints=setOf("메시지 입력","메시지를 입력하세요","메시지","채팅 입력","채팅 메시지 입력","Message","Type a message")
+            val editor=visible.singleOrNull{it.isEditable&&!it.isPassword&&rect(it).centerY()>bounds.centerY()&&
+                it.actionList.any{a->a.id==AccessibilityNodeInfo.ACTION_SET_TEXT}&&
+                listOf(it.hintText?.toString(),it.contentDescription?.toString()).any{h->h in hints}}
+                ?:error("메시지 입력란을 유일하게 확인하지 못했습니다")
+            val sends=visible.filter{it.isClickable&&!it.isEditable&&rect(it).centerY()>bounds.centerY()&&
+                names(it).any{label->label in setOf("전송","보내기","메시지 보내기","Send")}}
+            check(sends.size<=1)
+            val count=visible.filter{!it.isEditable&&it.text?.toString()==intent.body&&rect(it).centerY()>bounds.top+bounds.height()/3}
+                .map{rect(it).toShortString()}.distinct().size
+            return block(editor,sends.singleOrNull(),count)
+        }finally{nodes.forEach{it.recycle()};while(queue.isNotEmpty())queue.removeFirst().recycle()}
+    }
+
     private fun apply(root: AccessibilityNodeInfo, pkg: String, step: PhoneNavigationStep): Boolean {
         val nodes = ArrayList<AccessibilityNodeInfo>()
         val queue = java.util.ArrayDeque<AccessibilityNodeInfo>()
@@ -457,8 +541,14 @@ class PhoneNavigationService : AccessibilityService() {
                     label.isNotBlank() && label.length <= 80 && label.none(Char::isISOControl)
                 } }.distinct().take(24).toList()
             if (step.action == "inspect") {
-                _observed.value = ObservedControls(pkg, controls)
-                return controls.isNotEmpty()
+                // Only add the exact user-entered recipient and recognized input hints,
+                // not private conversation text. A fresh approval still gates transmission.
+                val intent=activeErrand?.kakaoMessage?.takeIf{pkg=="com.kakao.talk"}
+                val title=if(intent!=null&&nodes.any{it.packageName?.toString()==pkg&&it.isVisibleToUser&&!it.isEditable&&
+                    listOf(it.text?.toString(),it.contentDescription?.toString()).contains(intent.recipient)})listOf(intent.recipient)else emptyList()
+                val observed=(title+controls).distinct().take(24)
+                _observed.value = ObservedControls(pkg, observed)
+                return observed.isNotEmpty()
             }
             val scrollAction = when (step.action) {
                 "scroll_forward" -> AccessibilityNodeInfo.ACTION_SCROLL_FORWARD

@@ -52,7 +52,8 @@ data class PhoneNavigationPlan(val app: String, val steps: List<PhoneNavigationS
         fun valid(plan: PhoneNavigationPlan): Boolean =
             (plan.version == 1 && plan.app in apps || plan.version == 2 && eligiblePackage(plan.app)) &&
             plan.steps.size in 1..8 &&
-            (plan.steps.last().action == "expect" || plan.version == 2 && plan.steps.last().action in setOf("inspect","visual_inspect")) &&
+            (plan.steps.last().action == "expect" || plan.version == 2 && plan.steps.last().action in setOf("inspect","visual_inspect","send_message")) &&
+            (plan.steps.none{it.action=="send_message"} || plan.version==2&&plan.app=="com.kakao.talk"&&plan.steps.size==1) &&
             plan.steps.dropLast(1).none { it.action in setOf("inspect","visual_inspect") } &&
             plan.steps.count { it.action in setOf("tap_point","swipe_point") } <= 1 &&
             (plan.steps.none { it.action in setOf("tap_point","swipe_point") } ||
@@ -61,6 +62,7 @@ data class PhoneNavigationPlan(val app: String, val steps: List<PhoneNavigationS
                 step.label.isNotBlank() && step.label.length <= 100 && step.label.none(Char::isISOControl) &&
                     when (step.action) {
                         "expect" -> step.value == null
+                        "send_message" -> step.label=="메시지 전송"&&step.value==null
                         "inspect", "visual_inspect" -> plan.version == 2 && step.value == null && step.label in setOf("화면", "Screen")
                         "tap_point", "swipe_point" -> plan.version == 2 &&
                             VisualGesture.parse(step.action,step.value) != null
@@ -129,7 +131,7 @@ data class PhoneNavigationPlan(val app: String, val steps: List<PhoneNavigationS
                 val action = read(step,"action",20)
                 val label = read(step,"label",100)
                 when (action) {
-                    "click", "scroll_forward", "scroll_backward" -> {
+                    "click", "scroll_forward", "scroll_backward", "send_message" -> {
                         require(step.keySet() == setOf("action","label"))
                         PhoneNavigationStep(action,label)
                     }
