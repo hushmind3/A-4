@@ -355,7 +355,7 @@ class RemoteBackedRepository(
                 result=result.let{job->NativeJobResult(task.engineRoomId,task.engineSessionId,
                     job.status,content?.let{listOf(NativeJobOutput(task.characterId,
                         "DOMINION Cloud",it,"cloud-reply:"+raw,job.evidence?.size,
-                         job.evidence?.let{rows->com.google.gson.Gson().toJsonTree(rows)}))}.orEmpty(),null)})
+                         job.evidence?.let{rows->com.google.gson.Gson().toJsonTree(rows)}))}.orEmpty(),job.error,job.evidence)})
         }else if(localExecution)mobile.execution(requireNotNull(task.engineRoomId)).jobs.orEmpty()
             .single{it.id==task.engineJobId}
         else api.engineJob(requireNotNull(task.engineJobId))

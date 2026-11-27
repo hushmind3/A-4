@@ -4,7 +4,8 @@ import com.dominion.mobile.data.model.TaskItem
 import com.google.gson.JsonElement
 
 data class NativeJobResult(val roomId: String?, val sessionId: String?, val status: String?,
-    val outputs: List<NativeJobOutput>?, val pauseReason: String?)
+    val outputs: List<NativeJobOutput>?, val pauseReason: String?,
+    val cloudEvidence: List<CloudToolReceipt>? = null)
 
 data class NativeJobOutput(val agentId: String?, val name: String?, val content: String?,
     val messageId: String?, val evidenceCount: Int?, val toolCalls: JsonElement?)
@@ -28,7 +29,8 @@ data class TaskEvidence(val execution: NativeExecutionIdentity, val operations: 
 }
 
 data class TaskReceipt(val jobId: String, val status: String, val outputs: List<NativeJobOutput>,
-    val reason: String?, val checkedAt: Long, val error: String?) {
+    val reason: String?, val checkedAt: Long, val error: String?,
+    val cloudEvidence: List<CloudToolReceipt>? = null) {
     companion object {
         fun from(task: TaskItem, job: EngineJob, now: Long = System.currentTimeMillis()): TaskReceipt {
             check(TaskDispatch.matches(task, job))
@@ -40,7 +42,8 @@ data class TaskReceipt(val jobId: String, val status: String, val outputs: List<
                 !it.messageId.isNullOrBlank() && !it.content.isNullOrBlank()
             }.distinctBy { it.messageId }
             return TaskReceipt(requireNotNull(job.id), requireNotNull(job.status), outputs,
-                result?.pauseReason, now, job.error?.takeUnless { it.isJsonNull }?.toString())
+                result?.pauseReason, now, job.error?.takeUnless { it.isJsonNull }?.toString(),
+                result?.cloudEvidence?.takeIf { task.engineJobId?.startsWith("cloud:") == true })
         }
     }
 }

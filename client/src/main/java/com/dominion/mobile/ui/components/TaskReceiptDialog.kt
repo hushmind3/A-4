@@ -58,25 +58,7 @@ fun TaskReceiptDialog(vm: AppViewModel, id: String, onDismiss: () -> Unit) {
                         }, style = MaterialTheme.typography.labelMedium)
                         SelectionContainer { Text(output.content.orEmpty()) }
                         Text("응답 ID: " + output.messageId, style = MaterialTheme.typography.labelSmall)
-                        if(cloudJob) {
-                            val calls=output.toolCalls?.takeIf{it.isJsonArray}?.asJsonArray
-                            if(calls==null) Text("이 서버 버전은 세부 도구 기록을 제공하지 않습니다.",
-                                style = MaterialTheme.typography.bodySmall)
-                            else {
-                                var expanded by remember(record.jobId,output.messageId){mutableStateOf(false)}
-                                TextButton(onClick={expanded=!expanded}) {
-                                    Text(if(expanded)"도구 기록 접기" else "실제 도구 실행 기록 보기 ("+calls.size()+")")
-                                }
-                                if(expanded) calls.forEach { entry ->
-                                    val row=entry.asJsonObject
-                                    val status=if(row.get("status").asString=="ok")"관측 성공" else "실행 실패"
-                                    Text(row.get("step").asInt.toString()+" · "+row.get("tool").asString+" · "+status,
-                                        style=MaterialTheme.typography.labelMedium)
-                                    SelectionContainer { Text(row.get("source").asString+"\n"+row.get("observation").asString) }
-                                }
-                            }
-                        }
-                        else TextButton(enabled = !evidenceBusy && !failed && !refreshing, onClick = {
+                        if(!cloudJob) TextButton(enabled = !evidenceBusy && !failed && !refreshing, onClick = {
                             evidenceBusy = true
                             evidenceError = false
                             scope.launch {
@@ -86,6 +68,25 @@ fun TaskReceiptDialog(vm: AppViewModel, id: String, onDismiss: () -> Unit) {
                                 finally { evidenceBusy = false }
                             }
                         }) { Text("실제 도구 실행 기록 보기") }
+                    }
+                    if(cloudJob) {
+                        val calls=record.cloudEvidence
+                        if(calls==null) Text("이 작업의 세부 도구 기록은 제공되지 않았습니다.",
+                            style=MaterialTheme.typography.bodySmall)
+                        else {
+                            var expanded by remember(record.jobId){mutableStateOf(false)}
+                            TextButton(onClick={expanded=!expanded}) {
+                                Text(if(expanded)"도구 기록 접기" else "실제 도구 실행 기록 보기 ("+calls.size+")")
+                            }
+                            if(expanded) calls.forEach { row ->
+                                val status=if(row.status=="ok")"관측 성공" else "실행 실패"
+                                Text(row.step.toString()+" · "+row.tool+" · "+status,
+                                    style=MaterialTheme.typography.labelMedium)
+                                Text(java.text.DateFormat.getDateTimeInstance().format(java.util.Date(row.observed_at*1000)),
+                                    style=MaterialTheme.typography.labelSmall)
+                                SelectionContainer { Text(row.source+"\n"+row.observation) }
+                            }
+                        }
                     }
                     if (evidenceBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
                     if (evidenceError) Text("실행 기록 연결을 확인하지 못했습니다.", color = MaterialTheme.colorScheme.error)
