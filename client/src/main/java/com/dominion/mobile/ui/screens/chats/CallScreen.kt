@@ -163,6 +163,7 @@ fun CallScreen(
 
     var requestInstruction by remember(call.sessionId) { mutableStateOf(false) }
     var reviewTextWork by remember(call.sessionId) { mutableStateOf(false) }
+    var remoteTranscript by remember(call.sessionId) { mutableStateOf(false) }
     var frameSource by remember(call.sessionId) { mutableStateOf<String?>(null) }
     var lastInstruction by remember(call.sessionId) { mutableStateOf<String?>(null) }
     val instruction = state.conversation(call.conversationId)?.messages?.firstOrNull {
@@ -322,6 +323,11 @@ fun CallScreen(
 
             if (mediaReady && media.error != null) Text(media.error.orEmpty(), color = Color(0xFFFFB4AB), modifier = Modifier.padding(8.dp))
             if (mediaReady) {
+                if (media.room?.remoteParticipants?.isNotEmpty() == true) {
+                    androidx.compose.material3.TextButton(onClick = { remoteTranscript = true }) {
+                        Text("상대 음성 전사", color = Color.White)
+                    }
+                }
                 androidx.compose.material3.TextButton(
                     enabled = !media.screenBusy && !requestingProjection,
                     onClick = {
@@ -425,6 +431,11 @@ fun CallScreen(
                 }
             }
         }
+    }
+    if (remoteTranscript) {
+        com.dominion.mobile.ui.components.RemoteSpeechDialog(vm, call.sessionId, call.conversationId,
+            onDismiss = { remoteTranscript = false },
+            onSubmitted = { id -> lastInstruction = id; remoteTranscript = false })
     }
     if (reviewTextWork) {
         val room = state.conversation(call.conversationId)
