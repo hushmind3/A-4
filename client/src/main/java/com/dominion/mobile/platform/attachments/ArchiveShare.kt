@@ -15,7 +15,13 @@ object ArchiveShare {
         value.filterNot { it.isISOControl() || it == '/' || it == '\\' }
             .take(160).trim().takeUnless { it.isBlank() || it == "." || it == ".." } ?: "attachment"
 
-    fun fileIntent(context: Context, item: ArchiveItem, bytes: ByteArray): Intent {
+    fun fileIntent(context: Context, item: ArchiveItem, bytes: ByteArray): Intent =
+        prepareIntent(context, item, bytes, false)
+
+    fun viewIntent(context: Context, item: ArchiveItem, bytes: ByteArray): Intent =
+        prepareIntent(context, item, bytes, true)
+
+    private fun prepareIntent(context: Context, item: ArchiveItem, bytes: ByteArray, view: Boolean): Intent {
         require(bytes.isNotEmpty() && bytes.size <= LocalAttachment.MAX_BYTES)
         val root = File(context.cacheDir, "archive-share").apply { mkdirs() }
         root.listFiles()?.filter { System.currentTimeMillis() - it.lastModified() > 24L * 60 * 60 * 1000 }
@@ -24,9 +30,12 @@ object ArchiveShare {
         val file = File(dir, safeName(item.title))
         file.writeBytes(bytes)
         val uri = FileProvider.getUriForFile(context, context.packageName + ".archive", file)
-        return Intent(Intent.ACTION_SEND).apply {
-            type = item.mimeType?.takeIf { it.contains('/') } ?: "application/octet-stream"
-            putExtra(Intent.EXTRA_STREAM, uri)
+        return Intent(if (view) Intent.ACTION_VIEW else Intent.ACTION_SEND).apply {
+            val mime = item.mimeType?.takeIf { it.contains('/') } ?: "application/octet-stream"
+            if (view) setDataAndType(uri, mime) else {
+                type = mime
+                putExtra(Intent.EXTRA_STREAM, uri)
+            }
             clipData = ClipData.newRawUri(file.name, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }

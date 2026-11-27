@@ -89,6 +89,7 @@ fun ArchiveScreen(
     )
     var selected by remember { mutableIntStateOf(0) }
     var detail by remember { mutableStateOf<ArchiveItem?>(null) }
+    var viewing by remember { mutableStateOf<ArchiveItem?>(null) }
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
     var pendingSave by remember { mutableStateOf<ArchiveItem?>(null) }
@@ -176,6 +177,9 @@ fun ArchiveScreen(
         }
     }
 
+    viewing?.let { item ->
+        AttachmentViewerDialog(item, load = { bytesFor(item) }, onDismiss = { viewing = null })
+    }
     detail?.let { item ->
         AppBottomSheet(onDismiss = { detail = null }) {
             SheetTitle(item.title, item.meta)
@@ -214,6 +218,12 @@ fun ArchiveScreen(
                 SheetRow(tr(lang, "웹 링크 열기", "Open web link"), Glyph.LINK) {
                     runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(item.url))) }
                         .onFailure { context.toast(tr(lang, "링크 열기 실패", "Could not open link")) }
+                }
+            }
+            if (item.type != ArchiveType.LINK && item.attachmentId != null) {
+                SheetRow(tr(lang, "실제 파일 열기", "Open actual file"), Glyph.FILE) {
+                    detail = null
+                    viewing = item
                 }
             }
             SheetRow(tr(lang, "기기에 저장", "Save to device"), Glyph.FILE) {

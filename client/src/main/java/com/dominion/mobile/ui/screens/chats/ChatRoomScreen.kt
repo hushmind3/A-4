@@ -138,6 +138,9 @@ fun ChatRoomScreen(
     var speakText by remember(conversationId, conversation.sessionId) { mutableStateOf<String?>(null) }
     var showMenu by remember { mutableStateOf(false) }
     var messageMenu by remember { mutableStateOf<Message?>(null) }
+    var attachmentViewer by remember(conversationId, conversation.sessionId) {
+        mutableStateOf<com.dominion.mobile.data.model.ArchiveItem?>(null)
+    }
     var showReport by remember { mutableStateOf(false) }
     var confirmRewind by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
@@ -628,9 +631,20 @@ fun ChatRoomScreen(
         }
     }
 
+    attachmentViewer?.let { item ->
+        com.dominion.mobile.ui.screens.archive.AttachmentViewerDialog(item,
+            load = { vm.downloadAttachment(conversationId, requireNotNull(item.attachmentId)) },
+            onDismiss = { attachmentViewer = null })
+    }
     messageMenu?.let { message ->
         AppBottomSheet(onDismiss = { messageMenu = null }) {
             SheetTitle(tr(lang, "메시지", "Message"))
+            com.dominion.mobile.data.ArchiveIndex.fromMessage(message).filter { it.attachmentId != null }.forEach { item ->
+                SheetRow(tr(lang, "파일 열기 · ", "Open file · ") + item.title.take(80), Glyph.FILE) {
+                    messageMenu = null
+                    attachmentViewer = item
+                }
+            }
             if (message.sender == MessageSender.USER && message.status == MessageStatus.FAILED) {
                 SheetRow(tr(lang, "전송 재시도", "Retry sending"), Glyph.SEND) {
                     vm.retryMessage(conversationId, message.id)
