@@ -52,7 +52,7 @@ fun CloudAccountScreen(vm:AppViewModel,onBack:()->Unit) {
             // Clear the previous account's ViewModel and Compose tree on a scope change.
             var candidate:android.content.Context=context
             while(candidate is android.content.ContextWrapper){
-                if(candidate is android.app.Activity){candidate.recreate();break}
+                if(candidate is com.dominion.mobile.MainActivity){candidate.recreateForCloudAccount();break}
                 candidate=candidate.baseContext
             }
         }

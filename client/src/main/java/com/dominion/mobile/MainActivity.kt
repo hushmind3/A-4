@@ -23,6 +23,13 @@ class MainActivity : ComponentActivity() {
 
     private var ready = false
 
+    /** Account scope changes must destroy the prior ViewModel before Activity recreation.
+     * A plain recreate() retains ViewModels across configuration changes. */
+    fun recreateForCloudAccount() {
+        viewModelStore.clear()
+        recreate()
+    }
+
     suspend fun applyEngine(connection: com.dominion.mobile.data.local.EngineConnection?) {
         val container = (application as DominionApplication).container
         check(container.repository.state.value.call == null &&
