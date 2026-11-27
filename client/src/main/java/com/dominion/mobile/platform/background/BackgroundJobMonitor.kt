@@ -58,6 +58,7 @@ object BackgroundJobMonitor {
 
 /** Reads only the server's durable records; never starts or resumes an agent job. */
 class BackgroundJobWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
+    private var verifiedSession: String? = null
     override suspend fun doWork(): Result {
         val expected = inputData.getString(BackgroundJobMonitor.ORIGIN) ?: return Result.failure()
         val roomId = inputData.getString(BackgroundJobMonitor.ROOM) ?: return Result.failure()
@@ -91,6 +92,7 @@ class BackgroundJobWorker(context: Context, params: WorkerParameters) : Coroutin
         catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { return Result.retry() }
         if (container.engine !== engine || container.repository !== repository) return Result.success()
+        verifiedSession = job.sessionId
         val key = BackgroundJobMonitor.workKey(engine.origin, roomId, jobId)
         when (job.status) {
             "completed" -> {
@@ -166,16 +168,24 @@ class BackgroundJobWorker(context: Context, params: WorkerParameters) : Coroutin
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val settings = (applicationContext as DominionApplication).container.repository.state.value.settings
         val privateContent = settings.hideContent || !settings.messagePreview
-        val notification = NotificationCompat.Builder(applicationContext, channelId)
+        val notificationBuilder = NotificationCompat.Builder(applicationContext, channelId)
             .setSmallIcon(R.drawable.ic_notification)
             .setVisibility(if (privateContent) NotificationCompat.VISIBILITY_SECRET else NotificationCompat.VISIBILITY_PRIVATE)
             .setContentTitle(if (privateContent) "DOMINION" else title)
             .setContentText(if (privateContent) "새 작업 소식이 있습니다." else body)
             .setContentIntent(destination)
             .setAutoCancel(true)
-            .build()
+        val roomId=inputData.getString(BackgroundJobMonitor.ROOM)
+        val origin=inputData.getString(BackgroundJobMonitor.ORIGIN)
+        val session=verifiedSession
+        val repo=(applicationContext as DominionApplication).container.repository
+        if(!privateContent && !settings.appLock && roomId!=null && origin!=null && !session.isNullOrBlank() &&
+            repo.state.value.conversation(roomId)?.sessionId==session) {
+            notificationBuilder.addAction(NotificationReplyReceiver.action(applicationContext,origin,roomId,session,id))
+        }
+        notificationBuilder.addAction(0,if(phase.startsWith("approval:")) "승인 내용 검토" else "결과 확인",destination)
         try {
-            manager.notify(id, notification)
+            manager.notify(id, notificationBuilder.build())
             prefs.edit().putString(key, phase).apply()
         } catch (_: SecurityException) {
             // Runtime permission may be revoked between inspection and posting.

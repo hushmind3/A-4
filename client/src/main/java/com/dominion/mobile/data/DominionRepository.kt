@@ -13,6 +13,10 @@ interface DominionRepository {
 
     /** Acknowledge one outbound message; only the remote implementation performs HTTP. */
     suspend fun deliverMessage(conversationId: String, message: Message): Message = error("Execution server not connected")
+    suspend fun reserveNotificationReply(roomId: String, session: String, nonce: String, text: String): Boolean =
+        error("Execution server not connected")
+    suspend fun dispatchNotificationReply(roomId: String, session: String, nonce: String): Boolean =
+        error("Execution server not connected")
 
     /** Fetch messages after a successful send; null means not supported. */
     suspend fun loadMessages(conversationId: String): List<Message>? = null

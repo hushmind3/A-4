@@ -330,6 +330,82 @@ class RemoteBackedRepository(
             jobStatus = submitted.status)
     }
 
+    override suspend fun reserveNotificationReply(roomId: String, session: String, nonce: String, text: String): Boolean =
+        roomMutationLock.withLock {
+            require(nonce.startsWith("notification_") && java.util.UUID.fromString(nonce.removePrefix("notification_")).toString() ==
+                nonce.removePrefix("notification_") && text.isNotBlank() && text.length <= 4000)
+            val snapshot=state.value
+            val room=snapshot.conversation(roomId) ?: return@withLock false
+            if (room.sessionId != session || snapshot.settings.appLock || snapshot.settings.hideContent ||
+                room.messages.any { it.id == nonce || it.clientMessageId == nonce }) return@withLock false
+            val message=Message(id=nonce,conversationId=roomId,sender=MessageSender.USER,text=text,
+                createdAt=System.currentTimeMillis(),status=com.dominion.mobile.data.model.MessageStatus.SENDING,
+                clientMessageId=nonce,jobStatus="notification_queued")
+            update { current ->
+                check(current.conversation(roomId)?.sessionId == session)
+                current.copy(conversations=current.conversations.map {
+                    if(it.id==roomId)it.copy(messages=it.messages+message,updatedAt=message.createdAt) else it
+                })
+            }
+            store.saveStateNow(state.value)
+            true
+        }
+
+    override suspend fun dispatchNotificationReply(roomId: String, session: String, nonce: String): Boolean =
+        roomMutationLock.withLock {
+            val room=state.value.conversation(roomId) ?: return@withLock false
+            val pending=room.messages.singleOrNull { it.id==nonce || it.clientMessageId==nonce }
+                ?: return@withLock false
+            if (pending.sender!=MessageSender.USER || room.sessionId!=session) return@withLock false
+            if (pending.status==com.dominion.mobile.data.model.MessageStatus.SENT && pending.jobId!=null) return@withLock true
+            fun mark(status:com.dominion.mobile.data.model.MessageStatus,jobState:String?) {
+                update { current -> current.copy(conversations=current.conversations.map { c ->
+                    if(c.id!=roomId || c.sessionId!=session)c else c.copy(messages=c.messages.map {
+                        if((it.id==nonce || it.clientMessageId==nonce) && it.status!=com.dominion.mobile.data.model.MessageStatus.SENT)
+                            it.copy(status=status,jobStatus=jobState) else it
+                    })
+                }) }
+            }
+            try {
+                val live=api.engineRoom(roomId)
+                check(live.id==roomId && live.sessionId==session)
+                if(pending.jobStatus=="notification_submitting") {
+                    // A process may have died after POST. Reconcile but never replay it automatically.
+                    val history=loadMessages(roomId)
+                    val confirmed=api.engineRoom(roomId)
+                    check(confirmed.sessionId==session)
+                    update { current -> current.copy(conversations=current.conversations.map {
+                        if(it.id!=roomId || it.sessionId!=session)it else
+                            com.dominion.mobile.data.RoomHistory.reconcile(it,session,history)
+                    }) }
+                    val accepted=state.value.conversation(roomId)?.messages?.any {
+                        it.clientMessageId==nonce && it.status==com.dominion.mobile.data.model.MessageStatus.SENT
+                    }==true
+                    if(!accepted)mark(com.dominion.mobile.data.model.MessageStatus.FAILED,null)
+                    store.saveStateNow(state.value)
+                    return@withLock accepted
+                }
+                if(pending.jobStatus!="notification_queued") return@withLock false
+                mark(com.dominion.mobile.data.model.MessageStatus.SENDING,"notification_submitting")
+                store.saveStateNow(state.value)
+                val ack=deliverMessage(roomId,pending)
+                check(api.engineRoom(roomId).sessionId==session)
+                update { current -> current.copy(conversations=current.conversations.map {
+                    if(it.id!=roomId || it.sessionId!=session)it else it.copy(
+                        messages=com.dominion.mobile.data.MessageSync.reconcile(it.messages,listOf(ack)),
+                        updatedAt=System.currentTimeMillis())
+                }) }
+                store.saveStateNow(state.value)
+                true
+            } catch(e:CancellationException){throw e}
+            catch(_:Exception) {
+                mark(com.dominion.mobile.data.model.MessageStatus.FAILED,
+                    if(pending.jobStatus=="notification_submitting") "notification_submitting" else null)
+                store.saveStateNow(state.value)
+                false
+            }
+        }
+
     private val roomEventCursor = java.util.concurrent.ConcurrentHashMap<Pair<String, String>, Long>()
 
     override fun roomLiveUpdates(reducer: RoomLiveReducer): kotlinx.coroutines.flow.Flow<RoomLiveUpdate> =
