@@ -1,0 +1,18 @@
+name: Cloud relay contract tests
+on:
+  push:
+    paths: ['cloud-relay/**','tools/remote/**','.github/workflows/cloud-relay-tests.yml']
+  workflow_dispatch:
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test cloud-relay/native_relay_policy.test.js
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m unittest discover -s tools/remote -v
