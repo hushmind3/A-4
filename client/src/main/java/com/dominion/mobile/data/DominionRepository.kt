@@ -13,6 +13,9 @@ interface DominionRepository {
 
     /** Acknowledge one outbound message; only the remote implementation performs HTTP. */
     suspend fun deliverMessage(conversationId: String, message: Message): Message = error("Execution server not connected")
+    suspend fun replanPhoneNavigation(context:com.dominion.mobile.data.PhoneReplanContext,
+        digest:String,png:ByteArray,width:Int,height:Int):com.dominion.mobile.data.PhoneNavigationPlan? =
+        error("Execution server not connected")
     suspend fun reserveNotificationReply(roomId: String, session: String, nonce: String, text: String): Boolean =
         error("Execution server not connected")
     suspend fun dispatchNotificationReply(roomId: String, session: String, nonce: String): Boolean =

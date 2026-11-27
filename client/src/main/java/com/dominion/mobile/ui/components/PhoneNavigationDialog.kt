@@ -17,7 +17,8 @@ import com.dominion.mobile.platform.automation.PhoneNavigationService
 @Composable
 fun PhoneNavigationDialog(plan: PhoneNavigationPlan, onDismiss: () -> Unit,
     onResult: ((String) -> Unit)? = null,
-    onVisualResult: (suspend (PhoneNavigationService.VisualFrame) -> Unit)? = null) {
+    onVisualResult: (suspend (PhoneNavigationService.VisualFrame) -> Unit)? = null,
+    replanContext:com.dominion.mobile.data.PhoneReplanContext?=null) {
     val context = LocalContext.current
     val connected by PhoneNavigationService.connected.collectAsState()
     val status by PhoneNavigationService.status.collectAsState()
@@ -33,6 +34,7 @@ fun PhoneNavigationDialog(plan: PhoneNavigationPlan, onDismiss: () -> Unit,
     }
     var approved by remember(plan) { mutableStateOf(false) }
     var reviewedBatch by remember(plan) { mutableStateOf(false) }
+    var automaticReplan by remember(plan) { mutableStateOf(false) }
     var started by remember(plan) { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
     val installed = remember(plan.app) {
@@ -47,6 +49,14 @@ fun PhoneNavigationDialog(plan: PhoneNavigationPlan, onDismiss: () -> Unit,
                 Text(plan.app, style = MaterialTheme.typography.labelSmall)
                 if (installed == null) Text("이 기기에서 실행할 수 있는 앱을 확인하지 못했습니다.", color = MaterialTheme.colorScheme.error)
                 Text("기본은 각 단계 화면 위 승인입니다. 전체 제한은 5분이며 다른 앱·잠금 화면·대상 불일치 시 중단합니다.")
+                if(replanContext!=null && plan.version==2 && android.os.Build.VERSION.SDK_INT>=34) {
+                    Row {
+                        Checkbox(automaticReplan,{automaticReplan=it;approved=false},enabled=!started)
+                        Text("본체와 자동 재계획 (최대 6회)",modifier=Modifier.padding(top=12.dp))
+                    }
+                    if(automaticReplan)Text("현재 앱 안에서만 이어갑니다. 화면 전송과 실제 조작은 각각 화면 위 버튼에서 확인합니다.",
+                        style=MaterialTheme.typography.bodySmall)
+                }
                 if (PhoneNavigationPlan.permitsReviewedBatch(plan)) Row {
                     Checkbox(reviewedBatch, { reviewedBatch = it; approved = false }, enabled = !started)
                     Text("아래 탐색 계획 전체를 한 번 승인하여 자동 실행", modifier = Modifier.padding(top = 12.dp))
@@ -127,7 +137,7 @@ fun PhoneNavigationDialog(plan: PhoneNavigationPlan, onDismiss: () -> Unit,
             }
         },
         confirmButton = { TextButton(enabled = connected && approved && !started && installed != null,onClick = {
-            started = PhoneNavigationService.start(plan, reviewedBatch)
+            started = PhoneNavigationService.start(plan, reviewedBatch,if(automaticReplan)replanContext else null)
             if (!started) error = "이미 조작 중이거나 기기가 잠겨 있습니다."
         }) { Text("기기에서 실행") } },
         dismissButton = { TextButton(onClick = { if (started) PhoneNavigationService.stop(); onDismiss() }) { Text("닫기") } })

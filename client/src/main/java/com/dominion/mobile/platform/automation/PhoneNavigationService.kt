@@ -7,6 +7,8 @@ import android.graphics.Path
 import android.graphics.Rect
 import android.os.Build
 import com.dominion.mobile.data.VisualGesture
+import com.dominion.mobile.data.PhoneReplanContext
+import com.dominion.mobile.data.PhoneReplanBudget
 import kotlin.coroutines.resume
 import android.app.KeyguardManager
 import android.content.Intent
@@ -115,10 +117,11 @@ class PhoneNavigationService : AccessibilityService() {
         getSystemService(PowerManager::class.java).isInteractive &&
             !getSystemService(KeyguardManager::class.java).isKeyguardLocked
 
-    private fun begin(plan: PhoneNavigationPlan, reviewedBatch: Boolean): Boolean {
+    private fun begin(plan: PhoneNavigationPlan, reviewedBatch: Boolean, replan:PhoneReplanContext?): Boolean {
         if (work?.isActive == true || !unlocked() || !PhoneNavigationPlan.valid(plan) ||
             !DeviceActions.isLaunchable(this, plan.app) ||
-            (reviewedBatch && !PhoneNavigationPlan.permitsReviewedBatch(plan))) return false
+            (reviewedBatch && !PhoneNavigationPlan.permitsReviewedBatch(plan)) ||
+            (replan!=null && (reviewedBatch || plan.version!=2 || plan.app!=replan.app || Build.VERSION.SDK_INT<34))) return false
         // Limit the dynamically configured accessibility event scope to the reviewed app.
         val originalPackages = serviceInfo.packageNames
         val configured = serviceInfo
@@ -145,30 +148,47 @@ class PhoneNavigationService : AccessibilityService() {
                         }
                     }
                     check(entered) { "Target app unavailable" }
-                    for (step in plan.steps) {
-                        _status.value = "기기 단계 " + (completed + 1) + "/" + plan.steps.size + " · " + step.action
+                    val container=(application as com.dominion.mobile.DominionApplication).container
+                    val engine=container.engine
+                    val repo=container.repository
+                    val budget=PhoneReplanBudget()
+                    fun validRoom() {
+                        if(replan!=null)check(engine!=null && container.engine===engine && container.repository===repo &&
+                            repo.state.value.conversation(replan.roomId)?.sessionId==replan.sessionId)
+                    }
+                    var activePlan=plan
+                    while(true) {
+                    validRoom()
+                    var nextFrame:VisualFrame?=null
+                    var localCompleted=0
+                    for (step in activePlan.steps) {
+                        validRoom()
+                        _status.value = "기기 단계 " + (localCompleted + 1) + "/" + activePlan.steps.size + " · " + step.action
                         // Show the real target on the foreground app and require a fresh tap for every step.
                         if (reviewedBatch) {
-                            stepLabel?.text = "승인한 일괄 실행 · " + (completed + 1) + "/" + plan.steps.size +
+                            stepLabel?.text = "승인한 일괄 실행 · " + (localCompleted + 1) + "/" + activePlan.steps.size +
                                 " · " + step.action + " · " + step.label
                             approveButton?.isEnabled = false
                             // Give the user an opportunity to stop before each operation.
                             delay(600)
-                        } else approveStep(step,plan.app,completed+1,plan.steps.size)
+                        } else approveStep(step,plan.app,localCompleted+1,activePlan.steps.size)
+                        validRoom()
                         if (step.action in setOf("visual_inspect","tap_point","swipe_point")) {
                             check(Build.VERSION.SDK_INT >= 34) { "Android 14 required" }
                             val frame = captureWindow(plan.app)
                             if (step.action == "visual_inspect") {
                                 _visual.value = frame
+                                nextFrame=frame
                             } else {
                                 val gesture = requireNotNull(VisualGesture.parse(step.action,step.value))
                                 if (gesture.frame != frame.digest) {
                                     _visual.value = frame
+                                    if(replan!=null){nextFrame=frame;break}
                                     error("Screen changed; replan")
                                 }
                                 check(performVisualGesture(frame,gesture))
                             }
-                            completed++
+                            completed++;localCompleted++
                             delay(500)
                             continue
                         }
@@ -183,14 +203,47 @@ class PhoneNavigationService : AccessibilityService() {
                             } finally { root.recycle() }
                             if (!success) delay(180)
                         }
+                        if(!success && replan!=null) {
+                            // A failed target is not an action success. Request an explicitly
+                            // approved new observation instead of blindly retrying a gesture.
+                            approveStep(PhoneNavigationStep("visual_inspect","실패 화면 캡처"),plan.app,localCompleted+1,activePlan.steps.size)
+                            nextFrame=captureWindow(plan.app);_visual.value=nextFrame
+                            break
+                        }
                         check(success) { "Expected unique accessible control missing" }
-                        completed++
+                        completed++;localCompleted++
                         delay(500)
                     }
+                    val frame=nextFrame
+                    if(replan==null || frame==null) {
+                        _status.value="기기 실행 확인 · 누적 "+completed+"단계 · "+
+                            if(activePlan.steps.last().action=="expect")"마지막 화면 문구 확인" else "화면 관찰 완료"
+                        break
+                    }
+                    // Future frames may contain private data. Each transmission is separately
+                    // approved on the target app; the owner may stop at any point.
+                    approveStep(PhoneNavigationStep("visual_inspect","현재 화면을 본체에 전달하고 재계획"),plan.app,1,1)
+                    validRoom()
+                    check(checkedWindow(plan.app)==(frame.windowId to frame.bounds))
+                    _status.value="본체 화면 분석·재계획 대기"
+                    stepLabel?.text="본체 분석 중 · 중지 가능"
+                    val proposal=coroutineScope {
+                        val guard=launch {
+                            while(isActive){validRoom();checkedWindow(plan.app);delay(300)}
+                        }
+                        try {
+                            repo.replanPhoneNavigation(replan,frame.digest,frame.png,frame.bounds.width(),frame.bounds.height())
+                        }finally{guard.cancelAndJoin()}
+                    }
+                    validRoom()
+                    if(proposal==null) {
+                        _status.value="본체 답변 수신 · 대화에서 결과 확인 필요 · 실행 "+completed+"단계"
+                        break
+                    }
+                    check(budget.admit(frame.digest,proposal,plan.app)){"Repeated or out-of-scope plan"}
+                    activePlan=proposal
+                    }
                 }
-                _status.value = "기기 실행 확인 " + completed + "/" + plan.steps.size +
-                    if (plan.steps.last().action in setOf("inspect","visual_inspect")) " · 실제 화면 조작 요소 확인"
-                    else " · 마지막 화면 문구 확인. 외부 거래·신청 완료 증명은 아닙니다."
             } catch (e: CancellationException) {
                 _status.value = "중단 · 확인된 단계 " + completed + "/" + plan.steps.size
                 if (e !is TimeoutCancellationException) throw e
@@ -390,8 +443,9 @@ class PhoneNavigationService : AccessibilityService() {
         val connected = _connected.asStateFlow()
         private val _status = MutableStateFlow("")
         val status = _status.asStateFlow()
-        fun start(plan: PhoneNavigationPlan, reviewedBatch: Boolean = false): Boolean =
-            instance?.begin(plan, reviewedBatch) ?: false
+        fun start(plan: PhoneNavigationPlan, reviewedBatch: Boolean = false,
+            replan:PhoneReplanContext?=null): Boolean =
+            instance?.begin(plan, reviewedBatch,replan) ?: false
         fun stop() { instance?.work?.cancel() }
     }
 }
