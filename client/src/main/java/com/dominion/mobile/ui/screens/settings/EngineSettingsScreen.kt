@@ -88,6 +88,12 @@ fun EngineSettingsScreen(onBack: () -> Unit) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(tr(lang, "DOMINION 실행 서버", "DOMINION engine"), style = MaterialTheme.typography.titleLarge)
+            OutlinedButton(enabled = !busy, onClick = {
+                origin = "https://engine.dominionai.kr/"
+                token = ""; useAccess = false; accessId = ""; accessSecret = ""; diagnosis = null
+            }) { Text("DOMINION Cloud 원격 본체 주소 사용") }
+            Text("전용 Tunnel 주소입니다. PC에서 본체와 인증 브리지, cloudflared가 실행 중이어야 합니다.",
+                style = MaterialTheme.typography.bodySmall)
             OutlinedTextField(value = origin, onValueChange = { origin = it; diagnosis = null }, enabled = !busy,
                 label = { Text("HTTPS URL") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             OutlinedTextField(value = token, onValueChange = { token = it; diagnosis = null }, enabled = !busy,
