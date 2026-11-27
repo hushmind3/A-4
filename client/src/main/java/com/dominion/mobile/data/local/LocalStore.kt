@@ -110,7 +110,11 @@ class LocalStore(context: Context, scope: String = "unconfigured") {
     }
 
     private fun recoverInterrupted(state: AppState): AppState = state.copy(conversations = state.conversations.map { c ->
-        c.copy(messages = c.messages.map { if (it.status == MessageStatus.SENDING) it.copy(status = MessageStatus.FAILED) else it })
+        c.copy(messages = c.messages.map {
+            if(it.status==MessageStatus.SENDING)it.copy(status=MessageStatus.FAILED,
+                jobStatus=if(it.jobId?.startsWith("mobile:")==true)"interrupted" else it.jobStatus)
+            else it
+        })
     })
 
     fun saveState(state: AppState) { enqueue(Write(clean(state))) }

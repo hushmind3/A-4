@@ -165,6 +165,9 @@ class RemoteBackedRepository(
             submitTask(task.id)
             val confirmed = state.value.tasks.firstOrNull { it.id == task.id }
             check(!confirmed?.engineJobId.isNullOrBlank() && !confirmed?.engineSessionId.isNullOrBlank())
+            if(localExecution)check(confirmed?.engineStatus in setOf("completed","needs_review")){
+                "Local scheduled AI task is not completed or waiting for approval"
+            }
             changeSchedules { rows -> rows.map { row ->
                 if (row.id == id && row.pendingDispatchAt == occurrence)
                     row.copy(pendingDispatchAt = null, lastDispatchedAt = occurrence,
@@ -198,15 +201,23 @@ class RemoteBackedRepository(
     override suspend fun submitTask(id: String) = taskLock.withLock {
         var task = state.value.tasks.firstOrNull { it.id == id } ?: error("Task not found")
         if(localExecution){
-            if(task.engineJobId!=null){
-                verifyTask(task)
-                return@withLock
-            }
-            require(state.value.character(task.characterId)!=null)
             val roomId=TaskDispatch.roomId(id)
             val existing=state.value.conversation(roomId)
+            val previous=existing?.messages?.firstOrNull{it.id==task.engineMessageId}
+            val attempts=MobileTaskRecovery.attempts(existing?.messages.orEmpty())
+            if(task.engineJobId!=null){
+                val records=state.value.mobileActions.orEmpty().filter{
+                    it.roomId==roomId && attempts.any{attempt->attempt.id==it.messageId}
+                }
+                if(!MobileTaskRecovery.canRetry(previous,attempts,records)){
+                    verifyTask(task)
+                    return@withLock
+                }
+            }
+            require(state.value.character(task.characterId)!=null)
             val session=existing?.sessionId?:java.util.UUID.randomUUID().toString()
-            val nonce=TaskDispatch.messageNonce(id)
+            val nonce=if(task.engineJobId==null)TaskDispatch.messageNonce(id)
+                else MobileTaskRecovery.nextNonce(id,attempts.size+1)
             val prompt=TaskDispatch.prompt(task)
             check(existing==null||existing.characterId==task.characterId && existing.messages.none{it.id==nonce})
             val message=Message(nonce,roomId,MessageSender.USER,prompt,
