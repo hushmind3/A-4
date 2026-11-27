@@ -12,7 +12,7 @@ import java.util.UUID
  */
 internal object MobileTaskRecovery {
     private val effectTools=setOf("memory.save","schedule.create","phone.dial","sms.draft",
-        "email.draft","calendar.draft","maps.open","korea.open","apps.open","task.delegate","phone.navigate")
+        "email.draft","calendar.draft","maps.open","korea.open","apps.open","task.delegate","phone.navigate","phone.inquire")
     fun attempts(messages:List<Message>):List<Message> = messages.filter{
         it.sender==MessageSender.USER && it.kind==MessageKind.TASK &&
             it.jobId?.startsWith("mobile:")==true
