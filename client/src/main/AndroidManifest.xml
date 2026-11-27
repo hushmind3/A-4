@@ -125,6 +125,13 @@
                 android:resource="@xml/phone_navigation_service" />
         </service>
 
+        <service android:name=".platform.background.ErrandReplyListener"
+            android:label="DOMINION 지정 업무 답변 대기"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="true">
+            <intent-filter><action android:name="android.service.notification.NotificationListenerService" /></intent-filter>
+        </service>
+
         <service
             android:name=".platform.audio.CallForegroundService"
             android:exported="false"

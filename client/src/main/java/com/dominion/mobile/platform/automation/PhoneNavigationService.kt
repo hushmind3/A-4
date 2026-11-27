@@ -279,7 +279,7 @@ class PhoneNavigationService : AccessibilityService() {
                         }
                         if(step.action=="send_message"){
                             val intent=requireNotNull(replan?.kakaoMessage){"No explicit message payload"}
-                            check(recorded&&plan.app=="com.kakao.talk"&&!sendAttempted)
+                            check(recorded&&plan.app==intent.app&&!sendAttempted)
                             intent.checked()
                             approveStep(PhoneNavigationStep("메시지 준비",intent.recipient,intent.body),
                                 plan.app,1,2)
@@ -592,7 +592,7 @@ class PhoneNavigationService : AccessibilityService() {
     private fun <T> withKakaoChat(intent:com.dominion.mobile.data.KakaoMessageRequest,
         block:(AccessibilityNodeInfo,AccessibilityNodeInfo?,Int)->T):T{
         check(unlocked())
-        val pkg="com.kakao.talk"
+        val pkg=intent.app
         val root=requireNotNull(rootInActiveWindow)
         val nodes=ArrayList<AccessibilityNodeInfo>()
         val queue=java.util.ArrayDeque<AccessibilityNodeInfo>()
@@ -612,7 +612,12 @@ class PhoneNavigationService : AccessibilityService() {
             fun rect(n:AccessibilityNodeInfo)=Rect().also{n.getBoundsInScreen(it)}
             val titles=visible.filter{!it.isEditable&&intent.recipient in names(it)&&rect(it).centerY()<=bounds.top+bounds.height()/3}
             check(titles.size==1){"대화방 이름을 유일하게 확인하지 못했습니다"}
-            val hints=setOf("메시지 입력","메시지를 입력하세요","메시지","채팅 입력","채팅 메시지 입력","Message","Type a message")
+            intent.listing?.let{listing->
+                check(visible.any{!it.isEditable&&listing in names(it)&&rect(it).centerY()<=bounds.top+bounds.height()/2}){
+                    "거래 상품을 실제 화면에서 확인하지 못했습니다"
+                }
+            }
+            val hints=setOf("메시지 입력","메시지를 입력하세요","메시지","채팅 입력","채팅 메시지 입력","메시지를 입력해 주세요","메시지를 입력해주세요","채팅을 입력하세요","Message","Type a message")
             val editor=visible.singleOrNull{it.isEditable&&!it.isPassword&&rect(it).centerY()>bounds.centerY()&&
                 it.actionList.any{a->a.id==AccessibilityNodeInfo.ACTION_SET_TEXT}&&
                 listOf(it.hintText?.toString(),it.contentDescription?.toString()).any{h->h in hints}}
@@ -728,7 +733,7 @@ class PhoneNavigationService : AccessibilityService() {
             if (step.action == "inspect") {
                 // Only add the exact user-entered recipient and recognized input hints,
                 // not private conversation text. A fresh approval still gates transmission.
-                val intent=activeErrand?.kakaoMessage?.takeIf{pkg=="com.kakao.talk"}
+                val intent=activeErrand?.kakaoMessage?.takeIf{pkg==it.app}
                 val title=if(intent!=null&&nodes.any{it.packageName?.toString()==pkg&&it.isVisibleToUser&&!it.isEditable&&
                     listOf(it.text?.toString(),it.contentDescription?.toString()).contains(intent.recipient)})listOf(intent.recipient)else emptyList()
                 val searchHints=nodes.filter{it.packageName?.toString()==pkg&&it.isVisibleToUser&&it.isEnabled&&it.isEditable&&!it.isPassword}
@@ -739,7 +744,8 @@ class PhoneNavigationService : AccessibilityService() {
                     com.dominion.mobile.data.PhoneTransactions.finalAction(scope.kind,it)||
                         com.dominion.mobile.data.PhoneTransactions.canAdvance(it)
                 }else emptyList()
-                val observed=(title+searchHints+priority+controls).distinct().take(24)
+                val listing=intent?.listing?.takeIf{name->nodes.any{it.packageName?.toString()==pkg&&it.isVisibleToUser&&!it.isEditable&&name in nodeNames(it)}}
+                val observed=(title+listOfNotNull(listing)+searchHints+priority+controls).distinct().take(24)
                 val publicRead=activeErrand?.publicRead==true&&pkg in com.dominion.mobile.data.PhonePublicResult.packages
                 val results=if(publicRead){
                     val raw=nodes.filter{it.packageName?.toString()==pkg&&it.isVisibleToUser&&!it.isPassword&&!it.isEditable}

@@ -293,7 +293,7 @@ class RemoteBackedRepository(
         require(title.isNotBlank()&&title.length<=160&&request.isNotBlank()&&request.length<=4000)
         require(com.dominion.mobile.data.PhoneNavigationPlan.eligiblePackage(pkg))
         require(com.dominion.mobile.platform.DeviceActions.isLaunchable(requireNotNull(mobileContext),pkg))
-        if(kakaoMessage!=null){require(pkg=="com.kakao.talk");kakaoMessage.checked()}
+        if(kakaoMessage!=null){require(pkg==kakaoMessage.app);kakaoMessage.checked()}
         if(publicRead)require(kakaoMessage==null&&transaction==null&&pkg in com.dominion.mobile.data.PhonePublicResult.packages)
         if(transaction!=null){require(kakaoMessage==null&&!publicRead);transaction.checked(pkg)}
         if(privateRead!=null){require(kakaoMessage==null&&!publicRead&&transaction==null);privateRead.checked(pkg)}
@@ -352,7 +352,9 @@ class RemoteBackedRepository(
                 val record=Message("phone-receipt:"+owner.id,room.id,MessageSender.ASSISTANT,detail.take(3000),
                     replyTo=owner.id,jobId=owner.jobId,authorAgentId=task.characterId)
                 st.copy(tasks=st.tasks.map{if(it.id==task.id)it.copy(engineStatus=status,
-                    workflowState=if(it.workflowId!=null&&status=="running")"running" else it.workflowState)else it},
+                    workflowState=if(it.workflowId!=null&&status=="running")"running" else it.workflowState,
+                    replyWatchFrom=if(status=="completed"&&it.kakaoMessage?.waitForReply==true)System.currentTimeMillis() else it.replyWatchFrom,
+                    replyWatchUntil=if(status=="completed"&&it.kakaoMessage?.waitForReply==true)System.currentTimeMillis()+48*3600_000L else it.replyWatchUntil)else it},
                     mobileActions=st.mobileActions.orEmpty().filterNot{it.id==actionId}+action,
                     conversations=st.conversations.map{c->if(c.id==room.id)c.copy(
                         messages=c.messages.map{if(it.id==owner.id)it.copy(jobStatus=status)else it}
@@ -361,6 +363,24 @@ class RemoteBackedRepository(
             store.saveStateNow(state.value)
             true
         }
+
+    override suspend fun recordMessageReply(pkg:String,title:String,body:String,at:Long):Boolean=taskLock.withLock{
+        if(!localExecution||pkg !in com.dominion.mobile.data.KakaoMessageRequest.apps)return@withLock false
+        val now=System.currentTimeMillis()
+        if(title.isBlank()||title.length>100||body.isBlank()||body.length>500||at>now+30_000L)return@withLock false
+        val task=state.value.tasks.filter{row->
+            row.engineStatus=="completed"&&row.kakaoMessage?.waitForReply==true&&row.phonePackage==pkg&&
+                row.kakaoMessage.recipient==title&&row.kakaoMessage.body!=body&&row.replyCandidate==null&&
+                at>=(row.replyWatchFrom?:Long.MAX_VALUE)&&at<=(row.replyWatchUntil?:0)&&now<=(row.replyWatchUntil?:0)&&
+                state.value.conversation(row.engineRoomId.orEmpty())?.sessionId==row.engineSessionId
+        }.singleOrNull()?:return@withLock false
+        // Local-only candidate; notification titles are not proof of a unique external conversation.
+        update{st->st.copy(tasks=st.tasks.map{row->
+            if(row.id==task.id&&row.replyCandidate==null)row.copy(replyCandidate=body,replyCandidateAt=at,replyWatchUntil=null)else row
+        })}
+        store.saveStateNow(state.value)
+        true
+    }
 
     override suspend fun submitTask(id: String) = taskLock.withLock {
         var task = state.value.tasks.firstOrNull { it.id == id } ?: error("Task not found")
@@ -725,7 +745,7 @@ class RemoteBackedRepository(
         })
         val authorizedMessage=context.kakaoMessage?.let{payload->
             check(state.value.tasks.any{it.engineRoomId==context.roomId&&it.engineSessionId==context.sessionId&&
-                it.phonePackage=="com.kakao.talk"&&it.kakaoMessage==payload&&it.engineStatus=="running"})
+                it.phonePackage==payload.app&&it.kakaoMessage==payload&&it.engineStatus=="running"})
             payload.checked()
         }
         val transaction=context.transaction?.let{scope->
@@ -740,7 +760,8 @@ class RemoteBackedRepository(
             "Never enter authentication or payment credentials. Never repeat a final action. "+
             "If review information is missing or ambiguous, continue safe navigation or stop."
         val messagePolicy=if(authorizedMessage==null)"" else
-            "Exception: a user-entered Kakao message is stored on device. Navigate to the exact recipient chat. "+
+            "Exception: a user-entered message is stored on device. Navigate to the exact recipient chat in the selected app. "+
+            (authorizedMessage.listing?.let{"Also locate the exact listing; the device checks its title. "}?: "")+
             "Only after its title is observed, propose a single step with action send_message and label 메시지 전송, no value. "+
             "Device checks actual recipient and message field and requires separate approvals. Do not generate message text."
         val publicPolicy=if(!context.publicRead)"" else

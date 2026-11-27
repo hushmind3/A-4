@@ -168,7 +168,11 @@ data class TaskItem(
     val workflowId:String?=null,
     val workflowAfter:String?=null,
     val workflowState:String?=null,
-    val workflowEvidence:String?=null
+    val workflowEvidence:String?=null,
+    val replyWatchFrom:Long?=null,
+    val replyWatchUntil:Long?=null,
+    val replyCandidate:String?=null,
+    val replyCandidateAt:Long?=null
 ) {
     val progress: Float
         get() = if (steps.isEmpty()) (if (done) 1f else 0f)

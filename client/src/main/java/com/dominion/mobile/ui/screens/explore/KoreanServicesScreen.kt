@@ -105,8 +105,11 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
             val canPublicRead=errand.id in setOf("search","shopping","delivery","transport","used")&&
                 selectedApp?.packageName in com.dominion.mobile.data.PhonePublicResult.packages
             var recipient by remember{mutableStateOf("")}
+            var listing by remember{mutableStateOf("")}
             var messageBody by remember{mutableStateOf("")}
-            val isKakao=errand.id=="messenger"&&selectedApp?.packageName=="com.kakao.talk"
+            var waitReply by remember{mutableStateOf(false)}
+            val isDaangn=errand.id=="used"&&selectedApp?.packageName=="com.towneers.www"
+            val isKakao=errand.id=="messenger"&&selectedApp?.packageName=="com.kakao.talk"||isDaangn
             var agent by remember{mutableStateOf(state.myCharacter()?.id?:state.characters.firstOrNull()?.id.orEmpty())}
             AppBottomSheet(onDismiss={privateErrand=null}){
                 SheetTitle(errand.title,"설치된 앱에서 실제 탐색")
@@ -151,15 +154,22 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
                         Row{Checkbox(sendMessage,{sendMessage=it});Text("직접 지정한 메시지 발송",Modifier.padding(top=12.dp))}
                     }
                     if(isKakao&&sendMessage){
-                        AppTextField(recipient,{recipient=it.take(60)},label="정확한 대화방 이름")
+                        AppTextField(recipient,{recipient=it.take(60)},label="정확한 대화방 이름·판매자")
+                        if(isDaangn)AppTextField(listing,{listing=it.take(100)},label="정확한 거래 상품명")
                         AppTextField(messageBody,{messageBody=it.take(500)},label="발송할 메시지",singleLine=false,maxLines=5)
                         Text("메시지 원문은 기기에 저장합니다. 실제 대화방과 입력 내용을 확인한 뒤 발송 직전에 별도로 승인합니다.")
+                        Row{Checkbox(waitReply,{waitReply=it});Text("발송 확인 후 48시간 답변 알림 대기",Modifier.padding(top=12.dp))}
+                        if(waitReply){
+                            Text("알림 접근 권한을 허용한 경우, 지정한 앱과 대화방 이름에 일치하는 새 알림만 기기에 보관합니다. 알림은 답변 후보이며 직접 확인이 필요합니다.")
+                            TextButton(onClick={runCatching{context.startActivity(Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))}}){Text("알림 접근 권한 설정")}
+                        }
                     }else if(!(canPrivate&&privateField!=null))AppTextField(details,{details=it.take(2000)},label=if(canTransact&&transact)"추가 업무 조건 (선택)" else "맡길 업무",placeholder=errand.examples,singleLine=false,maxLines=5)
                     state.characters.forEach{character->
                         Row{RadioButton(selected=agent==character.id,onClick={agent=character.id});Text(character.name,Modifier.padding(top=12.dp))}
                     }
                     val payload=if(isKakao&&sendMessage)runCatching{
-                        com.dominion.mobile.data.KakaoMessageRequest(recipient.trim(),messageBody.trim()).checked()
+                        com.dominion.mobile.data.KakaoMessageRequest(recipient.trim(),messageBody.trim(),
+                            requireNotNull(selectedApp).packageName,if(isDaangn)listing.trim() else null,waitReply).checked()
                     }.getOrNull() else null
                     val privateRead=if(canPrivate)privateField?.let{
                         com.dominion.mobile.data.PhonePrivateRead(errand.id,it).checked(requireNotNull(selectedApp).packageName)
@@ -171,14 +181,15 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
                     Button(enabled=selectedApp!=null&&state.character(agent)!=null&&
                         (if(isKakao&&sendMessage)payload!=null else if(canTransact&&transact)transaction!=null else privateRead!=null||details.isNotBlank()),onClick={
                         val app=requireNotNull(selectedApp)
-                        val request=if(payload!=null)"카카오톡 대화방 이름: "+payload.recipient+
+                        val request=if(payload!=null)"지정 앱 대화방 이름: "+payload.recipient+
+                            (payload.listing?.let{"\n거래 상품: "+it}?:"")+
                             "\n지정한 대화방을 찾아 사용자 입력 메시지를 별도 승인 후 발송합니다. 메시지 본문은 기기에만 저장되어 있습니다."
                             else if(privateRead!=null)"기기 전용 개인 조회: "+privateRead.field
                             else if(transaction!=null)"실제 "+errand.title+" 업무\n대상: "+transaction.target+
                                 "\n조건: "+transaction.condition+"\n최대 승인 금액: "+transaction.maxWon+"원\n"+details
                             else com.dominion.mobile.data.KoreanErrands.request(errand.id,app.packageName,app.label,details)
                         vm.createPrivateErrand(errand.title,agent,request,app.packageName,onOpenChat,payload,
-                            transaction==null&&canPublicRead&&publicRead,transaction,privateRead)
+                            payload==null&&transaction==null&&canPublicRead&&publicRead,transaction,privateRead)
                         privateErrand=null
                     }){Text("업무 등록 및 실행 검토")}
                 }

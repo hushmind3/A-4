@@ -1,10 +1,16 @@
 package com.dominion.mobile.data
 /** Only an explicitly entered recipient and message may reach the Kakao sender.
  * The model never supplies or rewrites this payload. */
-data class KakaoMessageRequest(val recipient:String,val body:String){
+data class KakaoMessageRequest(val recipient:String,val body:String,
+    val packageName:String?=null,val listing:String?=null,val waitForReply:Boolean=false){
+    val app:String get()=packageName?:"com.kakao.talk"
+    companion object { val apps=setOf("com.kakao.talk","com.towneers.www") }
     fun checked():KakaoMessageRequest{
         require(recipient.isNotBlank()&&recipient.length<=60&&recipient==recipient.trim()&&recipient.none(Char::isISOControl))
         require(body.isNotBlank()&&body.length<=500&&body==body.trim()&&body.none{it.isISOControl()&&it!='\n'})
+        require(app in apps)
+        if(app=="com.towneers.www")require(listing!=null&&listing.length in 2..100&&listing==listing.trim()&&listing.none(Char::isISOControl))
+        else require(listing==null)
         return this
     }
 }
@@ -48,7 +54,7 @@ data class PhoneReplanContext(val roomId:String,val sessionId:String,val app:Str
     val privateRead:PhonePrivateRead?=null) {
     init { require(roomId.isNotBlank() && sessionId.isNotBlank() && PhoneNavigationPlan.eligiblePackage(app) &&
         initialMessageId.isNotBlank() && initialRequest.isNotBlank() && initialRequest.length<=4000)
-        if(kakaoMessage!=null){require(app=="com.kakao.talk");kakaoMessage.checked()}
+        if(kakaoMessage!=null){require(app==kakaoMessage.app);kakaoMessage.checked()}
         if(publicRead)require(kakaoMessage==null&&transaction==null&&app in PhonePublicResult.packages)
         if(transaction!=null){require(kakaoMessage==null&&!publicRead);transaction.checked(app)}
         if(privateRead!=null){require(kakaoMessage==null&&!publicRead&&transaction==null);privateRead.checked(app)}

@@ -122,6 +122,7 @@ interface DominionRepository {
         transaction:PhoneTransactionRequest?=null,privateRead:PhonePrivateRead?=null):String =
         error("Native phone errand unavailable")
     suspend fun recordPhoneErrand(context:PhoneReplanContext,status:String,detail:String):Boolean = false
+    suspend fun recordMessageReply(pkg:String,title:String,body:String,at:Long):Boolean = false
     suspend fun linkTaskWorkflow(ids:List<String>):Unit = error("Workflow unavailable")
     suspend fun advanceTaskWorkflows():Unit = Unit
     suspend fun submitTask(id: String): Unit = error("Engine not connected")

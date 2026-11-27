@@ -55,7 +55,7 @@ data class PhoneNavigationPlan(val app: String, val steps: List<PhoneNavigationS
             (plan.version == 1 && plan.app in apps || plan.version == 2 && eligiblePackage(plan.app)) &&
             plan.steps.size in 1..8 &&
             (plan.steps.last().action == "expect" || plan.version == 2 && plan.steps.last().action in setOf("inspect","visual_inspect","send_message","report_result","commit_transaction")) &&
-            (plan.steps.none{it.action=="send_message"} || plan.version==2&&plan.app=="com.kakao.talk"&&plan.steps.size==1) &&
+            (plan.steps.none{it.action=="send_message"} || plan.version==2&&plan.app in KakaoMessageRequest.apps&&plan.steps.size==1) &&
             (plan.steps.none{it.action=="report_result"} || plan.version==2&&plan.app in PhonePublicResult.packages&&plan.steps.size==1) &&
             (plan.steps.none{it.action=="commit_transaction"} || plan.version==2&&PhoneTransactions.supportedApp(plan.app)&&plan.steps.size==1) &&
             (plan.steps.none{it.action=="transaction_next"} || plan.version==2&&PhoneTransactions.supportedApp(plan.app)) &&

@@ -434,6 +434,15 @@ private fun TaskCard(
                 else->status
             },style=MaterialTheme.typography.labelSmall,color=p.textSecondary)
         }
+        task.replyWatchUntil?.let{until->
+            Text(if(until>System.currentTimeMillis())"지정 대화방 답변 알림 대기 중 (최대 48시간)" else "답변 대기 기간 종료",
+                style=MaterialTheme.typography.labelSmall,color=p.textSecondary)
+        }
+        task.replyCandidate?.let{
+            Text("답변 알림 후보 · 대화방에서 확인 필요",style=MaterialTheme.typography.labelSmall,color=p.textSecondary)
+            if(state.settings.hideContent||!state.settings.messagePreview)Text("알림 내용은 숨김 설정에 따라 표시하지 않습니다.")
+            else Text(it.take(500),style=MaterialTheme.typography.bodySmall,color=p.textPrimary)
+        }
         task.engineStatus?.let { status ->
             val label = when (status) {
                 "submitting", "cloud_submitting" -> tr(lang, "접수 확인 필요", "Submission needs verification")
