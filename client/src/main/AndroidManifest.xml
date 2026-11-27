@@ -27,6 +27,10 @@
         android:required="false" />
 
     <queries>
+        <package android:name="com.kakao.talk" />
+        <package android:name="com.nhn.android.nmap" />
+        <package android:name="net.daum.android.map" />
+        <package android:name="com.google.android.gm" />
         <intent><action android:name="android.intent.action.TTS_SERVICE" /></intent>
     </queries>
 

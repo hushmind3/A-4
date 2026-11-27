@@ -25,7 +25,7 @@ import com.dominion.mobile.ui.theme.LocalDominionPalette
 
 @Composable
 fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
-    onOpenChat: (String) -> Unit, onTasks: () -> Unit, onAgenda: () -> Unit) {
+    onOpenChat: (String) -> Unit, onTasks: () -> Unit, onAgenda: () -> Unit, onDeviceActions: () -> Unit) {
     val p = LocalDominionPalette.current
     val context = LocalContext.current
     val connection by vm.connection.collectAsStateWithLifecycle()
@@ -66,6 +66,7 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
             Text("본체 상태: " + connection.name + " · 인증이 필요한 신청은 직접 확인",
                 style = MaterialTheme.typography.labelSmall, color = p.textTertiary)
             AppTextField(query, { query = it }, placeholder = "복지, 민원, 학교 등 검색")
+            OutlinedButton(onClick = onDeviceActions, modifier = Modifier.fillMaxWidth()) { Text("휴대폰 연결 · 연락처 / 문자 / 이메일 / 앱") }
             Row {
                 TextButton(onClick = onTasks) { Text("내가 맡긴 업무") }
                 TextButton(onClick = onAgenda) { Text("내 일정") }

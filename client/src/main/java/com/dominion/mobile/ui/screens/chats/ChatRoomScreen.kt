@@ -599,6 +599,9 @@ fun ChatRoomScreen(
             }
             SheetRow(tr(lang, "할 일", "Task"), Glyph.TASK) { showAttach = false; onNavigate(com.dominion.mobile.ui.nav.Routes.TASKS) }
             SheetRow(tr(lang, "일정", "Schedule"), Glyph.CALENDAR) { showAttach = false; onNavigate(com.dominion.mobile.ui.nav.Routes.SCHEDULES) }
+            SheetRow(tr(lang, "휴대폰 기능", "Phone actions"), Glyph.PLUG) {
+                showAttach = false; onNavigate(com.dominion.mobile.ui.nav.Routes.deviceActions(conversationId))
+            }
             SheetRow(tr(lang, "연결", "Connections"), Glyph.PLUG) { showAttach = false; onNavigate(com.dominion.mobile.ui.nav.Routes.CONNECTIONS) }
         }
     }

@@ -156,7 +156,8 @@ fun DominionAppRoot(vm: AppViewModel) {
                 com.dominion.mobile.ui.screens.explore.KoreanServicesScreen(state, vm,
                     onBack = { nav.popBackStack() }, onOpenChat = { nav.navigate(Routes.chat(it)) },
                     onTasks = { nav.navigate(Routes.TASKS) },
-                    onAgenda = { nav.navigate(Routes.DEVICE_AGENDA) })
+                    onAgenda = { nav.navigate(Routes.DEVICE_AGENDA) },
+                    onDeviceActions = { nav.navigate(Routes.DEVICE_ACTIONS) })
             }
             composable(Routes.MAIN) {
                 MainScreen(state = state, vm = vm, onNavigate = { nav.navigate(it) })
@@ -332,6 +333,14 @@ fun DominionAppRoot(vm: AppViewModel) {
             composable(Routes.SCHEDULES) {
                 SchedulesScreen(state = state, vm = vm, onBack = { nav.popBackStack() },
                     onAgenda = { nav.navigate(Routes.DEVICE_AGENDA) })
+            }
+            composable(Routes.DEVICE_ACTIONS) {
+                com.dominion.mobile.ui.screens.profile.DeviceActionsScreen(state, onBack = { nav.popBackStack() })
+            }
+            composable("device-actions/{roomId}", arguments = listOf(navArgument("roomId") { type = NavType.StringType })) { entry ->
+                val roomId = entry.arguments?.getString("roomId").orEmpty()
+                com.dominion.mobile.ui.screens.profile.DeviceActionsScreen(state, roomId = roomId,
+                    onBack = { nav.popBackStack() })
             }
             composable(Routes.DEVICE_AGENDA) {
                 com.dominion.mobile.ui.screens.profile.DeviceAgendaScreen(state, vm,

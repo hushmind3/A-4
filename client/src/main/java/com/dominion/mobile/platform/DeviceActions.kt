@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.CalendarContract
+import com.dominion.mobile.data.ContactTarget
 import com.dominion.mobile.data.KoreanService
 import com.dominion.mobile.data.KoreanServices
 import com.dominion.mobile.data.model.Repeat
@@ -19,6 +20,30 @@ object DeviceActions {
     fun dial(context: Context, phone: String): Boolean {
         require(phone.matches(Regex("[0-9]{3,15}")))
         return launch(context, Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", phone, null)))
+    }
+
+    fun composeSms(context: Context, phone: String, body: String): Boolean {
+        val number = ContactTarget.phone(phone)
+        require(body.length <= 10000)
+        return launch(context, Intent(Intent.ACTION_SENDTO, Uri.fromParts("smsto", number, null))
+            .putExtra("sms_body", body))
+    }
+
+    fun composeEmail(context: Context, email: String, subject: String, body: String): Boolean {
+        val address = ContactTarget.email(email)
+        require(subject.length <= 200 && body.length <= 32000)
+        val uri = Uri.parse("mailto:" + Uri.encode(address, "@") + "?subject=" + Uri.encode(subject) +
+            "&body=" + Uri.encode(body))
+        return launch(context, Intent(Intent.ACTION_SENDTO, uri))
+    }
+
+    fun dialContact(context: Context, phone: String): Boolean =
+        launch(context, Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", ContactTarget.phone(phone), null)))
+
+    fun openInstalledApp(context: Context, packageName: String): Boolean {
+        require(packageName.matches(Regex("[a-zA-Z0-9_.]{1,200}")))
+        val intent = context.packageManager.getLaunchIntentForPackage(packageName) ?: return false
+        return launch(context, intent)
     }
 
     fun map(context: Context, query: String): Boolean {
