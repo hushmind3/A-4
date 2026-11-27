@@ -44,10 +44,12 @@ internal object WebPageReader {
     }
 
     private val client=OkHttpClient.Builder()
-        .dns(Dns{host->
-            val addresses=Dns.SYSTEM.lookup(host)
-            require(addresses.isNotEmpty()&&addresses.all(::publicAddress)){"Private or unsafe address"}
-            addresses
+        .dns(object:Dns{
+            override fun lookup(hostname:String):List<InetAddress>{
+                val addresses=Dns.SYSTEM.lookup(hostname)
+                require(addresses.isNotEmpty()&&addresses.all(::publicAddress)){"Private or unsafe address"}
+                return addresses
+            }
         })
         .proxy(Proxy.NO_PROXY).followRedirects(false).followSslRedirects(false)
         .connectTimeout(6,TimeUnit.SECONDS).readTimeout(12,TimeUnit.SECONDS)
