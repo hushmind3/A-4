@@ -201,6 +201,24 @@ class RemoteBackedRepository(
     override suspend fun submitTask(id: String) = taskLock.withLock {
         var task = state.value.tasks.firstOrNull { it.id == id } ?: error("Task not found")
         if(localExecution){
+            if(task.engineJobId==null || task.engineJobId?.startsWith("cloud:")==true){
+                val cloud=requireNotNull(mobileCloud){"DOMINION Cloud account required"}
+                val prompt=TaskDispatch.prompt(task).take(3500)
+                val clientId=TaskDispatch.messageNonce(id)
+                val result=if(task.engineJobId==null)cloud.submitCloudTask(prompt,clientId)
+                    else cloud.cloudTask(requireNotNull(task.engineJobId).removePrefix("cloud:"))
+                val linked=task.copy(
+                    engineRoomId=TaskDispatch.roomId(id),
+                    engineSessionId=clientId,
+                    engineMessageId=clientId,
+                    engineJobId="cloud:"+result.id,
+                    enginePrompt=prompt,
+                    engineLanguage=if(state.value.settings.lang==com.dominion.mobile.data.model.Lang.KO)"ko"else"default",
+                    engineStatus=result.status
+                )
+                saveTaskLink(linked)
+                return@withLock
+            }
             val roomId=TaskDispatch.roomId(id)
             val existing=state.value.conversation(roomId)
             val previous=existing?.messages?.firstOrNull{it.id==task.engineMessageId}
@@ -302,7 +320,16 @@ class RemoteBackedRepository(
     }
 
     private suspend fun taskJob(task:com.dominion.mobile.data.model.TaskItem):EngineJob=
-        if(localExecution)mobile.execution(requireNotNull(task.engineRoomId)).jobs.orEmpty()
+        if(localExecution&&task.engineJobId?.startsWith("cloud:")==true){
+            val raw=requireNotNull(task.engineJobId).removePrefix("cloud:")
+            val result=requireNotNull(mobileCloud).cloudTask(raw)
+            val content=result.result?.takeIf{result.status=="done"}
+            EngineJob(task.engineJobId,result.status,task.engineSessionId,
+                EngineJobInput(task.engineRoomId,task.enginePrompt,task.engineMessageId),
+                result=result.let{job->NativeJobResult(task.engineRoomId,task.engineSessionId,
+                    job.status,content?.let{listOf(NativeJobOutput(task.characterId,
+                        "DOMINION Cloud",it,"cloud-reply:"+raw,0,null))}.orEmpty(),null)})
+        }else if(localExecution)mobile.execution(requireNotNull(task.engineRoomId)).jobs.orEmpty()
             .single{it.id==task.engineJobId}
         else api.engineJob(requireNotNull(task.engineJobId))
 
@@ -319,6 +346,13 @@ class RemoteBackedRepository(
         val job = taskJob(task)
         val receipt = TaskReceipt.from(task, job)
         val session = requireNotNull(task.engineSessionId)
+        if(localExecution&&task.engineJobId?.startsWith("cloud:")==true){
+            check(receipt.outputs.any{it.messageId==replyId})
+            val run=requireNotNull(task.engineJobId)
+            return@withLock TaskEvidence.verified(run,session,
+                NativeExecutionIdentity(run,session,job.status,"read_only_cloud_result"),
+                emptyList())
+        }
         if(localExecution){
             check(receipt.outputs.any{it.messageId==replyId})
             val run=requireNotNull(job.id)

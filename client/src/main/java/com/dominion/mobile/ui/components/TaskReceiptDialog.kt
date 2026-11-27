@@ -44,7 +44,7 @@ fun TaskReceiptDialog(vm: AppViewModel, id: String, onDismiss: () -> Unit) {
                     Text("본체 작업 ID: " + record.jobId, style = MaterialTheme.typography.labelSmall)
                     record.reason?.let { Text("종료 사유: " + it) }
                     record.error?.let { SelectionContainer { Text(it) } }
-                    if (record.outputs.isEmpty()) Text("아직 본체에 저장된 응답 결과가 없습니다.")
+                    if (record.outputs.isEmpty()) Text("아직 저장된 AI 작업 결과가 없습니다.")
                     record.outputs.forEach { output ->
                         HorizontalDivider()
                         Text(output.name ?: output.agentId ?: "에이전트", style = MaterialTheme.typography.titleSmall)

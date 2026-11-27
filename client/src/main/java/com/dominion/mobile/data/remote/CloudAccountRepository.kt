@@ -62,6 +62,18 @@ data class CloudVoiceCapabilities(val stt:Boolean=false, val tts_en:Boolean=fals
     val tts_ko:Boolean=false,val mode:String="cloud_only",val max_audio_seconds:Int=20)
 data class CloudTranscript(val text:String,val language:String,val remaining:Int)
 private data class CloudSpeechText(val text:String,val language:String)
+private data class CloudTaskRequest(val client_id:String,val prompt:String)
+data class CloudTask(val id:String,val status:String,val steps:Int=0,
+    val result:String?=null,val error:String?=null,val updated_at:Long=0) {
+    fun checked(expectedId:String?=null):CloudTask {
+        require(runCatching{java.util.UUID.fromString(id).toString()==id}.getOrDefault(false))
+        require(expectedId==null||expectedId==id)
+        require(status in setOf("queued","running","done","failed","cancelled"))
+        require(steps in 0..5)
+        require(result==null||result.length<=5000)
+        return this
+    }
+}
 private interface CloudApi {
     @POST("v1/apps/start") suspend fun start(@Body request: PairRequest): PairResponse
     @GET("v1/apps/status") suspend fun status(@Header("Authorization") auth: String): CloudStatus
@@ -70,6 +82,12 @@ private interface CloudApi {
     @GET("v1/models") suspend fun models(@Header("Authorization") auth: String): CloudModels
     @POST("v1/chat/completions") suspend fun complete(@Header("Authorization") auth:String,
         @Body request:CloudCompletionRequest):CloudCompletionResponse
+    @POST("v1/agent/jobs") suspend fun startCloudJob(@Header("Authorization") auth:String,
+        @Body body:CloudTaskRequest):CloudTask
+    @GET("v1/agent/jobs/{id}") suspend fun cloudJob(@Header("Authorization") auth:String,
+        @Path("id") id:String):CloudTask
+    @POST("v1/agent/jobs/{id}/cancel") suspend fun cancelCloudJob(@Header("Authorization") auth:String,
+        @Path("id") id:String):CloudTask
     @GET("v1/voice/capabilities") suspend fun voiceCapabilities(@Header("Authorization") auth:String):CloudVoiceCapabilities
     @POST("v1/voice/transcriptions") suspend fun transcribeCloud(
         @Header("Authorization") auth:String,@Header("x-dominion-language") language:String,
@@ -235,6 +253,36 @@ class CloudAccountRepository(context: Context) {
 
     /** The phone transmits only bounded microphone PCM. STT/TTS models run in
      * DOMINION Cloud and cannot receive the device pairing token from callers. */
+    /** Read-only cloud research job. State persists after app process death.
+     * A stable client UUID makes submit/retry idempotent per verified owner. */
+    suspend fun submitCloudTask(prompt:String,clientId:String):CloudTask=withContext(Dispatchers.IO){
+        require(prompt.isNotBlank()&&prompt.length<=3500)
+        require(java.util.UUID.fromString(clientId).toString()==clientId)
+        lock.withLock{
+            val pair=if(savedAccountId()==null)approved().first
+                else requireNotNull(loadPairing()){"DOMINION Cloud login required"}
+            api.startCloudJob("Bearer "+pair.token,CloudTaskRequest(clientId,prompt)).checked()
+        }
+    }
+
+    suspend fun cloudTask(id:String):CloudTask=withContext(Dispatchers.IO){
+        require(java.util.UUID.fromString(id).toString()==id)
+        lock.withLock{
+            val pair=if(savedAccountId()==null)approved().first
+                else requireNotNull(loadPairing()){"DOMINION Cloud login required"}
+            api.cloudJob("Bearer "+pair.token,id).checked(id)
+        }
+    }
+
+    suspend fun cancelCloudTask(id:String):CloudTask=withContext(Dispatchers.IO){
+        require(java.util.UUID.fromString(id).toString()==id)
+        lock.withLock{
+            val pair=if(savedAccountId()==null)approved().first
+                else requireNotNull(loadPairing()){"DOMINION Cloud login required"}
+            api.cancelCloudJob("Bearer "+pair.token,id).checked(id)
+        }
+    }
+
     suspend fun mobileVoiceCapabilities():CloudVoiceCapabilities=withContext(Dispatchers.IO){
         lock.withLock{
             val pair=if(savedAccountId()==null)approved().first
