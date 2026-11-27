@@ -32,6 +32,10 @@ fun EngineSettingsScreen(onBack: () -> Unit) {
     val api = remember(saved) { saved?.let(ApiFactory::create) }
     var origin by remember { mutableStateOf(saved?.origin.orEmpty()) }
     var token by remember { mutableStateOf("") }
+    var useAccess by remember { mutableStateOf(saved?.accessClientId != null) }
+    var accessId by remember { mutableStateOf("") }
+    var accessSecret by remember { mutableStateOf("") }
+    var diagnosis by remember { mutableStateOf<EngineReadiness?>(null) }
     var rooms by remember { mutableStateOf(emptyList<EngineRoom>()) }
     var providers by remember { mutableStateOf(emptyList<EngineProvider>()) }
     var tools by remember { mutableStateOf(emptyList<EngineTool>()) }
@@ -56,6 +60,17 @@ fun EngineSettingsScreen(onBack: () -> Unit) {
             finally { busy = false }
         }
     }
+    fun candidate(): EngineConnection {
+        val parsed = if (token.isBlank() && saved != null)
+            EngineConnection.parse(origin, saved.ownerToken).also { require(it.origin == saved.origin) }
+        else EngineConnection.parse(origin, token)
+        if (!useAccess) return parsed
+        val useSavedAccess = accessId.isBlank() && accessSecret.isBlank() && saved?.origin == parsed.origin
+        val id = if (useSavedAccess) saved?.accessClientId else accessId
+        val secret = if (useSavedAccess) saved?.accessClientSecret else accessSecret
+        require(!id.isNullOrBlank() && !secret.isNullOrBlank())
+        return EngineConnection.parse(parsed.origin, parsed.ownerToken, id, secret)
+    }
     fun loadCatalog() = action {
         val client = requireNotNull(api)
         rooms = client.engineRooms()
@@ -73,21 +88,45 @@ fun EngineSettingsScreen(onBack: () -> Unit) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(tr(lang, "DOMINION 실행 서버", "DOMINION engine"), style = MaterialTheme.typography.titleLarge)
-            OutlinedTextField(value = origin, onValueChange = { origin = it }, enabled = !busy,
+            OutlinedTextField(value = origin, onValueChange = { origin = it; diagnosis = null }, enabled = !busy,
                 label = { Text("HTTPS URL") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-            OutlinedTextField(value = token, onValueChange = { token = it }, enabled = !busy,
+            OutlinedTextField(value = token, onValueChange = { token = it; diagnosis = null }, enabled = !busy,
                 label = { Text(tr(lang, "본체 관리자 토큰", "Engine owner token")) },
                 visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth(), singleLine = true)
             Text(tr(lang, "본인 소유의 HTTPS 서버를 연결합니다. 관리자 토큰은 Google 계정 토큰과 별개이며 전체 본체 권한을 갖습니다.",
                 "Connect your own HTTPS server. The engine owner token is separate from Google and grants full engine access."))
+            Row {
+                Checkbox(checked = useAccess, enabled = !busy, onCheckedChange = {
+                    useAccess = it; diagnosis = null
+                })
+                Text("Cloudflare Access (이미 설정한 서비스 인증)")
+            }
+            if (useAccess) {
+                OutlinedTextField(accessId, { accessId = it; diagnosis = null }, enabled = !busy, singleLine = true,
+                    label = { Text("Access Client ID") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(accessSecret, { accessSecret = it; diagnosis = null }, enabled = !busy, singleLine = true,
+                    label = { Text("Access Client Secret") }, modifier = Modifier.fillMaxWidth(),
+                    visualTransformation = PasswordVisualTransformation())
+                Text("기존 서비스 토큰이 있는 경우에만 입력하세요. 저장된 인증은 같은 주소에서만 재사용됩니다. Tunnel 자체의 설치 토큰이 아닙니다.",
+                    style = MaterialTheme.typography.bodySmall)
+            }
+            OutlinedButton(enabled = !busy, onClick = { action {
+                diagnosis = null
+                diagnosis = probeEngine(ApiFactory.create(candidate()))
+            } }) { Text("연결·모델·음성 진단") }
+            diagnosis?.let { result ->
+                Text("본체 인증: " + result.authenticated.label)
+                Text("대화방: " + result.rooms.label + (result.roomCount?.let { " (" + it + "개)" } ?: ""))
+                Text("모델 제공자: " + result.providers.label + (result.providerCount?.let { " (" + it + "개 활성)" } ?: ""))
+                Text("도구: " + result.tools.label + (result.toolCount?.let { " (" + it + "개)" } ?: ""))
+                Text("Whisper: " + result.whisper.label + " · Piper: " + result.piper.label)
+                Text("조회 성공은 실제 모델 추론·실시간 통화 성공을 뜻하지 않습니다.", style = MaterialTheme.typography.labelSmall)
+            }
             Button(enabled = !busy, onClick = { action {
-                val candidate = if (token.isBlank() && saved != null) {
-                    EngineConnection.parse(origin, saved.ownerToken).also { require(it.origin == saved.origin) }
-                } else EngineConnection.parse(origin, token)
-                val client = ApiFactory.create(candidate)
-                requireNotNull(client.me().data)
-                // Read only during connection verification.
-                client.engineRooms()
+                val candidate = candidate()
+                val result = probeEngine(ApiFactory.create(candidate))
+                diagnosis = result
+                check(result.authenticated == ProbeState.OK && result.rooms == ProbeState.OK)
                 (context as MainActivity).applyEngine(candidate)
             } }) { Text(tr(lang, "확인 후 연결", "Verify and connect")) }
             if (api != null) {

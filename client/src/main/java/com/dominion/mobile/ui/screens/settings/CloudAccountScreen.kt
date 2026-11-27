@@ -27,7 +27,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
-fun CloudAccountScreen(onBack: () -> Unit) {
+fun CloudAccountScreen(onBack: () -> Unit, onEngineSettings: () -> Unit) {
     val context = LocalContext.current
     val repo = remember(context.applicationContext) {
         (context.applicationContext as DominionApplication).container.cloudAccount
@@ -92,6 +92,7 @@ fun CloudAccountScreen(onBack: () -> Unit) {
             Text(tr(lang, "실행 서버: ", "Execution server: ") +
                 ((context.applicationContext as DominionApplication).container.engine?.origin ?: tr(lang, "미설정", "Not configured")))
             Text(tr(lang, "클라우드 계정 연결은 실행 서버 접근 권한과 별개입니다.", "Cloud account authorization does not grant execution server access."))
+            OutlinedButton(onClick = onEngineSettings) { Text(tr(lang, "실행 서버 연결 및 진단", "Connect and diagnose engine")) }
             if (error) Text(tr(lang, "클라우드 연결 또는 확인에 실패했습니다. 다시 확인하세요.",
                 "Cloud request or verification failed. Retry."), color = MaterialTheme.colorScheme.error)
             val current = snapshot

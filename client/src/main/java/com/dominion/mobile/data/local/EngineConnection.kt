@@ -2,9 +2,11 @@ package com.dominion.mobile.data.local
 
 import java.net.URI
 
-class EngineConnection(val origin: String, val ownerToken: String) {
+class EngineConnection(val origin: String, val ownerToken: String,
+    val accessClientId: String? = null, val accessClientSecret: String? = null) {
     companion object {
-        fun parse(origin: String, token: String): EngineConnection {
+        fun parse(origin: String, token: String, accessClientId: String? = null,
+            accessClientSecret: String? = null): EngineConnection {
             val uri = URI(origin.trim())
             require(uri.scheme == "https" && !uri.host.isNullOrBlank() &&
                 uri.userInfo == null && uri.query == null && uri.fragment == null &&
@@ -15,7 +17,14 @@ class EngineConnection(val origin: String, val ownerToken: String) {
             }
             require(token.isNotBlank() && token.length <= 4096 &&
                 token.all { it.code in 33..126 } && !token.startsWith("dapp_")) { "Engine owner token required" }
-            return EngineConnection(URI("https", null, uri.host.lowercase(), uri.port, "/", null, null).toString(), token)
+            val id = accessClientId?.trim()?.takeIf { it.isNotBlank() }
+            val secret = accessClientSecret?.trim()?.takeIf { it.isNotBlank() }
+            require((id == null) == (secret == null)) { "Both Cloudflare Access credentials are required" }
+            require(listOfNotNull(id, secret).all { it.length <= 4096 && it.all { ch -> ch.code in 33..126 } }) {
+                "Invalid Cloudflare Access credential"
+            }
+            return EngineConnection(URI("https", null, uri.host.lowercase(), uri.port, "/", null, null).toString(),
+                token, id, secret)
         }
     }
     override fun toString() = "EngineConnection(origin=$origin)"

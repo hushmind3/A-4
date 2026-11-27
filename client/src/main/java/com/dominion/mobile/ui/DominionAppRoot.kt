@@ -285,7 +285,7 @@ fun DominionAppRoot(vm: AppViewModel) {
                 EngineSettingsScreen(onBack = { nav.popBackStack() })
             }
             composable(Routes.CLOUD_ACCOUNT) {
-                CloudAccountScreen(onBack = { nav.popBackStack() })
+                CloudAccountScreen(onBack = { nav.popBackStack() }, onEngineSettings = { nav.navigate(Routes.ENGINE_SETTINGS) })
             }
             composable(Routes.ACCOUNT) {
                 AccountScreen(

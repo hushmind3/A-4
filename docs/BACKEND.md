@@ -54,3 +54,7 @@ Native room transcript metadata now retains agent_id and replyToMessageId. Room 
 ## Server event delivery
 
 The native authenticated GET /api/events SSE journal is now consumed while a room is foregrounded. Its global sequence is retained in memory per room/session and used on reconnect. Only exact room/session events invalidate the native transcript/job/approval snapshot. Global event payloads never appear directly in the UI. Lifecycle cancellation closes the HTTP call, reconnect uses capped backoff, and independent periodic polling remains available after connection loss or journal reset. This is committed-message delivery, not model-token streaming.
+
+## Existing Cloudflare Access protected origins
+
+The Android HTTPS engine connection can optionally include an operator-provisioned Access service-token pair in the documented CF-Access-Client-Id and CF-Access-Client-Secret headers. These credentials are encrypted in the existing Android Keystore-backed connection record, scoped to the exact HTTPS origin, never sent to the Cloud account gateway, and never reused automatically across changed origins. Redirects are disabled. This supports an already configured Tunnel/Access application; it does not provision tunnels, register users, or replace Google account authentication. Source: https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/ .

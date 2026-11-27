@@ -4,6 +4,7 @@ import com.dominion.mobile.BuildConfig
 import com.dominion.mobile.data.local.EngineConnection
 import com.google.gson.GsonBuilder
 import okhttp3.OkHttpClient
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
@@ -20,11 +21,20 @@ object ApiFactory {
             .followSslRedirects(false)
             .readTimeout(60, TimeUnit.SECONDS)
             .addInterceptor { chain ->
+                val expected = connection.origin.toHttpUrl()
+                val actual = chain.request().url
+                check(actual.scheme == expected.scheme && actual.host == expected.host && actual.port == expected.port) {
+                    "Engine credentials cannot leave configured origin"
+                }
                 val request = chain.request().newBuilder().apply {
                     if (chain.request().header("Accept") == null) header("Accept", "application/json")
                     header("X-Client-Version", BuildConfig.VERSION_NAME)
                     header("X-Client-Platform", "android")
                     header("X-Dominion-Token", connection.ownerToken)
+                    if (connection.accessClientId != null && connection.accessClientSecret != null) {
+                        header("CF-Access-Client-Id", connection.accessClientId)
+                        header("CF-Access-Client-Secret", connection.accessClientSecret)
+                    }
                 }.build()
                 val seconds = when (request.url.encodedPath) {
                     "/api/voice/transcribe" -> 310
