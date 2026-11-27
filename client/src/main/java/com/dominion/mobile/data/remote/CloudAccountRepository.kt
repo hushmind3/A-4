@@ -132,6 +132,20 @@ class CloudAccountRepository(context: Context) {
     private val appContext = context.applicationContext
     private val store = EncryptedRecordStore(appContext, "dominion_cloud_session", CloudPairing::class.java)
     private val lock = Mutex()
+    private val customInference=CustomMobileInference(appContext)
+    suspend fun customModelConfig():CustomModelConfig?=withContext(Dispatchers.IO){
+        savedAccountId()?.let{customInference.load(it)}
+    }
+    suspend fun configureCustomModel(config:CustomModelConfig):CloudCompletion=withContext(Dispatchers.IO){
+        lock.withLock{
+            val account=requireNotNull(savedAccountId()){"DOMINION account required"}
+            val checked=config.checked()
+            val result=customInference.complete(checked,listOf(CloudChatMessage("user","Reply with OK.")),64)
+            check(savedAccountId()==account)
+            customInference.save(account,checked)
+            result
+        }
+    }
     val remote=CloudRemoteAccount(appContext)
     /** Verified account from encrypted pairing; no network or token is exposed. */
     fun savedAccountId():String? = runCatching{
@@ -260,6 +274,13 @@ class CloudAccountRepository(context: Context) {
      * model step; refresh/selection still check the real account and model list. */
     suspend fun completeForMobile(model:String,messages:List<CloudChatMessage>,maxTokens:Int=512):CloudCompletion =
         withContext(Dispatchers.IO){lock.withLock{
+            if(model==CustomModelConfig.SELECTION){
+                val account=requireNotNull(savedAccountId()){"DOMINION account required"}
+                val config=requireNotNull(customInference.load(account)){"Configure custom API first"}
+                val result=customInference.complete(config,messages,maxTokens)
+                check(savedAccountId()==account)
+                return@withLock result
+            }
             val saved=requireNotNull(loadPairing()){"Google account connection required"}
             val pair=if(saved.verifiedAccountId.isNullOrBlank())approved().first else saved
             val request=CloudCompletionRequest(model,messages,max_tokens=maxTokens).validated()
