@@ -106,6 +106,16 @@ fun CallScreen(
             ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
         if (mic && camera) connect() else vm.failCall(call.sessionId, "통화에 필요한 마이크 또는 카메라 권한이 거부되었습니다.")
     }
+    var confirmScreenShare by remember(call.sessionId) { mutableStateOf(false) }
+    var requestingProjection by remember(call.sessionId) { mutableStateOf(false) }
+    val projectionPermission = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        requestingProjection = false
+        if (result.resultCode == android.app.Activity.RESULT_OK && result.data != null &&
+            mediaReady && vm.state.value.call?.sessionId == call.sessionId) {
+            runCatching { CallForegroundService.screen(context, call.sessionId, true, result.data) }
+                .onFailure { context.toast("화면 공유 시작 실패") }
+        } else context.toast("화면 공유가 시작되지 않았습니다.")
+    }
     val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted && mediaReady) runCatching { CallForegroundService.camera(context, true) }
             .onFailure { context.toast("카메라 전환 실패") }
@@ -171,7 +181,7 @@ fun CallScreen(
                 )
             )
     ) {
-        if (call.video || (mediaReady && media.remoteVideo != null)) {
+        if (call.video || (mediaReady && (media.remoteVideo != null || media.remoteScreen != null))) {
             Box(
                 Modifier
                     .fillMaxSize()
@@ -183,7 +193,7 @@ fun CallScreen(
                         )
                     )
             ) {
-                val remoteTrack = media.remoteVideo
+                val remoteTrack = media.remoteScreen ?: media.remoteVideo
                 val mediaRoom = media.room
                 if (mediaReady && remoteTrack != null && mediaRoom != null) {
                     CallVideoView(mediaRoom, remoteTrack, Modifier.fillMaxSize())
@@ -272,7 +282,7 @@ fun CallScreen(
                 }
             }
 
-            if (!call.video && !(mediaReady && media.remoteVideo != null)) {
+            if (!call.video && !(mediaReady && (media.remoteVideo != null || media.remoteScreen != null))) {
                 Spacer(Modifier.weight(0.6f))
                 CallAvatar(accent, character)
                 Spacer(Modifier.height(26.dp))
@@ -309,6 +319,20 @@ fun CallScreen(
             }
 
             if (mediaReady && media.error != null) Text(media.error.orEmpty(), color = Color(0xFFFFB4AB), modifier = Modifier.padding(8.dp))
+            if (mediaReady) {
+                androidx.compose.material3.TextButton(
+                    enabled = !media.screenBusy && !requestingProjection,
+                    onClick = {
+                        if (media.sharingScreen) {
+                            runCatching { CallForegroundService.screen(context, call.sessionId, false) }
+                                .onFailure { context.toast("화면 공유 중지 실패") }
+                        } else confirmScreenShare = true
+                    }) {
+                    Text(if (media.sharingScreen) "화면 공유 중 · 중지" else if (media.screenBusy) "화면 공유 변경 중" else "화면 공유",
+                        color = if (media.sharingScreen) Color(0xFFFFC46B) else Color.White)
+                }
+                if (media.remoteScreen != null) Text("상대 화면 수신 중", color = Color.White.copy(alpha = 0.85f))
+            }
             if (call.phase in setOf(CallPhase.WAITING_PEER, CallPhase.PEER_PRESENT, CallPhase.RECONNECTING)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
                     androidx.compose.material3.TextButton(onClick = { requestInstruction = true }) {
@@ -387,6 +411,21 @@ fun CallScreen(
             }
         }
     }
+    if (confirmScreenShare) androidx.compose.material3.AlertDialog(
+        onDismissRequest = { confirmScreenShare = false },
+        title = { Text("현재 통화방에 화면을 공유할까요?") },
+        text = { Text("선택한 앱 또는 화면이 통화방 참가자에게 전송됩니다. AI의 화면 이해 여부는 본체 참가자 기능에 달려 있습니다. 민감한 정보는 공유하지 마세요. 공유는 언제든 중지할 수 있습니다.") },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = {
+            confirmScreenShare = false
+            if (mediaReady && !requestingProjection && !media.sharingScreen) {
+                requestingProjection = true
+                runCatching {
+                    val manager = context.getSystemService(android.media.projection.MediaProjectionManager::class.java)
+                    projectionPermission.launch(manager.createScreenCaptureIntent())
+                }.onFailure { requestingProjection = false; context.toast("시스템 화면 공유 요청 실패") }
+            }
+        }) { Text("공유 범위 선택") } },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = { confirmScreenShare = false }) { Text("취소") } })
     if (requestInstruction) com.dominion.mobile.ui.components.TextPromptDialog(
         title = tr(lang, "통화 중 작업 요청", "Assign work during call"),
         label = tr(lang, "현재 대화방으로 전달할 요청", "Request for the current room"),

@@ -5,6 +5,8 @@ import android.content.pm.PackageManager
 import com.twilio.audioswitch.AudioDevice
 import io.livekit.android.room.track.Track
 import io.livekit.android.room.track.VideoTrack
+import io.livekit.android.room.track.screencapture.ScreenCaptureParams
+import androidx.core.content.IntentCompat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
@@ -35,7 +37,8 @@ import kotlinx.coroutines.flow.collect
 data class CallMediaState(val sessionId: String? = null, val room: Room? = null,
     val localVideo: VideoTrack? = null, val remoteVideo: VideoTrack? = null,
     val audioLevel: Float = 0f, val speaker: Boolean = false, val cameraBusy: Boolean = false,
-    val error: String? = null)
+    val error: String? = null, val sharingScreen: Boolean = false,
+    val remoteScreen: VideoTrack? = null, val screenBusy: Boolean = false)
 
 /** Owns the actual media room; UI navigation does not own microphone lifetime. */
 class CallForegroundService : Service() {
@@ -45,6 +48,8 @@ class CallForegroundService : Service() {
     private var sessionId: String? = null
     private var job: Job? = null
     private val cameraGate = Mutex()
+    private val screenGate = Mutex()
+    private var screenBusy = false
     private var ready = false
     private var cameraBusy = false
     private var mediaError: String? = null
@@ -74,10 +79,18 @@ class CallForegroundService : Service() {
             when (intent?.action) {
                 ACTION_CAMERA -> if (ready) scope.launch { applyCamera(intent.getBooleanExtra("enable", false)) }
                 ACTION_SPEAKER -> if (ready) selectSpeaker(intent.getBooleanExtra("enable", false))
+                ACTION_SCREEN -> if (ready && intent.getStringExtra("sessionId") == sessionId &&
+                    call.sessionId == sessionId) {
+                    val enable = intent.getBooleanExtra("enable", false)
+                    val permissionData = IntentCompat.getParcelableExtra(intent, "projectionData", Intent::class.java)
+                    // Remove the one-time permission result before returning; never persist it.
+                    intent.removeExtra("projectionData")
+                    if (!enable || permissionData != null) scope.launch { applyScreen(enable, permissionData) }
+                }
             }
             return START_NOT_STICKY
         }
-        if (intent?.action == ACTION_CAMERA || intent?.action == ACTION_SPEAKER) {
+        if (intent?.action == ACTION_CAMERA || intent?.action == ACTION_SPEAKER || intent?.action == ACTION_SCREEN) {
             stopSelf()
             return START_NOT_STICKY
         }
@@ -201,6 +214,56 @@ class CallForegroundService : Service() {
         }
     }
 
+    private fun screenPublished(media: Room): Boolean =
+        media.localParticipant.getTrackPublication(Track.Source.SCREEN_SHARE)
+            ?.let { !it.muted && it.track is VideoTrack } == true
+
+    private suspend fun applyScreen(enable: Boolean, permissionData: Intent?) = screenGate.withLock {
+        val media = room ?: return@withLock
+        if (!ready || repo.state.value.call?.sessionId != sessionId) return@withLock
+        if (enable && screenPublished(media)) return@withLock
+        if (!enable && !screenPublished(media)) return@withLock
+        screenBusy = true
+        mediaError = null
+        publishMedia(media)
+        try {
+            val params = if (enable) ScreenCaptureParams(requireNotNull(permissionData),
+                notificationId = 4302, notification = screenNotification(), onStop = {
+                    scope.launch { if (room === media) publishMedia(media) }
+                }) else null
+            check(media.localParticipant.setScreenShareEnabled(enable, params))
+            check(screenPublished(media) == enable)
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) {
+            mediaError = "화면 공유 전환 실패 · 연결 및 화면 공유 권한을 확인하세요."
+            if (enable) runCatching { media.localParticipant.setScreenShareEnabled(false) }
+            if (screenPublished(media)) {
+                // A partially published screen must not remain live after failed stop.
+                fail("화면 공유 종료 확인 실패 · 통화를 중단합니다.")
+            }
+        } finally {
+            screenBusy = false
+            if (room === media) publishMedia(media)
+        }
+    }
+
+    private fun screenNotification(): android.app.Notification {
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.createNotificationChannel(NotificationChannel("dominion_screen_share", "화면 공유", NotificationManager.IMPORTANCE_LOW))
+        val stop = PendingIntent.getService(this, 3, Intent(this, CallForegroundService::class.java).apply {
+            action = ACTION_SCREEN
+            putExtra("sessionId", sessionId)
+            putExtra("enable", false)
+        }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        return NotificationCompat.Builder(this, "dominion_screen_share")
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("DOMINION 화면 공유 중")
+            .setContentText("현재 통화방에 화면을 송출하고 있습니다.")
+            .setOngoing(true)
+            .addAction(R.drawable.ic_notification, "화면 공유 중지", stop)
+            .build()
+    }
+
     private fun publishMedia(media: Room) {
         val current = repo.state.value.call
         if (current?.sessionId != sessionId) return
@@ -209,10 +272,14 @@ class CallForegroundService : Service() {
         val remote = media.remoteParticipants.values.asSequence().mapNotNull {
             it.getTrackPublication(Track.Source.CAMERA)?.takeUnless { p -> p.muted }?.track as? VideoTrack
         }.firstOrNull()
+        val remoteScreen = media.remoteParticipants.values.asSequence().mapNotNull {
+            it.getTrackPublication(Track.Source.SCREEN_SHARE)?.takeUnless { p -> p.muted }?.track as? VideoTrack
+        }.firstOrNull()
         val level = maxOf(media.localParticipant.audioLevel,
             media.remoteParticipants.values.maxOfOrNull { it.audioLevel } ?: 0f).coerceIn(0f, 1f)
         _mediaState.value = CallMediaState(sessionId, media, local, remote, level,
-            media.audioSwitchHandler?.selectedAudioDevice is AudioDevice.Speakerphone, cameraBusy, mediaError)
+            media.audioSwitchHandler?.selectedAudioDevice is AudioDevice.Speakerphone, cameraBusy, mediaError,
+            sharingScreen = screenPublished(media), remoteScreen = remoteScreen, screenBusy = screenBusy)
     }
 
     private fun peerState(media: Room) {
@@ -281,12 +348,22 @@ class CallForegroundService : Service() {
         private const val ACTION_END = "com.dominion.mobile.action.END_CALL"
         private const val ACTION_CAMERA = "com.dominion.mobile.action.CALL_CAMERA"
         private const val ACTION_SPEAKER = "com.dominion.mobile.action.CALL_SPEAKER"
+        private const val ACTION_SCREEN = "com.dominion.mobile.action.CALL_SCREEN"
         private val _mediaState = MutableStateFlow(CallMediaState())
         val mediaState = _mediaState.asStateFlow()
         fun camera(context: Context, enabled: Boolean) {
             context.startService(Intent(context, CallForegroundService::class.java).apply {
                 action = ACTION_CAMERA
                 putExtra("enable", enabled)
+            })
+        }
+        fun screen(context: Context, expectedSession: String, enabled: Boolean, permissionData: Intent? = null) {
+            require(!enabled || permissionData != null)
+            context.startService(Intent(context, CallForegroundService::class.java).apply {
+                action = ACTION_SCREEN
+                putExtra("sessionId", expectedSession)
+                putExtra("enable", enabled)
+                if (enabled) putExtra("projectionData", permissionData)
             })
         }
         fun speaker(context: Context, enabled: Boolean) {

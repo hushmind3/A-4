@@ -4,6 +4,8 @@ import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -31,6 +33,9 @@ fun VoiceConversationDialog(vm: AppViewModel, roomId: String, onDismiss: () -> U
     var autoContinue by remember { mutableStateOf(true) }
     var job by remember { mutableStateOf<Job?>(null) }
     var pendingNonce by remember { mutableStateOf<String?>(null) }
+    var approvals by remember { mutableStateOf<List<com.dominion.mobile.data.remote.EngineApproval>>(emptyList()) }
+    var reviewedApproval by remember { mutableStateOf<com.dominion.mobile.data.remote.EngineApproval?>(null) }
+    var decisionBusy by remember { mutableStateOf(false) }
     val finishRecording = remember { AtomicBoolean(false) }
 
     LaunchedEffect(vm) {
@@ -49,13 +54,17 @@ fun VoiceConversationDialog(vm: AppViewModel, roomId: String, onDismiss: () -> U
     }
 
     fun begin() {
-        if (active || job?.isActive == true || ready != true || vm.state.value.call != null) return
+        if (active || decisionBusy || job?.isActive == true || ready != true || vm.state.value.call != null) return
         active = true
         failure = null
         job = scope.launch {
             try {
                 // Bind the dialog to a verified room session, not just a room name.
-                vm.refreshConversationNow(roomId)
+                // Avoid racing the visible chat's own foreground refresh.
+                while (!vm.refreshConversationNow(roomId)) {
+                    phase = "대화 동기화 중"
+                    delay(1000)
+                }
                 val session = requireNotNull(vm.roomExecution(roomId).sessionId)
                 check(session.isNotBlank())
                 fun ensureRoom() {
@@ -99,8 +108,11 @@ fun VoiceConversationDialog(vm: AppViewModel, roomId: String, onDismiss: () -> U
                         }
                         if (owner.jobStatus in setOf("failed", "cancelled", "needs_review", "interrupted", "paused"))
                             error("Job needs review in chat")
-                        if (snapshot.approvals.orEmpty().isNotEmpty()) {
-                            phase = "승인 요청 대기 · 대화 화면에서 확인"
+                        approvals = snapshot.approvals.orEmpty().filter { it.actionableIn(session) }
+                        if (approvals.isNotEmpty()) {
+                            phase = "승인 요청 대기 · 실행 내용을 직접 확인하세요"
+                            delay(1500)
+                            continue
                         }
                         if (owner.jobStatus == "completed") {
                             val replies = VoiceTurn.replies(room.messages, roomId, owner)
@@ -152,11 +164,26 @@ fun VoiceConversationDialog(vm: AppViewModel, roomId: String, onDismiss: () -> U
                 if (transcript.isNotBlank()) Text("나: " + transcript.take(600), maxLines = 4)
                 if (answer.isNotBlank()) Text("AI: " + answer.take(900), maxLines = 5)
                 failure?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                if (approvals.isNotEmpty()) {
+                    Text("대화방 승인 요청 " + approvals.size + "개", style = MaterialTheme.typography.titleSmall)
+                    approvals.take(3).forEach { item ->
+                        TextButton(enabled = !decisionBusy, onClick = { reviewedApproval = item }) {
+                            Text((item.tool ?: "도구") + " · 실행 내용 확인")
+                        }
+                    }
+                }
                 Row {
                     Checkbox(checked = autoContinue, onCheckedChange = { autoContinue = it })
                     Text("응답 후 자동으로 다음 발화 듣기", modifier = Modifier.padding(top = 12.dp))
                 }
                 if (active && phase == "듣는 중") OutlinedButton(onClick = { finishRecording.set(true) }) { Text("말하기 끝내기") }
+                if (active && pendingNonce != null && phase == "본체 음성으로 응답 중") {
+                    TextButton(onClick = {
+                        stop()
+                        pendingNonce = null
+                        phase = "응답 읽기 중단 · 다음 발화 시작 가능"
+                    }) { Text("응답 끊고 새로 말하기") }
+                }
                 if (pendingNonce != null && !active) {
                     Text("이미 접수된 요청은 대화에 남습니다. 다시 시작하면 새 요청을 보내지 않고 기존 요청부터 확인합니다.",
                         style = MaterialTheme.typography.bodySmall)
@@ -165,7 +192,7 @@ fun VoiceConversationDialog(vm: AppViewModel, roomId: String, onDismiss: () -> U
             }
         },
         confirmButton = {
-            TextButton(enabled = ready == true && !active, onClick = {
+            TextButton(enabled = ready == true && !active && !decisionBusy, onClick = {
                 permission.launch(Manifest.permission.RECORD_AUDIO)
             }) { Text(if (pendingNonce == null) "음성 대화 시작" else "기존 요청 다시 확인") }
         },
@@ -175,4 +202,44 @@ fun VoiceConversationDialog(vm: AppViewModel, roomId: String, onDismiss: () -> U
                 else onDismiss()
             }) { Text(if (active) "듣기·재생 중단" else "닫기") }
         })
+    reviewedApproval?.let { item ->
+        AlertDialog(onDismissRequest = { if (!decisionBusy) reviewedApproval = null },
+            title = { Text("본체 도구 실행 확인") },
+            text = {
+                Column(Modifier.heightIn(max = 300.dp).padding(4.dp)
+                    .verticalScroll(rememberScrollState())) {
+                    Text(item.tool.orEmpty())
+                    androidx.compose.foundation.text.selection.SelectionContainer {
+                        Text(item.args?.toString().orEmpty())
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = !decisionBusy, onClick = {
+                    decisionBusy = true
+                    scope.launch {
+                        try {
+                            vm.decideApproval(roomId, item, true)
+                            reviewedApproval = null
+                        } catch (e: CancellationException) { throw e }
+                        catch (_: Exception) { failure = "승인 결과 확인 실패 · 다시 조회하세요." }
+                        finally { decisionBusy = false }
+                    }
+                }) { Text("실행 허용") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(enabled = !decisionBusy, onClick = { reviewedApproval = null }) { Text("닫기") }
+                    TextButton(enabled = !decisionBusy, onClick = {
+                        decisionBusy = true
+                        scope.launch {
+                            try { vm.decideApproval(roomId, item, false); reviewedApproval = null }
+                            catch (e: CancellationException) { throw e }
+                            catch (_: Exception) { failure = "거부 결과 확인 실패 · 다시 조회하세요." }
+                            finally { decisionBusy = false }
+                        }
+                    }) { Text("거부") }
+                }
+            })
+    }
 }
