@@ -59,7 +59,9 @@ internal object MobileCore {
     }
     fun digest(value:String)=MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8)).joinToString(""){"%02x".format(it.toInt() and 255)}
     fun action(text:String):Pair<String,JsonObject>?{
-        val clean=text.trim()
+        val trimmed=text.trim()
+        val clean=if(trimmed.startsWith("```json")&&trimmed.endsWith("```"))
+            trimmed.removePrefix("```json").removeSuffix("```").trim() else trimmed
         if(!clean.startsWith("{"))return null
         val o=runCatching{JsonParser.parseString(clean).asJsonObject}.getOrNull()?:return null
         if(o.keySet()!=setOf("tool","args"))return null

@@ -26,13 +26,16 @@ object KoreanWorkflows {
         "employment" to listOf(flow("jobs", "채용·훈련 공고", field("희망 직무", "사무·개발"), field("조건", "근무지·시간", false), repeatable = true)),
         "tax" to listOf(flow("tax", "국세 신고 준비", field("세목", "종합소득세"), field("귀속연도", "2026"))),
         "localtax" to listOf(flow("localtax", "지방세 일정", field("세목", "자동차세"), repeatable = true)),
-        "health" to listOf(flow("provider", "공개 의료기관 검색", field("기관 종류", "검진·치과·약국"), field("희망 조건", "운영시간 등", false))),
+        "health" to listOf(flow("provider", "공개 의료기관 검색", field("기관 종류", "검진·치과·약국"), field("희망 조건", "운영시간 등", false)),
+            flow("kakao-place","카카오맵 공개 의료기관 검색",field("검색어","아산시 치과"))),
         "consumer" to listOf(flow("refund", "환불·리콜 확인", field("상품 또는 계약", "상품명"), field("거래 상황", "구입 후 문제"))),
         "transit" to listOf(flow("route", "교통 경로·시간표", field("출발지", "역·지역"), field("도착지", "역·지역"), field("출발 희망일시", "YYYY-MM-DD HH:mm"))),
         "housing" to listOf(
             flow("lh", "공공임대 공고", field("희망 유형", "국민임대·매입임대"), repeatable = true),
             flow("price", "실거래·공시가격", field("주택 유형·지역", "아파트·시군구"), field("비교 기간", "최근 3개월"), repeatable = true)),
-        "food" to listOf(flow("prices", "장보기 가격 비교", field("품목", "쌀·계란"), field("규격·수량", "1kg·30개"), repeatable = true)),
+        "food" to listOf(flow("prices", "장보기 가격 비교", field("품목", "쌀·계란"), field("규격·수량", "1kg·30개"), repeatable = true),
+            flow("danawa","다나와 상품별 가격",field("검색어","상품명·모델명")),
+            flow("coupang","쿠팡 상품 검색",field("검색어","상품명·모델명"))),
         "weather" to listOf(flow("forecast", "날씨·미세먼지", field("조회 지역", "시군구"), field("기간", "오늘·내일"), repeatable = true)),
         "waste" to listOf(flow("waste", "배출 시간·방법", field("시군구·동", "행정동"), field("품목", "음식물·재활용"), repeatable = true)),
         "delivery" to listOf(flow("tracking", "배송 상태", field("배송사", "택배사"), field("운송장", "사용자가 제공한 번호")))

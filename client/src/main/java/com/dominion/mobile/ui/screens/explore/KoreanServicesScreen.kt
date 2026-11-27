@@ -92,16 +92,22 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
             var fields by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
             val ready = workflow.fields.all { !it.required || !fields[it.label].isNullOrBlank() } &&
                 (workflow.fields.isNotEmpty() || details.isNotBlank())
-            val nativeLookup=vm.localExecution&&service.id in setOf("kakao-place","naver-news","coupang","danawa")
+            val nativeSource=when {
+                service.id in setOf("kakao-place","naver-news","coupang","danawa")->service.id
+                service.id=="food"&&workflow.id in setOf("danawa","coupang")->workflow.id
+                service.id=="health"&&workflow.id=="kakao-place"->workflow.id
+                else->null
+            }
+            val nativeLookup=vm.localExecution&&nativeSource!=null
             fun lookup()=if(nativeLookup)com.dominion.mobile.platform.network.KoreanLookup(
-                service.id,fields["검색어"].orEmpty()).checked() else null
+                requireNotNull(nativeSource),fields["검색어"].orEmpty()).checked() else null
             fun request(): String = service.request(region, KoreanWorkflows.compose(workflow, fields, details))
             var agent by remember { mutableStateOf(state.myCharacter()?.id ?: state.characters.firstOrNull()?.id.orEmpty()) }
             AppBottomSheet(onDismiss = { selected = null }) {
                 SheetTitle(service.title, "비서에게 맡길 내용")
                 Column(Modifier.fillMaxWidth().heightIn(max = 480.dp).verticalScroll(rememberScrollState()).padding(18.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    AppTextField(region, { region = it.take(100) }, label = "지역 (선택)", placeholder = "시·군·구")
+                    if(!nativeLookup)AppTextField(region, { region = it.take(100) }, label = "지역 (선택)", placeholder = "시·군·구")
                     Text("업무 유형", style = MaterialTheme.typography.titleSmall)
                     workflows.forEach { option ->
                         Row {
@@ -118,7 +124,7 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
                         }, label = field.label + if (field.required) " (필수)" else " (선택)",
                             placeholder = field.example)
                     }
-                    AppTextField(details, { details = it.take(1200) }, label = "추가 요청",
+                    if(!nativeLookup)AppTextField(details, { details = it.take(1200) }, label = "추가 요청",
                         placeholder = service.summary, singleLine = false, maxLines = 4)
                     KoreanWorkflows.portals(service.id).forEach { portal ->
                         OutlinedButton(onClick = {
@@ -127,7 +133,7 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
                         }, modifier = Modifier.fillMaxWidth()) { Text(portal.label + " 열기") }
                     }
                     Text("주민등록번호·인증번호·비밀번호는 입력하지 마세요.", style = MaterialTheme.typography.labelSmall)
-                    if(nativeLookup)Text(if(service.id=="danawa")"공개 검색어를 다나와에 직접 전송합니다." else
+                    if(nativeLookup)Text(if(nativeSource=="danawa")"공개 검색어를 다나와에 직접 전송합니다." else
                         "공개 검색어만 k-skill 외부 프록시에 전송합니다. 개인 주소·연락처·계정정보를 넣지 마세요.",
                         style=MaterialTheme.typography.labelSmall)
                     state.characters.forEach { character ->
@@ -150,7 +156,9 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
                     Button(enabled = ready && state.character(agent) != null &&
                         (!nativeLookup || runCatching{lookup()}.isSuccess),
                         onClick = {
-                            vm.createServiceTask(service.title + " · " + workflow.title, agent, request(), service.steps, onOpenChat,lookup())
+                            val call=lookup()
+                            val exactRequest=if(call!=null)"공개 검색: "+call.query+" ("+call.source+")" else request()
+                            vm.createServiceTask(service.title + " · " + workflow.title, agent, exactRequest, service.steps, onOpenChat,call)
                             selected = null
                         }) { Text(if(nativeLookup)"실제 공개 검색 실행" else "실제 업무 접수") }
                     if(!nativeLookup)OutlinedButton(enabled = ready, onClick = {

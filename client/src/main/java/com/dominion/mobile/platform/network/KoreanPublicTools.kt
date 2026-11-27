@@ -91,12 +91,19 @@ internal object KoreanPublicTools {
             }
         }
         check(lines.isNotEmpty()){"검색 결과 없음 또는 공급자 페이지 형식 변경"}
-        return buildString{
-            append("조회 출처: ").append(endpoint(call)).append("\n조회 시각: ").append(Instant.now())
-            append("\n").append(lines.joinToString("\n"))
+        val suffix=buildString {
             if(call.source=="coupang")append("\n쿠팡 파트너스 활동을 통해 일정액의 수수료를 제공받을 수 있습니다.")
             if(call.source in setOf("coupang","danawa"))append("\n가격·재고·배송 조건은 변경될 수 있습니다.")
-        }.take(3800)
+        }
+        val header="조회 출처: "+endpoint(call)+"\n조회 시각: "+Instant.now()+"\n"
+        // Keep complete rows/URLs and required disclosure inside the receipt budget.
+        var result=header
+        for(line in lines){
+            if(result.length+line.length+1+suffix.length>3800)break
+            result+=line+"\n"
+        }
+        check(result.length>header.length){"공급자 결과가 너무 큽니다"}
+        return result.trimEnd()+suffix
     }
     suspend fun execute(raw:KoreanLookup):String=withContext(Dispatchers.IO){
         val call=raw.checked()

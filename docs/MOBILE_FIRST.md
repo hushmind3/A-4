@@ -52,3 +52,7 @@ on the server, with bounded model steps and encrypted checkpoints. A mobile
 WorkManager watcher periodically refreshes task status after the app exits,
 but does not supply realtime push or external account automation. The Cloud
 login state must be validated against the server before marking Connected.
+
+### Native Korean private-service queries
+
+The original Korean service workspace and the existing MobileHarness task records are reused for direct Kakao place, Naver news, Coupang product and Danawa price lookups. Shopping and healthcare workflows also link to the same adapters. Form-selected public search queries execute on the Android device, and structured results remain available without model inference. Chat may request `korea.lookup` with public words explicitly present in the current request. The first three use the upstream documented hosted k-skill public proxy; Danawa reads its public search page. No Cloudflare or PC deployment is necessary for these adapters. Provider availability and live Android network verification are separate from parsing and task routing tests. No reservations, order submission or private account access is claimed. Upstream pinned reference: https://github.com/NomaDamas/k-skill/tree/c41a11703b0ea25b8c5c3c62bd0f06f31997f7f8 .
