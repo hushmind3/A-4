@@ -30,6 +30,7 @@ class AppContainer(context: Context) {
 
     init {
         restoreJobWatches()
+        com.dominion.mobile.platform.background.EngineSyncMonitor.install(app,engine)
         com.dominion.mobile.platform.background.ReminderMonitor.install(app)
         com.dominion.mobile.platform.background.ReminderMonitor.schedule(app,
             reminderScope(), repository.state.value.schedules)
@@ -60,6 +61,7 @@ class AppContainer(context: Context) {
         if (connection == null) credentials.clear() else credentials.save(connection)
         engine = connection
         repository = next
+        com.dominion.mobile.platform.background.EngineSyncMonitor.install(app,connection)
         restoreJobWatches()
         com.dominion.mobile.platform.background.ReminderMonitor.schedule(app,
             reminderScope(), next.state.value.schedules)

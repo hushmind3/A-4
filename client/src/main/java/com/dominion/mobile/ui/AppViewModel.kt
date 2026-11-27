@@ -70,6 +70,7 @@ class AppViewModel(
     fun consumeNotificationRoom() { _notificationRoom.value = null }
 
     suspend fun refreshServer() = repo.refresh()
+    suspend fun synchronizeServer() = repo.synchronizeEngine()
 
     suspend fun searchMessages(query: String) = repo.searchMessages(query)
 

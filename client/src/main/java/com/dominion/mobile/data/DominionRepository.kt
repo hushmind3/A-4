@@ -128,6 +128,7 @@ interface DominionRepository {
     suspend fun saveCharacterPhoto(id: String, photo: String?): Unit = error("Photo storage unavailable")
 
     fun update(transform: (AppState) -> AppState)
+    suspend fun synchronizeEngine(): Boolean = false
     suspend fun refresh() = Unit
     fun reset()
 }

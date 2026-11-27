@@ -100,6 +100,8 @@ fun correlateRoomJobs(messages: List<com.dominion.mobile.data.model.Message>,
             if (message.jobId != null) it.id == message.jobId && (source == null || source == message.id)
             else source != null && source == message.id
         } ?: return@map message
-        message.copy(jobId = job.id, jobStatus = job.status)
+        if(message.jobId==job.id && message.jobStatus in setOf("completed","failed","cancelled") &&
+            job.status!=message.jobStatus) message
+        else message.copy(jobId = job.id, jobStatus = job.status)
     }
 }

@@ -119,10 +119,17 @@ fun DominionAppRoot(vm: AppViewModel) {
         LaunchedEffect(lifecycleOwner, vm) {
                 lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
                     while (isActive) {
-                        vm.refreshServer()
+                        vm.synchronizeServer()
                         delay(30_000L)
                     }
                 }
+        }
+        LaunchedEffect(lifecycleOwner,vm,context) {
+            lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                com.dominion.mobile.platform.background.networkRecoverySignals(context).collect {
+                    vm.synchronizeServer()
+                }
+            }
         }
         DisposableEffect(lifecycleOwner, state.settings.appLock) {
             val observer = LifecycleEventObserver { _, event ->

@@ -509,7 +509,7 @@ class RemoteBackedRepository(
         val jobs = snapshot.jobs.orEmpty().filter { it.sessionId == session && it.input?.roomId == roomId }
         update { current ->
             current.copy(conversations = current.conversations.map { conversation ->
-                if (conversation.id == roomId)
+                if (conversation.id == roomId && conversation.sessionId == session)
                     conversation.copy(messages = correlateRoomJobs(conversation.messages, roomId, session, jobs))
                 else conversation
             })
@@ -748,12 +748,24 @@ class RemoteBackedRepository(
         val before = api.roomExecution(id)
         val session = requireNotNull(before.sessionId).also { require(it.isNotBlank()) }
         check(before.room?.id == id)
-        val messages = loadMessages(id)
-        val after = api.engineRoom(id)
-        check(after.id == id && after.sessionId == session)
+        val raw = api.nativeRoomMessages(id)
+        // The native message rows carry the actual session ID. Never merge a
+        // response from an archived/reset session into a different session.
+        check(raw.all { it.session_id == null || it.session_id == session })
+        val messages = raw.mapNotNull { it.toDomain(id) }
+        val after = api.roomExecution(id)
+        check(after.room?.id == id && after.sessionId == session)
+        val jobs = after.jobs.orEmpty().filter { it.belongsToRoom(id,it.id.orEmpty()) && it.sessionId==session }
         update { current -> current.copy(conversations = current.conversations.map { room ->
-            if (room.id != id) room else com.dominion.mobile.data.RoomHistory.reconcile(room, session, messages)
+            if (room.id != id) room else {
+                val merged=com.dominion.mobile.data.RoomHistory.reconcile(room,session,messages)
+                merged.copy(messages=correlateRoomJobs(merged.messages,id,session,jobs))
+            }
         }) }
+        store.saveStateNow(state.value)
+        pendingJobWatches(state.value).filter{it.roomId==id}.forEach{watch->
+            runCatching{onJobAccepted(watch.roomId,watch.jobId)}
+        }
     }
 
     override suspend fun resetRoom(id: String, restoreLastRequest: Boolean) = roomMutationLock.withLock {
@@ -855,6 +867,39 @@ class RemoteBackedRepository(
     override fun update(transform: (AppState) -> AppState) {
         _state.update(transform)
         store.saveState(_state.value)
+    }
+
+    private val syncLock=Mutex()
+    private var syncCursor=0
+
+    override suspend fun synchronizeEngine():Boolean {
+        if(endpoint==null || !syncLock.tryLock())return false
+        try {
+            refresh()
+            if(connection.value!=ConnectionState.CONNECTED)return false
+            val rooms=state.value.conversations
+            val priority=pendingJobWatches(state.value).map{it.roomId}.toSet()
+            val ids=SyncWindow.choose(rooms.map{it.id},priority,syncCursor)
+            syncCursor=ids.nextCursor
+            var ok=true
+            for(id in ids.rooms) {
+                try { refreshRoomHistory(id) }
+                catch(e:CancellationException){throw e}
+                catch(_:Exception){ok=false}
+            }
+            try { refreshMemories() }
+            catch(e:CancellationException){throw e}
+            catch(_:Exception){ok=false}
+            // Existing task receipts are authoritative; jobs from other devices
+            // have already been correlated with their originating messages.
+            for(task in state.value.tasks.filter{it.engineJobId!=null &&
+                it.engineStatus !in setOf("completed","cancelled","failed")}.take(16)) {
+                try{refreshTask(task.id)}
+                catch(e:CancellationException){throw e}
+                catch(_:Exception){ok=false}
+            }
+            return ok
+        } finally{syncLock.unlock()}
     }
 
     override suspend fun refresh() {
