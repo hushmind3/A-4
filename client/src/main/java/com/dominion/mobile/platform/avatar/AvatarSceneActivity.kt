@@ -6,6 +6,9 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.opengl.GLSurfaceView
 import android.os.Bundle
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.*
+import com.dominion.mobile.data.ObjAvatarMesh
 import android.view.MotionEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -34,6 +37,38 @@ class AvatarSceneActivity : ComponentActivity() {
     private lateinit var renderer: AvatarSceneRenderer
     private var status by mutableStateOf("준비 중")
     private var name = "DOMINION"
+    private var importing by mutableStateOf(false)
+    private var imported by mutableStateOf(false)
+    private var expression by mutableStateOf("idle")
+    private val modelPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null && !importing) {
+            importing = true
+            lifecycleScope.launch {
+                try {
+                    val mesh = withContext(Dispatchers.IO) {
+                        require(uri.scheme == "content")
+                        val bytes = requireNotNull(contentResolver.openInputStream(uri)).use { input ->
+                            val output = java.io.ByteArrayOutputStream()
+                            val chunk = ByteArray(8192)
+                            while (true) {
+                                val n = input.read(chunk)
+                                if (n < 0) break
+                                require(output.size() + n <= ObjAvatarMesh.MAX_BYTES)
+                                output.write(chunk,0,n)
+                            }
+                            output.toByteArray()
+                        }
+                        ObjAvatarMesh.parse(bytes.toString(Charsets.UTF_8))
+                    }
+                    renderer.replaceMesh(mesh)
+                    imported = true
+                    status = "OBJ 모델 열기 완료 · " + mesh.size / 18 + "개 삼각형"
+                } catch (e: CancellationException) { throw e }
+                catch (_: Exception) { status = "OBJ 읽기 실패 · 5MB 이하 삼각형 메시 파일을 선택하세요." }
+                finally { importing = false }
+            }
+        }
+    }
     private val permission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted && lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) startScene()
         else if (!granted) status = "AR 카메라 권한이 필요합니다."
@@ -78,6 +113,20 @@ class AvatarSceneActivity : ComponentActivity() {
                             TextButton(onClick = { renderer.changeSize(1) }) { Text("확대") }
                             TextButton(onClick = { renderer.reset() }) { Text(if (ar) "배치 지우기" else "회전 초기화") }
                         }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                            TextButton(enabled = !importing, onClick = { modelPicker.launch(arrayOf("*/*")) }) { Text("OBJ 모델 열기") }
+                            TextButton(enabled = imported && !importing, onClick = {
+                                renderer.restoreMesh(); imported = false
+                            }) { Text("기본 모델") }
+                        }
+                        if (!imported) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                            listOf("idle" to "기본", "happy" to "웃음", "talk" to "말하기").forEach { (mode, title) ->
+                                FilterChip(selected = expression == mode, onClick = {
+                                    expression = mode; renderer.expression(mode)
+                                }, label = { Text(title) })
+                            }
+                        }
+                        if (importing) LinearProgressIndicator(Modifier.fillMaxWidth())
                         if (ar) Text("AR은 Google Play Services for AR를 사용합니다. 카메라 영상은 기기에서 공간 추적·표시에 사용되며 DOMINION 본체에 자동 전송되지 않습니다. Google의 AR 개인정보 처리방침: developers.google.com/ar/develop/privacy",
                             modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.labelSmall)
                     }

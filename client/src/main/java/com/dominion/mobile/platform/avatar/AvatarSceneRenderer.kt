@@ -20,8 +20,20 @@ import javax.microedition.khronos.opengles.GL10
 
 internal class AvatarSceneRenderer(private val ar: Boolean, shape: CharacterShape, private val color: Int,
     private val rotation: () -> Int, private val status: (String) -> Unit) : GLSurfaceView.Renderer {
-    private val mesh = AvatarMesh.build(shape)
-    private val vertices = buffer(mesh)
+    private val originalMesh = AvatarMesh.build(shape)
+    private var mesh = originalMesh
+    private var vertices = buffer(mesh)
+    private val pendingMesh = AtomicReference<FloatArray?>(null)
+    private val featureMesh = AvatarMesh.build(CharacterShape.BLOB)
+    private val featureVertices = buffer(featureMesh)
+    @Volatile private var faceMode = "idle"
+    private var imported = false
+    private val faceDepths = listOf(-0.29f to 0.23f,0.29f to 0.23f,0f to -0.30f).map { (x,y) ->
+        frontDepth(originalMesh,x,y)
+    }
+    private val faceMatrix = FloatArray(16)
+    private val faceMv = FloatArray(16)
+    private val faceMvp = FloatArray(16)
     private val quad = buffer(floatArrayOf(-1f,-1f,1f,-1f,-1f,1f,1f,1f))
     private val uv = buffer(FloatArray(8))
     private var modelProgram = 0
@@ -47,6 +59,9 @@ internal class AvatarSceneRenderer(private val ar: Boolean, shape: CharacterShap
     private var failure = false
     private var textureSession: Session? = null
 
+    fun replaceMesh(value: FloatArray) { pendingMesh.set(value) }
+    fun restoreMesh() { pendingMesh.set(originalMesh) }
+    fun expression(mode: String) { if (mode in setOf("idle","happy","talk")) faceMode = mode }
     fun setSession(value: Session?) { session = value }
     fun touchDown(px:Float,py:Float) { x=px;y=py }
     fun drag(px:Float,py:Float) {
@@ -91,6 +106,11 @@ internal class AvatarSceneRenderer(private val ar: Boolean, shape: CharacterShap
         glClear(GL_COLOR_BUFFER_BIT or GL_DEPTH_BUFFER_BIT)
         if(failure || modelProgram==0)return
         try {
+            pendingMesh.getAndSet(null)?.let {
+                mesh = it
+                vertices = buffer(it)
+                imported = it !== originalMesh
+            }
             if(resetRequested) {
                 resetRequested=false
                 anchor?.detach();anchor=null;tap.set(null)
@@ -144,7 +164,8 @@ internal class AvatarSceneRenderer(private val ar: Boolean, shape: CharacterShap
             }
             Matrix.multiplyMM(mv,0,view,0,model,0)
             Matrix.multiplyMM(mvp,0,projection,0,mv,0)
-            drawMesh()
+            drawMesh(vertices, mesh.size/6, model, mvp, color)
+            if (!imported) drawFace()
         } catch (_:Exception) {
             failure=true;report("그래픽 또는 AR 추적 오류 · 화면을 다시 여세요.")
         }
@@ -167,7 +188,28 @@ internal class AvatarSceneRenderer(private val ar: Boolean, shape: CharacterShap
         glDepthMask(true);glEnable(GL_DEPTH_TEST)
     }
 
-    private fun drawMesh() {
+    private fun drawFace() {
+        val time = android.os.SystemClock.elapsedRealtime() / 1000.0
+        val blink = if (time % 4.2 < 0.13) 0.12f else 1f
+        val mouth = when (faceMode) {
+            "talk" -> (0.035 + 0.075 * kotlin.math.abs(kotlin.math.sin(time*10))).toFloat()
+            "happy" -> 0.055f
+            else -> 0.022f
+        }
+        fun feature(x: Float,y: Float,z: Float,sx: Float,sy: Float) {
+            model.copyInto(faceMatrix)
+            Matrix.translateM(faceMatrix,0,x,y,z+0.022f)
+            Matrix.scaleM(faceMatrix,0,sx,sy,0.075f)
+            Matrix.multiplyMM(faceMv,0,view,0,faceMatrix,0)
+            Matrix.multiplyMM(faceMvp,0,projection,0,faceMv,0)
+            drawMesh(featureVertices,featureMesh.size/6,faceMatrix,faceMvp,0xFF151923.toInt())
+        }
+        faceDepths[0]?.let { feature(-0.29f,0.23f,it,0.085f,0.13f*blink) }
+        faceDepths[1]?.let { feature(0.29f,0.23f,it,0.085f,0.13f*blink) }
+        faceDepths[2]?.let { feature(0f,-0.30f,it,if(faceMode=="happy") 0.23f else 0.14f,mouth) }
+    }
+
+    private fun drawMesh(vertices:FloatBuffer, count:Int, model:FloatArray, mvp:FloatArray, color:Int) {
         glEnable(GL_DEPTH_TEST)
         glUseProgram(modelProgram)
         glUniformMatrix4fv(glGetUniformLocation(modelProgram,"uMvp"),1,false,mvp,0)
@@ -178,7 +220,7 @@ internal class AvatarSceneRenderer(private val ar: Boolean, shape: CharacterShap
         glEnableVertexAttribArray(p);glEnableVertexAttribArray(n)
         vertices.position(0);glVertexAttribPointer(p,3,GL_FLOAT,false,24,vertices)
         vertices.position(3);glVertexAttribPointer(n,3,GL_FLOAT,false,24,vertices)
-        glDrawArrays(GL_TRIANGLES,0,mesh.size/6)
+        glDrawArrays(GL_TRIANGLES,0,count)
         glDisableVertexAttribArray(p);glDisableVertexAttribArray(n)
     }
 
@@ -198,6 +240,25 @@ internal class AvatarSceneRenderer(private val ar: Boolean, shape: CharacterShap
         return id
     }
     companion object {
+        // Intersect the front-facing ray with the actual surface, including non-spherical shapes.
+        private fun frontDepth(mesh:FloatArray,x:Float,y:Float):Float? {
+            var result:Float?=null
+            for (i in mesh.indices step 18) {
+                val ax=mesh[i];val ay=mesh[i+1]
+                val bx=mesh[i+6];val by=mesh[i+7]
+                val cx=mesh[i+12];val cy=mesh[i+13]
+                val d=(by-cy)*(ax-cx)+(cx-bx)*(ay-cy)
+                if(kotlin.math.abs(d)<0.000001f)continue
+                val u=((by-cy)*(x-cx)+(cx-bx)*(y-cy))/d
+                val v=((cy-ay)*(x-cx)+(ax-cx)*(y-cy))/d
+                val w=1f-u-v
+                if(u>=0f&&v>=0f&&w>=0f){
+                    val z=u*mesh[i+2]+v*mesh[i+8]+w*mesh[i+14]
+                    if(result==null||z>result)result=z
+                }
+            }
+            return result
+        }
         private fun buffer(data:FloatArray):FloatBuffer =
             ByteBuffer.allocateDirect(data.size*4).order(ByteOrder.nativeOrder()).asFloatBuffer().apply {
                 put(data);position(0)
