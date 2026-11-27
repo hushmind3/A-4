@@ -208,7 +208,10 @@ data class Friend(
     val isAssistant: Boolean = false,
     val relation: String = "친구",
     val favorite: Boolean = false,
-    val characterId: Id? = null
+    val characterId: Id? = null,
+    val phone: String? = null,
+    val email: String? = null,
+    val localContact: Boolean = false
 )
 
 data class FriendRequest(

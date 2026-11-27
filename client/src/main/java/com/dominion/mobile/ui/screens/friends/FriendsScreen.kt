@@ -68,6 +68,9 @@ fun FriendsScreen(
     val context = LocalContext.current
     val own = state.myCharacter()
     var removeTarget by remember { mutableStateOf<Friend?>(null) }
+    var filter by remember { mutableStateOf("") }
+    val shown = state.friends.filter { filter.isBlank() ||
+        (it.name + " " + it.handle + " " + it.phone.orEmpty() + " " + it.email.orEmpty()).contains(filter, true) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize().statusBarsPadding().background(p.screen),
@@ -81,7 +84,7 @@ fun FriendsScreen(
                 Column(Modifier.weight(1f)) {
                     Text(tr(lang, "친구", "Friends"), style = MaterialTheme.typography.headlineMedium, color = p.textPrimary)
                     Text(
-                        tr(lang, "${state.friends.size}명의 친구와 도미니온을 나누고 있어요", "Sharing Dominions with ${state.friends.size} friends"),
+                        tr(lang, "저장된 연락처·친구 ${state.friends.size}개", "${state.friends.size} saved contacts and friends"),
                         style = MaterialTheme.typography.bodySmall,
                         color = p.textTertiary
                     )
@@ -117,7 +120,7 @@ fun FriendsScreen(
                 )
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("${state.account.name} · @minji", style = MaterialTheme.typography.titleSmall, color = p.textPrimary)
+                    Text(state.account.name, style = MaterialTheme.typography.titleSmall, color = p.textPrimary)
                     Text(
                         tr(lang, "내 도미니온 ${own?.name ?: ""} 과 함께해요", "With my Dominion ${own?.name ?: ""}"),
                         style = MaterialTheme.typography.bodySmall,
@@ -129,7 +132,7 @@ fun FriendsScreen(
                         .clip(RoundedCornerShape(14.dp))
                         .background(p.actionPrimary)
                         .clickable {
-                            context.toast(tr(lang, "초대 링크를 복사했어요 (데모)", "Invite link copied (demo)"))
+                            com.dominion.mobile.platform.ContactQr.shareProject(context)
                         }
                         .padding(horizontal = 11.dp, vertical = 7.dp)
                 ) {
@@ -182,7 +185,7 @@ fun FriendsScreen(
                     .clip(RoundedCornerShape(18.dp))
                     .background(p.cardSoft)
                     .clickable {
-                        context.toast(tr(lang, "주소록 연동은 백엔드 연결 후 동작해요", "Contacts sync needs the backend"))
+                        onAddFriend()
                     }
                     .padding(14.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -194,14 +197,17 @@ fun FriendsScreen(
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(tr(lang, "주소록에서 친구 찾기", "Find friends from contacts"), style = MaterialTheme.typography.titleSmall, color = p.textPrimary)
-                    Text(tr(lang, "이미 도미니온을 쓰는 친구를 찾아드려요", "Find friends already on Dominion"), style = MaterialTheme.typography.bodySmall, color = p.textTertiary)
+                    Text(tr(lang, "선택한 연락처만 기기에 저장", "Save selected contacts on this device"), style = MaterialTheme.typography.bodySmall, color = p.textTertiary)
                 }
                 Text("›", color = p.textTertiary)
             }
         }
 
-        item { SectionLabel(tr(lang, "친구 목록", "All friends"), Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) }
-        items(state.friends, key = { it.id }) { friend ->
+        item {
+            SectionLabel(tr(lang, "친구 목록", "All friends"), Modifier.padding(horizontal = 20.dp, vertical = 10.dp))
+            com.dominion.mobile.ui.components.SearchField(filter, { filter = it.take(200) }, "저장한 이름·번호·아이디 검색")
+        }
+        items(shown, key = { it.id }) { friend ->
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -252,117 +258,8 @@ fun FriendsScreen(
 }
 
 @Composable
-fun AddFriendScreen(
-    state: AppState,
-    vm: AppViewModel,
-    onBack: () -> Unit
-) {
-    val p = LocalDominionPalette.current
-    val lang = LocalLang.current
-    val context = LocalContext.current
-    var query by remember { mutableStateOf("") }
-    val results = state.friends.filter {
-        query.isNotBlank() && (it.name.contains(query, true) || it.handle.contains(query, true))
-    }
-
-    Column(Modifier.fillMaxSize().statusBarsPadding().background(p.screen).navigationBarsPadding()) {
-        com.dominion.mobile.ui.components.ScreenTopBar(
-            title = tr(lang, "친구 추가", "Add friend"),
-            onBack = onBack
-        )
-        Column(Modifier.padding(horizontal = 18.dp)) {
-            com.dominion.mobile.ui.components.SearchField(
-                value = query,
-                onValueChange = { query = it },
-                placeholder = tr(lang, "이름 또는 아이디로 찾기", "Search by name or ID")
-            )
-            Spacer(Modifier.height(16.dp))
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(190.dp)
-                    .clip(RoundedCornerShape(22.dp))
-                    .background(p.cardSoft)
-                    .border(0.5.dp, p.hairline, RoundedCornerShape(22.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(
-                        Modifier.size(72.dp).clip(RoundedCornerShape(18.dp)).background(p.raised),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        GlyphIcon(Glyph.QR, p.textPrimary, size = 34.dp)
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    Text(tr(lang, "QR 코드로 친구 추가", "Add by QR code"), style = MaterialTheme.typography.titleSmall, color = p.textPrimary)
-                    Spacer(Modifier.height(3.dp))
-                    Text(
-                        tr(lang, "카메라 연결 후 사용할 수 있어요", "Available after camera is connected"),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = p.textTertiary
-                    )
-                }
-            }
-            Spacer(Modifier.height(18.dp))
-            Text(tr(lang, "친구 아이디", "Friend ID"), style = MaterialTheme.typography.labelMedium, color = p.textTertiary)
-            Spacer(Modifier.height(6.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).background(p.input).padding(horizontal = 14.dp, vertical = 14.dp)
-                ) {
-                    Text(
-                        if (query.isBlank()) "@" else query,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = if (query.isBlank()) p.textTertiary else p.textPrimary
-                    )
-                }
-                Spacer(Modifier.width(8.dp))
-                PrimaryButton(
-                    text = tr(lang, "추가", "Add"),
-                    onClick = {
-                        if (query.isBlank()) {
-                            context.toast(tr(lang, "아이디를 입력해 주세요", "Enter an ID first"))
-                        } else {
-                            vm.addFriendByHandle(query)
-                            query = ""
-                            context.toast(tr(lang, "친구를 추가했어요", "Friend added"))
-                        }
-                    },
-                    modifier = Modifier.width(96.dp)
-                )
-            }
-            if (results.isNotEmpty()) {
-                Spacer(Modifier.height(16.dp))
-                results.forEach { friend ->
-                    Row(
-                        Modifier.fillMaxWidth().padding(vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        FriendAvatar(friend.name, Color(friend.color), 40.dp)
-                        Spacer(Modifier.width(10.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(friend.name, style = MaterialTheme.typography.titleSmall, color = p.textPrimary)
-                            Text(friend.handle, style = MaterialTheme.typography.bodySmall, color = p.textTertiary)
-                        }
-                        Text(tr(lang, "이미 친구", "Added"), style = MaterialTheme.typography.labelSmall, color = p.textTertiary)
-                    }
-                }
-            }
-            Spacer(Modifier.height(24.dp))
-            SettingsRow(
-                title = tr(lang, "주소록에서 찾기", "Find from contacts"),
-                subtitle = tr(lang, "연락처와 매칭해 친구를 찾아요", "Match contacts to find friends"),
-                leading = { GlyphIcon(Glyph.PERSON, p.textPrimary, size = 19.dp) },
-                onClick = { context.toast(tr(lang, "주소록 연동은 백엔드 연결 후 동작해요", "Contacts sync needs the backend")) }
-            )
-            SettingsRow(
-                title = tr(lang, "초대 링크 보내기", "Share invite link"),
-                subtitle = "dominion.invalid/u/${state.account.inviteCode.lowercase()}",
-                leading = { GlyphIcon(Glyph.LINK, p.textPrimary, size = 19.dp) },
-                onClick = { context.toast(tr(lang, "초대 링크를 복사했어요", "Invite link copied")) }
-            )
-        }
-    }
+fun AddFriendScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit) {
+    com.dominion.mobile.ui.screens.friends.ContactImportScreen(state, vm, onBack)
 }
 
 @Composable
@@ -437,6 +334,25 @@ fun FriendProfileScreen(
             }
             Spacer(Modifier.height(26.dp))
         }
+        if (friend.localContact) {
+            friend.phone?.let { phone ->
+                SettingsRow(title = "전화", subtitle = phone, onClick = {
+                    if (!com.dominion.mobile.platform.DeviceActions.dialContact(context, phone))
+                        context.toast("전화 앱을 열 수 없습니다.")
+                })
+                SettingsRow(title = "문자 작성", subtitle = phone, onClick = {
+                    if (!com.dominion.mobile.platform.DeviceActions.composeSms(context, phone, ""))
+                        context.toast("문자 앱을 열 수 없습니다.")
+                })
+            }
+            friend.email?.let { email ->
+                SettingsRow(title = "이메일 작성", subtitle = email, onClick = {
+                    if (!com.dominion.mobile.platform.DeviceActions.composeEmail(context, email, "", ""))
+                        context.toast("이메일 앱을 열 수 없습니다.")
+                })
+            }
+            SettingsRow(title = "연락처 유형", subtitle = "기기 저장 · 원격 계정 연결 미확인", showChevron = false)
+        }
         SettingsRow(
             title = tr(lang, "함께하는 도미니온", "Shared Dominion"),
             subtitle = friend.characterId?.let { state.character(it)?.name } ?: tr(lang, "공유하지 않음", "Not shared"),
@@ -444,7 +360,8 @@ fun FriendProfileScreen(
         )
         SettingsRow(
             title = tr(lang, "보관함에서 함께 본 항목", "Shared archive"),
-            subtitle = tr(lang, "사진 2개 · 링크 1개", "2 photos · 1 link"),
+            subtitle = if (friend.characterId == null) "공유 기록 없음" else
+                state.archive.count { item -> item.conversationId?.let { state.conversation(it)?.characterId } == friend.characterId }.toString() + "개 대화 보관 항목",
             leading = { GlyphIcon(Glyph.IMAGE, p.textPrimary, size = 19.dp) }
         )
         SettingsRow(
@@ -452,7 +369,7 @@ fun FriendProfileScreen(
             leading = { GlyphIcon(Glyph.SHIELD, p.textPrimary, size = 19.dp) },
             onClick = {
                 vm.blockUser(friend.id)
-                context.toast(tr(lang, "차단했어요", "Blocked"))
+                context.toast(tr(lang, "기기 차단 목록에 저장했습니다.", "Saved to local block list"))
                 onBack()
             }
         )
@@ -467,7 +384,7 @@ fun FriendProfileScreen(
         if (confirmRemove) {
             PrimaryDialog(
                 title = tr(lang, "친구를 삭제할까요?", "Remove friend?"),
-                body = tr(lang, "서로의 도미니온을 더 이상 볼 수 없어요.", "You will no longer see each other's Dominions."),
+                body = tr(lang, "이 기기의 연락처 목록에서 제거합니다.", "Remove from this device's contact list."),
                 confirmLabel = tr(lang, "삭제", "Remove"),
                 onConfirm = { confirmRemove = false; vm.removeFriend(friend.id); onBack() },
                 dismissLabel = tr(lang, "취소", "Cancel"),

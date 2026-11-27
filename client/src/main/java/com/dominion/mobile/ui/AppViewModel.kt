@@ -657,6 +657,22 @@ class AppViewModel(
         s.copy(friendRequests = s.friendRequests.filterNot { it.id == requestId })
     }
 
+    fun saveLocalContact(card: com.dominion.mobile.data.LocalContactCard): Boolean {
+        val verified = runCatching { card.validated() }.getOrElse { return false }
+        val identifier = verified.phone ?: verified.email ?: return false
+        mutate { current ->
+            val existing = current.friends.firstOrNull { it.localContact &&
+                ((verified.phone != null && it.phone == verified.phone) ||
+                 (verified.email != null && it.email.equals(verified.email, true))) }
+            val saved = Friend(existing?.id ?: id("fr"), verified.name, identifier,
+                existing?.color ?: 0xFF79C7A5, relation = "기기 연락처",
+                favorite = existing?.favorite ?: false,
+                phone = verified.phone ?: existing?.phone, email = verified.email ?: existing?.email, localContact = true)
+            current.copy(friends = listOf(saved) + current.friends.filterNot { it.id == saved.id })
+        }
+        return true
+    }
+
     fun addFriendByHandle(handle: String) {
         val cleaned = handle.trim().removePrefix("@")
         if (cleaned.isBlank()) return
@@ -668,7 +684,8 @@ class AppViewModel(
                     name = cleaned,
                     handle = "@$cleaned",
                     color = 0xFF79C7A5,
-                    relation = "새 친구"
+                    relation = "미확인 아이디 · 기기 메모",
+                    localContact = true
                 )
             )
         }
