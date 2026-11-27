@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.asStateFlow
 class PhoneNavigationService : AccessibilityService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var work: Job? = null
+    private var activeErrand:PhoneReplanContext?=null
     private var stopView: android.widget.LinearLayout? = null
     private var approveButton: Button? = null
     private var stepLabel: android.widget.TextView? = null
@@ -118,10 +119,11 @@ class PhoneNavigationService : AccessibilityService() {
         getSystemService(PowerManager::class.java).isInteractive &&
             !getSystemService(KeyguardManager::class.java).isKeyguardLocked
 
-    private fun begin(plan: PhoneNavigationPlan, reviewedBatch: Boolean, replan:PhoneReplanContext?): Boolean {
+    private fun begin(plan: PhoneNavigationPlan, reviewedBatch: Boolean, replan:PhoneReplanContext?,delegatedRead:Boolean): Boolean {
         if (work?.isActive == true || !unlocked() || !PhoneNavigationPlan.valid(plan) ||
             !DeviceActions.isLaunchable(this, plan.app) ||
             (reviewedBatch && !PhoneNavigationPlan.permitsReviewedBatch(plan)) ||
+            (delegatedRead&&(reviewedBatch||replan==null||plan.version!=2)) ||
             (replan!=null && (reviewedBatch || plan.version!=2 || plan.app!=replan.app ||
                 (Build.VERSION.SDK_INT<34 &&
                 (application as com.dominion.mobile.DominionApplication).container.engine!=null)))) return false
@@ -133,6 +135,7 @@ class PhoneNavigationService : AccessibilityService() {
         _observed.value = null
         _visual.value = null
         _status.value = "대상 앱 열기 요청"
+        activeErrand=replan
         work = scope.launch {
             var completed = 0
             val initialRepo=(application as com.dominion.mobile.DominionApplication).container.repository
@@ -179,6 +182,12 @@ class PhoneNavigationService : AccessibilityService() {
                                 " · " + step.action + " · " + step.label
                             approveButton?.isEnabled = false
                             // Give the user an opportunity to stop before each operation.
+                            delay(600)
+                        } else if(delegatedRead&&replan!=null&&
+                            PhoneNavigationPlan.permitsDelegatedRead(activePlan,step,replan.initialRequest)){
+                            stepLabel?.text="위임한 탐색 · "+step.action+" · "+step.label+
+                                (step.value?.let{" → "+it}?:"")
+                            approveButton?.isEnabled=false
                             delay(600)
                         } else approveStep(step,plan.app,localCompleted+1,activePlan.steps.size)
                         validRoom()
@@ -310,6 +319,7 @@ class PhoneNavigationService : AccessibilityService() {
                     try{initialRepo.recordPhoneErrand(replan,endStatus,detail)}
                     catch(_:Exception){_status.value+=" · 업무 기록 저장 실패"}
                 }
+                activeErrand=null
                 removeStop()
                 runCatching {
                     val restored = serviceInfo
@@ -504,8 +514,16 @@ class PhoneNavigationService : AccessibilityService() {
         private val _status = MutableStateFlow("")
         val status = _status.asStateFlow()
         fun start(plan: PhoneNavigationPlan, reviewedBatch: Boolean = false,
-            replan:PhoneReplanContext?=null): Boolean =
-            instance?.begin(plan, reviewedBatch,replan) ?: false
+            replan:PhoneReplanContext?=null,delegatedRead:Boolean=false): Boolean =
+            instance?.begin(plan, reviewedBatch,replan,delegatedRead) ?: false
         fun stop() { instance?.work?.cancel() }
+        suspend fun stopErrand(room:String,session:String):Boolean=withContext(Dispatchers.Main.immediate){
+            val service=instance?:return@withContext false
+            val ctx=service.activeErrand?:return@withContext false
+            if(ctx.roomId!=room||ctx.sessionId!=session)return@withContext false
+            val running=service.work?:return@withContext false
+            running.cancelAndJoin()
+            true
+        }
     }
 }

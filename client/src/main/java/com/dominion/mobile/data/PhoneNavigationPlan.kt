@@ -73,6 +73,25 @@ data class PhoneNavigationPlan(val app: String, val steps: List<PhoneNavigationS
             }
         /** Only the original narrow navigation vocabulary can run as a reviewed batch.
          * Generic app-specific controls always require individual review. */
+        /** One approved search scope never authorizes transaction controls or model-invented input.
+         * Only these exact navigation labels can skip repeated step prompts. */
+        private val delegatedLabels=setOf("검색","Search","검색어 입력","검색어를 입력하세요","통합 검색",
+            "장소 검색","장소, 주소 검색","길찾기","대중교통","도보","자동차","지도","홈","Home",
+            "검색 결과","상품 검색","음식점 검색","숙소 검색","병원 검색","고객센터","도움말")
+        fun permitsDelegatedRead(plan:PhoneNavigationPlan,step:PhoneNavigationStep,request:String):Boolean {
+            if(!valid(plan)||plan.version!=2||step !in plan.steps)return false
+            return when(step.action){
+                "click"->step.label in delegatedLabels
+                "search_text"->step.label in delegatedLabels && step.value?.let{value->
+                    value.length in 2..100 && request.contains(value) &&
+                    !value.contains('@')&&!value.contains("://")&&
+                    !Regex("[0-9][0-9 .-]{5,}[0-9]").containsMatchIn(value)
+                }==true
+                "scroll_forward","scroll_backward","expect"->true
+                else->false
+            }
+        }
+
         fun permitsReviewedBatch(plan: PhoneNavigationPlan): Boolean =
             valid(plan) && plan.version == 1 && plan.app in apps &&
                 plan.steps.all { it.action in setOf("click","search_text","scroll_forward","scroll_backward","expect") }

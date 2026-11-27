@@ -35,6 +35,7 @@ fun PhoneNavigationDialog(plan: PhoneNavigationPlan, onDismiss: () -> Unit,
     var approved by remember(plan) { mutableStateOf(false) }
     var reviewedBatch by remember(plan) { mutableStateOf(false) }
     var automaticReplan by remember(plan) { mutableStateOf(preferReplan&&replanContext!=null) }
+    var delegatedRead by remember(plan){mutableStateOf(false)}
     var started by remember(plan) { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
     val installed = remember(plan.app) {
@@ -57,8 +58,16 @@ fun PhoneNavigationDialog(plan: PhoneNavigationPlan, onDismiss: () -> Unit,
                         Text(if((context.applicationContext as com.dominion.mobile.DominionApplication).container.engine==null)
                             "모바일 AI 재계획 (최대 6회)" else "본체와 자동 재계획 (최대 6회)",modifier=Modifier.padding(top=12.dp))
                     }
-                    if(automaticReplan)Text("현재 앱만 탐색하며 단계별 승인을 받습니다. 모바일 모드에서는 화면 이미지 대신 조작 버튼 문구만 확인 후 전송합니다.",
+                    if(automaticReplan)Text("현재 앱만 탐색합니다. 화면 조작 요소 전송과 거래 관련 행동은 계속 검토합니다.",
                         style=MaterialTheme.typography.bodySmall)
+                    if(automaticReplan&&preferReplan){
+                        Row{
+                            Checkbox(delegatedRead,{delegatedRead=it;approved=false},enabled=!started)
+                            Text("검색·스크롤·결과 확인은 한 번 승인하여 실행",Modifier.padding(top=12.dp))
+                        }
+                        if(delegatedRead)Text("원래 요청의 검색어와 정해진 탐색 버튼만 자동 실행합니다. 다른 버튼과 화면 정보 전송은 별도 승인합니다.",
+                            style=MaterialTheme.typography.bodySmall)
+                    }
                 }
                 if (PhoneNavigationPlan.permitsReviewedBatch(plan)) Row {
                     Checkbox(reviewedBatch, { reviewedBatch = it; approved = false }, enabled = !started)
@@ -142,7 +151,7 @@ fun PhoneNavigationDialog(plan: PhoneNavigationPlan, onDismiss: () -> Unit,
             }
         },
         confirmButton = { TextButton(enabled = connected && approved && !started && installed != null,onClick = {
-            started = PhoneNavigationService.start(plan, reviewedBatch,if(automaticReplan)replanContext else null)
+            started = PhoneNavigationService.start(plan, reviewedBatch,if(automaticReplan)replanContext else null,delegatedRead&&automaticReplan)
             if (!started) error = "이미 조작 중이거나 기기가 잠겨 있습니다."
         }) { Text("기기에서 실행") } },
         dismissButton = { TextButton(onClick = { if (started) PhoneNavigationService.stop(); onDismiss() }) { Text("닫기") } })

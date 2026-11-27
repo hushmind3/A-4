@@ -916,6 +916,13 @@ class RemoteBackedRepository(
     }
 
     override suspend fun cancelJob(roomId: String, jobId: String): EngineJob {
+        if(localExecution&&state.value.tasks.any{it.phonePackage!=null&&it.engineRoomId==roomId&&it.engineJobId==jobId}){
+            val task=state.value.tasks.single{it.phonePackage!=null&&it.engineRoomId==roomId&&it.engineJobId==jobId}
+            check(com.dominion.mobile.platform.automation.PhoneNavigationService.stopErrand(roomId,requireNotNull(task.engineSessionId))) {
+                "실행 중인 동일 기기 업무가 없습니다"
+            }
+            return taskJob(task)
+        }
         if(localExecution&&jobId.startsWith("cloud:"))return taskLock.withLock{
             val task=state.value.tasks.single{it.engineRoomId==roomId&&it.engineJobId==jobId}
             val cloud=requireNotNull(mobileCloud)

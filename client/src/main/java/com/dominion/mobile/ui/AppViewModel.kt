@@ -542,8 +542,11 @@ class AppViewModel(
         }
     }
 
+    fun createServiceTask(title:String,characterId:String,details:String,steps:List<String>,
+        onAccepted:(String)->Unit)=createServiceTask(title,characterId,details,steps,onAccepted,null)
+
     fun createServiceTask(title: String, characterId: String, details: String, steps: List<String>,
-        onAccepted: (String) -> Unit, koreanLookup:com.dominion.mobile.platform.network.KoreanLookup?=null) {
+        onAccepted: (String) -> Unit, koreanLookup:com.dominion.mobile.platform.network.KoreanLookup?) {
         if (title.isBlank() || details.isBlank() || state.value.character(characterId) == null) {
             _notice.value = "본체 에이전트와 처리할 업무를 지정하세요."
             return
@@ -607,7 +610,7 @@ class AppViewModel(
     fun deleteTask(taskId: String) {
         val task=state.value.tasks.firstOrNull{it.id==taskId}?:return
         if(taskId in _taskBusy.value || task.engineStatus in setOf("submitting","cloud_submitting") ||
-            task.engineJobId?.startsWith("cloud:")==true&&task.engineStatus in setOf("queued","running")){
+            (task.engineJobId?.startsWith("cloud:")==true||task.phonePackage!=null)&&task.engineStatus in setOf("queued","running")){
             _notice.value="실행 중인 작업은 먼저 상태를 확인하고 중단해 주세요."
             return
         }
