@@ -2,6 +2,8 @@ package com.dominion.mobile.platform.avatar
 
 import android.util.AtomicFile
 import com.dominion.mobile.data.ObjAvatarMesh
+import com.dominion.mobile.data.AvatarRig
+import com.dominion.mobile.data.AvatarRigSpec
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.InputStream
@@ -14,13 +16,30 @@ internal class AvatarModelStore(private val root: File) {
         return AtomicFile(File(File(root, "avatar_models"), "$key.obj"))
     }
 
-    data class Scene(val mesh: FloatArray, val mouth: FloatArray? = null)
+    data class Scene(val mesh: FloatArray, val mouth: FloatArray? = null, val rig: AvatarRig? = null)
     private fun bytes(key: String): ByteArray? =
         try { file(key).openRead().use(::boundedRead) }
         catch (_: FileNotFoundException) { null }
     private fun mouthKey(key: String, base: ByteArray): String =
         Companion.key("mouth:" + key, MessageDigest.getInstance("SHA-256").digest(base)
             .joinToString("") { "%02x".format(it.toInt() and 255) })
+
+    private fun rigKey(key: String, base: ByteArray): String =
+        Companion.key("rig:" + key, AvatarRigSpec.sha256(base))
+
+    private fun parseRig(base: ByteArray, vertices: Int, spec: ByteArray): AvatarRig {
+        require(spec.size in 1..ObjAvatarMesh.MAX_BYTES)
+        return requireNotNull(com.google.gson.Gson().fromJson(spec.toString(Charsets.UTF_8),
+            AvatarRigSpec::class.java)).validated(base, vertices)
+    }
+
+    fun saveRig(key: String, spec: ByteArray): Scene = synchronized(lock) {
+        val base = requireNotNull(bytes(key))
+        val scene = requireNotNull(loadScene(key))
+        parseRig(base, scene.mesh.size / 6, spec)
+        write(rigKey(key, base), spec)
+        requireNotNull(loadScene(key)).also { check(it.rig != null) }
+    }
 
     fun load(key: String): FloatArray? = synchronized(lock) {
         bytes(key)?.let { ObjAvatarMesh.parse(it.toString(Charsets.UTF_8)) }
@@ -29,10 +48,12 @@ internal class AvatarModelStore(private val root: File) {
     fun loadScene(key: String): Scene? = synchronized(lock) {
         val base = bytes(key) ?: return@synchronized null
         val neutral = ObjAvatarMesh.parse(base.toString(Charsets.UTF_8))
-        val target = bytes(mouthKey(key, base)) ?: return@synchronized Scene(neutral)
-        val morph = runCatching { ObjAvatarMesh.morph(base.toString(Charsets.UTF_8),
-            target.toString(Charsets.UTF_8)) }.getOrNull()
-        if (morph == null) Scene(neutral) else Scene(morph.base, morph.open)
+        val target = bytes(mouthKey(key, base))
+        val morph = target?.let { runCatching { ObjAvatarMesh.morph(base.toString(Charsets.UTF_8),
+            it.toString(Charsets.UTF_8)) }.getOrNull() }
+        val mesh = morph?.base ?: neutral
+        val rig = bytes(rigKey(key, base))?.let { runCatching { parseRig(base, mesh.size / 6, it) }.getOrNull() }
+        Scene(mesh, morph?.open, rig)
     }
 
     fun saveMouth(key: String, target: ByteArray): Scene = synchronized(lock) {
@@ -40,7 +61,7 @@ internal class AvatarModelStore(private val root: File) {
         val base = requireNotNull(bytes(key))
         val morph = ObjAvatarMesh.morph(base.toString(Charsets.UTF_8), target.toString(Charsets.UTF_8))
         write(mouthKey(key, base), target)
-        Scene(morph.base, morph.open)
+        requireNotNull(loadScene(key))
     }
 
     fun save(key: String, bytes: ByteArray): FloatArray = synchronized(lock) {

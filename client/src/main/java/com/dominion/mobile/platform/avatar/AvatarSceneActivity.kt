@@ -42,16 +42,21 @@ class AvatarSceneActivity : ComponentActivity() {
     private var expression by mutableStateOf("idle")
     private var savedModel by mutableStateOf(false)
     private var hasMouth by mutableStateOf(false)
+    private var hasRig by mutableStateOf(false)
+    private var headPose by mutableFloatStateOf(0f)
+    private var jawPose by mutableFloatStateOf(0f)
     private var mouthPreview by mutableFloatStateOf(0f)
     private fun showScene(scene: AvatarModelStore.Scene) {
-        renderer.replaceMesh(scene.mesh, scene.mouth)
+        renderer.replaceMesh(scene.mesh, scene.mouth, scene.rig)
+        hasRig = scene.rig != null
+        headPose = 0f; jawPose = 0f; renderer.jointPose(0f,0f)
         mouthPreview = 0f
         renderer.morphPreview(0f)
         imported = true
         hasMouth = scene.mouth != null
         savedModel = true
         modelStatus = "저장된 OBJ · " + scene.mesh.size / 18 + "개 삼각형" +
-            if (hasMouth) " · 입 모양 연결됨" else ""
+            (if (hasMouth) " · 입 모양 연결됨" else "") + (if (hasRig) " · 머리·턱 리그 연결됨" else "")
     }
     private var modelStatus by mutableStateOf("")
     private var speaking by mutableStateOf(false)
@@ -150,6 +155,33 @@ class AvatarSceneActivity : ComponentActivity() {
             }
         }
     }
+    private val rigPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null && !importing && imported && !speaking) {
+            importing = true
+            lifecycleScope.launch {
+                try {
+                    val scene = withContext(Dispatchers.IO) {
+                        require(uri.scheme == "content")
+                        val bytes = requireNotNull(contentResolver.openInputStream(uri)).use { input ->
+                            val output = java.io.ByteArrayOutputStream()
+                            val chunk = ByteArray(8192)
+                            while (true) {
+                                val n = input.read(chunk)
+                                if (n < 0) break
+                                require(output.size() + n <= ObjAvatarMesh.MAX_BYTES)
+                                output.write(chunk,0,n)
+                            }
+                            output.toByteArray()
+                        }
+                        modelStore.saveRig(modelKey, bytes)
+                    }
+                    showScene(scene)
+                } catch (e: CancellationException) { throw e }
+                catch (_: Exception) { modelStatus = "리그 연결 실패 · 원본 SHA-256과 정점 가중치를 확인하세요." }
+                finally { importing = false }
+            }
+        }
+    }
     private val permission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted && lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) startScene()
         else if (!granted) status = "AR 카메라 권한이 필요합니다."
@@ -203,7 +235,7 @@ class AvatarSceneActivity : ComponentActivity() {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                             TextButton(enabled = !importing, onClick = { modelPicker.launch(arrayOf("*/*")) }) { Text("OBJ 가져오기·저장") }
                             TextButton(enabled = imported && !importing, onClick = {
-                                renderer.restoreMesh(); imported = false; hasMouth = false
+                                renderer.restoreMesh(); imported = false; hasMouth = false; hasRig = false
                                 modelStatus = "기본 모델 표시 중 · 저장된 OBJ는 유지됩니다."
                             }) { Text("기본 모델") }
                             if (savedModel && !imported) TextButton(enabled = !importing,
@@ -220,6 +252,21 @@ class AvatarSceneActivity : ComponentActivity() {
                             TextButton(enabled = !importing && !speaking, onClick = {
                                 mouthPicker.launch(arrayOf("*/*"))
                             }) { Text("입 벌린 OBJ 연결") }
+                            TextButton(enabled = !importing && !speaking, onClick = {
+                                rigPicker.launch(arrayOf("application/json","text/plain","*/*"))
+                            }) { Text("머리·턱 리그 JSON 연결") }
+                            if (hasRig) {
+                                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+                                    Text("머리", modifier = Modifier.padding(top = 12.dp))
+                                    Slider(value = headPose, onValueChange = {
+                                        headPose = it; renderer.jointPose(it,jawPose)
+                                    }, valueRange = -35f..35f, modifier = Modifier.weight(1f))
+                                    Text("턱", modifier = Modifier.padding(top = 12.dp))
+                                    Slider(value = jawPose, onValueChange = {
+                                        jawPose = it; renderer.jointPose(headPose,it)
+                                    }, valueRange = 0f..30f, enabled = !speaking, modifier = Modifier.weight(1f))
+                                }
+                            }
                             if (hasMouth) {
                                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
                                     Text("입 모양", modifier = Modifier.padding(top = 12.dp))
@@ -229,7 +276,7 @@ class AvatarSceneActivity : ComponentActivity() {
                                 }
                             }
                         }
-                        if (!imported || hasMouth) TextButton(enabled = !importing, onClick = { previewSpeech() }) {
+                        if (!imported || hasMouth || hasRig) TextButton(enabled = !importing, onClick = { previewSpeech() }) {
                             Text(if (speaking) "음성 중단" else "본체 음성으로 말하기")
                         }
                         if (speechStatus.isNotBlank()) Text(speechStatus,

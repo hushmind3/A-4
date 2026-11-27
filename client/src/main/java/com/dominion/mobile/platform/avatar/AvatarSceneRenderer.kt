@@ -5,6 +5,7 @@ import android.opengl.GLES20.*
 import android.opengl.GLSurfaceView
 import android.opengl.Matrix
 import com.dominion.mobile.data.AvatarMesh
+import com.dominion.mobile.data.AvatarRig
 import com.dominion.mobile.data.model.CharacterShape
 import com.google.ar.core.Anchor
 import com.google.ar.core.Coordinates2d
@@ -23,7 +24,18 @@ internal class AvatarSceneRenderer(private val ar: Boolean, shape: CharacterShap
     private val originalMesh = AvatarMesh.build(shape)
     private var mesh = originalMesh
     private var vertices = buffer(mesh)
-    private data class MeshChange(val base: FloatArray, val mouth: FloatArray?)
+    private data class MeshChange(val base: FloatArray, val mouth: FloatArray?, val rig: AvatarRig?)
+    private var rig: AvatarRig? = null
+    private var rigWeights: FloatBuffer? = null
+    private val headTransform = FloatArray(16)
+    private val jawTransform = FloatArray(16)
+    private val jawLocal = FloatArray(16)
+    @Volatile private var headAngle = 0f
+    @Volatile private var jawAngle = 0f
+    fun jointPose(head: Float, jaw: Float) {
+        headAngle = head.coerceIn(-35f,35f)
+        jawAngle = jaw.coerceIn(0f,30f)
+    }
     private val pendingMesh = AtomicReference<MeshChange?>(null)
     private var mouthVertices: FloatBuffer? = null
     @Volatile private var previewLevel = 0f
@@ -65,11 +77,12 @@ internal class AvatarSceneRenderer(private val ar: Boolean, shape: CharacterShap
     private var failure = false
     private var textureSession: Session? = null
 
-    fun replaceMesh(value: FloatArray, mouth: FloatArray? = null) {
+    fun replaceMesh(value: FloatArray, mouth: FloatArray? = null, rig: AvatarRig? = null) {
         require(mouth == null || mouth.size == value.size)
-        pendingMesh.set(MeshChange(value, mouth))
+        require(rig == null || rig.weights.size == value.size / 3)
+        pendingMesh.set(MeshChange(value, mouth, rig))
     }
-    fun restoreMesh() { pendingMesh.set(MeshChange(originalMesh, null)) }
+    fun restoreMesh() { pendingMesh.set(MeshChange(originalMesh, null, null)) }
     fun expression(mode: String) { if (mode in setOf("idle","happy","talk","voice")) faceMode = mode }
     fun setSession(value: Session?) { session = value }
     fun touchDown(px:Float,py:Float) { x=px;y=py }
@@ -89,7 +102,7 @@ internal class AvatarSceneRenderer(private val ar: Boolean, shape: CharacterShap
         try {
             glClearColor(0.07f,0.09f,0.14f,1f)
             modelProgram=program(
-                "uniform mat4 uMvp; uniform mat4 uModel; uniform float uMorph; attribute vec3 aPos; attribute vec3 aNormal; attribute vec3 aMouthPos; attribute vec3 aMouthNormal; varying float vLight; void main(){vec3 n=normalize(mat3(uModel)*mix(aNormal,aMouthNormal,uMorph)); vLight=0.32+0.68*max(dot(n,normalize(vec3(0.4,0.8,0.7))),0.0);gl_Position=uMvp*vec4(mix(aPos,aMouthPos,uMorph),1.0);}",
+                "uniform mat4 uMvp; uniform mat4 uModel; uniform mat4 uHead; uniform mat4 uJaw; uniform float uMorph; attribute vec3 aPos; attribute vec3 aNormal; attribute vec3 aMouthPos; attribute vec3 aMouthNormal; attribute vec2 aRig; varying float vLight; void main(){vec4 p=vec4(mix(aPos,aMouthPos,uMorph),1.0); vec3 n0=mix(aNormal,aMouthNormal,uMorph); float w=1.0-aRig.x-aRig.y; vec4 q=w*p+aRig.x*(uHead*p)+aRig.y*(uJaw*p); vec3 skin=w*n0+aRig.x*(mat3(uHead)*n0)+aRig.y*(mat3(uJaw)*n0); vec3 n=normalize(mat3(uModel)*skin); vLight=0.32+0.68*max(dot(n,normalize(vec3(0.4,0.8,0.7))),0.0);gl_Position=uMvp*q;}",
                 "precision mediump float; uniform vec3 uColor; varying float vLight; void main(){gl_FragColor=vec4(uColor*vLight,1.0);}")
             if(ar) {
                 cameraProgram=program(
@@ -119,6 +132,8 @@ internal class AvatarSceneRenderer(private val ar: Boolean, shape: CharacterShap
                 mesh = it.base
                 vertices = buffer(it.base)
                 mouthVertices = it.mouth?.let(::buffer)
+                rig = it.rig
+                rigWeights = it.rig?.weights?.let(::buffer)
                 imported = it.base !== originalMesh
             }
             if(resetRequested) {
@@ -175,7 +190,7 @@ internal class AvatarSceneRenderer(private val ar: Boolean, shape: CharacterShap
             Matrix.multiplyMM(mv,0,view,0,model,0)
             Matrix.multiplyMM(mvp,0,projection,0,mv,0)
             drawMesh(vertices, mesh.size/6, model, mvp, color, mouthVertices,
-                if (faceMode == "voice") voiceLevel else previewLevel)
+                if (faceMode == "voice") voiceLevel else previewLevel, rig, rigWeights)
             if (!imported) drawFace()
         } catch (_:Exception) {
             failure=true;report("그래픽 또는 AR 추적 오류 · 화면을 다시 여세요.")
@@ -222,7 +237,8 @@ internal class AvatarSceneRenderer(private val ar: Boolean, shape: CharacterShap
     }
 
     private fun drawMesh(vertices:FloatBuffer, count:Int, model:FloatArray, mvp:FloatArray, color:Int,
-        mouth: FloatBuffer? = null, weight: Float = 0f) {
+        mouth: FloatBuffer? = null, weight: Float = 0f,
+        skeleton: AvatarRig? = null, skin: FloatBuffer? = null) {
         glEnable(GL_DEPTH_TEST)
         glUseProgram(modelProgram)
         glUniformMatrix4fv(glGetUniformLocation(modelProgram,"uMvp"),1,false,mvp,0)
@@ -240,7 +256,32 @@ internal class AvatarSceneRenderer(private val ar: Boolean, shape: CharacterShap
         glEnableVertexAttribArray(mp); glEnableVertexAttribArray(mn)
         target.position(0); glVertexAttribPointer(mp,3,GL_FLOAT,false,24,target)
         target.position(3); glVertexAttribPointer(mn,3,GL_FLOAT,false,24,target)
+        Matrix.setIdentityM(headTransform,0)
+        Matrix.setIdentityM(jawTransform,0)
+        if (skeleton != null) {
+            fun around(matrix: FloatArray, pivot: FloatArray, angle: Float, x: Float, y: Float) {
+                Matrix.setIdentityM(matrix,0)
+                Matrix.translateM(matrix,0,pivot[0],pivot[1],pivot[2])
+                Matrix.rotateM(matrix,0,angle,x,y,0f)
+                Matrix.translateM(matrix,0,-pivot[0],-pivot[1],-pivot[2])
+            }
+            around(headTransform,skeleton.headPivot,headAngle,0f,1f)
+            // If an authored mouth morph exists it drives speech instead of doubling jaw movement.
+            val jaw = if (faceMode == "voice" && mouth == null) voiceLevel*30f else jawAngle
+            around(jawLocal,skeleton.jawPivot,jaw,1f,0f)
+            Matrix.multiplyMM(jawTransform,0,headTransform,0,jawLocal,0)
+        }
+        glUniformMatrix4fv(glGetUniformLocation(modelProgram,"uHead"),1,false,headTransform,0)
+        glUniformMatrix4fv(glGetUniformLocation(modelProgram,"uJaw"),1,false,jawTransform,0)
+        val ri=glGetAttribLocation(modelProgram,"aRig")
+        if (skin != null) {
+            glEnableVertexAttribArray(ri)
+            skin.position(0);glVertexAttribPointer(ri,2,GL_FLOAT,false,8,skin)
+        } else {
+            glDisableVertexAttribArray(ri);glVertexAttrib2f(ri,0f,0f)
+        }
         glDrawArrays(GL_TRIANGLES,0,count)
+        glDisableVertexAttribArray(ri)
         glDisableVertexAttribArray(p);glDisableVertexAttribArray(n)
         glDisableVertexAttribArray(mp);glDisableVertexAttribArray(mn)
     }
