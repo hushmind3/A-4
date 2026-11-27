@@ -560,6 +560,8 @@ class AppViewModel(
         dispatchTask(task.id, onAccepted)
     }
 
+    suspend fun continueNegotiation(id:String,observedAt:Long,body:String)=repo.continueNegotiation(id,observedAt,body)
+    suspend fun resolveNegotiation(id:String,observedAt:Long,agreed:Boolean)=repo.resolveNegotiation(id,observedAt,agreed)
     suspend fun confirmErrandReply(id:String,observedAt:Long){
         repo.confirmMessageReply(id,observedAt)
     }

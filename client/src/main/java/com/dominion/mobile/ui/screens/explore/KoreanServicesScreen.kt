@@ -108,6 +108,7 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
             var listing by remember{mutableStateOf("")}
             var messageBody by remember{mutableStateOf("")}
             var waitReply by remember{mutableStateOf(false)}
+            var negotiationGoal by remember{mutableStateOf("")}
             val isDaangn=errand.id=="used"&&selectedApp?.packageName=="com.towneers.www"
             val isKakao=errand.id=="messenger"&&selectedApp?.packageName=="com.kakao.talk"||isDaangn
             var agent by remember{mutableStateOf(state.myCharacter()?.id?:state.characters.firstOrNull()?.id.orEmpty())}
@@ -164,6 +165,9 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
                         Text("메시지 원문은 기기에 저장합니다. 실제 대화방과 입력 내용을 확인한 뒤 발송 직전에 별도로 승인합니다.")
                         Row{Checkbox(waitReply,{waitReply=it});Text("발송 확인 후 48시간 답변 알림 대기",Modifier.padding(top=12.dp))}
                         if(waitReply){
+                            AppTextField(negotiationGoal,{negotiationGoal=it.take(500)},label="반복 협상 목표 (선택)",
+                                placeholder="가격 상한·가능한 시간·합의 조건",singleLine=false,maxLines=3)
+                            if(negotiationGoal.isNotBlank())Text("최대 5회 발송·답변 조율을 유지합니다. 매 발송은 검토하며 합의 확인 후 다음 업무가 열립니다.")
                             Text("알림 접근 권한을 허용한 경우, 지정한 앱과 대화방 이름에 일치하는 새 알림만 기기에 보관합니다. 알림은 답변 후보이며 직접 확인이 필요합니다.")
                             TextButton(onClick={runCatching{context.startActivity(Intent(android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))}}){Text("알림 접근 권한 설정")}
                         }
@@ -173,7 +177,8 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
                     }
                     val payload=if(isKakao&&sendMessage)runCatching{
                         com.dominion.mobile.data.KakaoMessageRequest(recipient.trim(),messageBody.trim(),
-                            requireNotNull(selectedApp).packageName,if(isDaangn)listing.trim() else null,waitReply).checked()
+                            requireNotNull(selectedApp).packageName,if(isDaangn)listing.trim() else null,waitReply,
+                            negotiationGoal.trim().takeIf{waitReply&&it.isNotBlank()}).checked()
                     }.getOrNull() else null
                     val privateRead=if(canPrivate&&!(canTransact&&transact))privateField?.let{
                         com.dominion.mobile.data.PhonePrivateRead(errand.id,it).checked(requireNotNull(selectedApp).packageName)

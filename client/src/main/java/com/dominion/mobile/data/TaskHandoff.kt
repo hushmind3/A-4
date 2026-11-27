@@ -14,6 +14,7 @@ internal object TaskHandoff {
     fun evidence(task:TaskItem,receipt:TaskReceipt,phoneRecord:String?):String?{
         if(receipt.jobId!=task.engineJobId||receipt.status !in setOf("done","completed"))return null
         if(task.kakaoMessage?.waitForReply==true&&task.replyReviewedAt==null)return null
+        if(task.kakaoMessage?.negotiationGoal!=null&&task.negotiationResolution!="agreed")return null
         val outputs=receipt.outputs.mapNotNull{it.content?.takeIf(String::isNotBlank)}
         if(outputs.isEmpty())return null
         val proof=if(task.phonePackage!=null)phoneRecord?.takeIf(String::isNotBlank) else

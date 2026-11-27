@@ -451,7 +451,7 @@ private fun ErrandFollowupDialog(task:TaskItem,vm:AppViewModel,onDismiss:()->Uni
     val observedAt=requireNotNull(task.replyCandidateAt)
     val scope=androidx.compose.runtime.rememberCoroutineScope()
     var confirmed by remember(task.id,observedAt){mutableStateOf(task.replyReviewedAt!=null)}
-    var goal by remember{mutableStateOf("")}
+    var goal by remember{mutableStateOf(original.negotiationGoal.orEmpty())}
     var draft by remember{mutableStateOf("")}
     var busy by remember{mutableStateOf(false)}
     var error by remember{mutableStateOf("")}
@@ -461,10 +461,12 @@ private fun ErrandFollowupDialog(task:TaskItem,vm:AppViewModel,onDismiss:()->Uni
         text={
             Column{
                 Text("대화방: "+original.recipient)
+                original.negotiationGoal?.let{Text("협상 목표: "+it+" · "+(original.negotiationRound+1)+"/5회")}
                 original.listing?.let{Text("상품: "+it)}
                 Text("알림 후보: "+task.replyCandidate.orEmpty().take(500))
                 if(!confirmed){
-                    Text("실제 앱 대화와 일치하는지 확인하세요. 확인 후 연결한 다음 업무가 진행됩니다.")
+                    Text(if(original.negotiationGoal!=null)"실제 대화와 일치하는지 확인하세요. 협상 목표에 대한 합의 확인까지 후속 업무는 대기합니다."
+                        else "실제 앱 대화와 일치하는지 확인하세요. 확인 후 연결한 다음 업무가 진행됩니다.")
                     TextButton(enabled=!busy,onClick={
                         scope.launch{
                             busy=true
@@ -475,6 +477,27 @@ private fun ErrandFollowupDialog(task:TaskItem,vm:AppViewModel,onDismiss:()->Uni
                         }
                     }){Text("실제 대화 확인 완료")}
                 }else{
+                    if(original.negotiationGoal!=null){
+                        Text("협상 상태: "+(task.negotiationResolution?:"합의 판단 대기"))
+                        if(task.negotiationResolution==null){
+                            Row{
+                                TextButton(enabled=!busy,onClick={scope.launch{
+                                    busy=true
+                                    try{vm.resolveNegotiation(task.id,observedAt,true);onDismiss()}
+                                    catch(e:kotlinx.coroutines.CancellationException){throw e}
+                                    catch(_:Exception){error="합의 저장 실패"}
+                                    finally{busy=false}
+                                }}){Text("실제 합의 확인")}
+                                TextButton(enabled=!busy,onClick={scope.launch{
+                                    busy=true
+                                    try{vm.resolveNegotiation(task.id,observedAt,false);onDismiss()}
+                                    catch(e:kotlinx.coroutines.CancellationException){throw e}
+                                    catch(_:Exception){error="중단 기록 실패"}
+                                    finally{busy=false}
+                                }}){Text("협상 종료")}
+                            }
+                        }
+                    }
                     AppTextField(goal,{goal=it.take(500)},label="다음 응답 목표",placeholder="약속 시간을 확정해 주세요",singleLine=false,maxLines=3)
                     TextButton(enabled=!busy&&goal.isNotBlank(),onClick={
                         scope.launch{
@@ -515,12 +538,23 @@ private fun ErrandFollowupDialog(task:TaskItem,vm:AppViewModel,onDismiss:()->Uni
                 if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
             }
         },
-        confirmButton={TextButton(enabled=confirmed&&!busy&&draft.isNotBlank(),onClick={
-            val next=original.copy(body=draft.trim()).checked()
-            val request="지정 앱 대화방: "+next.recipient+
-                (next.listing?.let{"\n거래 상품: "+it}?:"")+"\n사용자가 지정한 후속 메시지를 실제 대화방 확인 후 발송"
-            vm.createPrivateErrand("후속 답장 · "+next.recipient,task.characterId,request,next.app,onOpenChat,next)
-            onDismiss()
+        confirmButton={TextButton(enabled=confirmed&&!busy&&draft.isNotBlank()&&
+            (original.negotiationGoal==null||original.negotiationRound<4&&task.negotiationResolution==null),onClick={
+            if(original.negotiationGoal!=null){
+                scope.launch{
+                    busy=true
+                    try{onOpenChat(vm.continueNegotiation(task.id,observedAt,draft));onDismiss()}
+                    catch(e:kotlinx.coroutines.CancellationException){throw e}
+                    catch(_:Exception){error="다음 협상 등록 실패"}
+                    finally{busy=false}
+                }
+            }else{
+                val next=original.copy(body=draft.trim()).checked()
+                val request="지정 앱 대화방: "+next.recipient+
+                    (next.listing?.let{"\n거래 상품: "+it}?:"")+"\n사용자가 지정한 후속 메시지를 실제 대화방 확인 후 발송"
+                vm.createPrivateErrand("후속 답장 · "+next.recipient,task.characterId,request,next.app,onOpenChat,next)
+                onDismiss()
+            }
         }){Text("후속 발송 업무 등록")}},
         dismissButton={TextButton(enabled=!busy,onClick=onDismiss){Text("닫기")}})
 }

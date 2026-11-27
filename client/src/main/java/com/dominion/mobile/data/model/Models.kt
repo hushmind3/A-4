@@ -173,7 +173,10 @@ data class TaskItem(
     val replyWatchUntil:Long?=null,
     val replyCandidate:String?=null,
     val replyCandidateAt:Long?=null,
-    val replyReviewedAt:Long?=null
+    val replyReviewedAt:Long?=null,
+    val negotiationParent:String?=null,
+    val negotiationNextRoom:String?=null,
+    val negotiationResolution:String?=null
 ) {
     val progress: Float
         get() = if (steps.isEmpty()) (if (done) 1f else 0f)

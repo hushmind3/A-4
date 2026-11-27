@@ -124,6 +124,8 @@ interface DominionRepository {
     suspend fun recordPhoneErrand(context:PhoneReplanContext,status:String,detail:String):Boolean = false
     suspend fun recordMessageReply(pkg:String,title:String,body:String,at:Long):Boolean = false
     suspend fun confirmMessageReply(id:String,observedAt:Long):Unit = error("Reply review unavailable")
+    suspend fun continueNegotiation(id:String,observedAt:Long,body:String):String = error("Negotiation unavailable")
+    suspend fun resolveNegotiation(id:String,observedAt:Long,agreed:Boolean):Unit = error("Negotiation unavailable")
     suspend fun draftMessageReply(id:String,observedAt:Long,goal:String):String = error("Reply drafting unavailable")
     suspend fun suggestReplyAppointment(id:String,observedAt:Long):ReplyAppointment? = error("Appointment extraction unavailable")
     suspend fun saveReplyAppointment(id:String,observedAt:Long,draft:ReplyAppointment):Unit = error("Appointment storage unavailable")

@@ -2,13 +2,17 @@ package com.dominion.mobile.data
 /** Only an explicitly entered recipient and message may reach the Kakao sender.
  * The model never supplies or rewrites this payload. */
 data class KakaoMessageRequest(val recipient:String,val body:String,
-    val packageName:String?=null,val listing:String?=null,val waitForReply:Boolean=false){
+    val packageName:String?=null,val listing:String?=null,val waitForReply:Boolean=false,
+    val negotiationGoal:String?=null,val negotiationRound:Int=0){
     val app:String get()=packageName?:"com.kakao.talk"
     companion object { val apps=setOf("com.kakao.talk","com.towneers.www") }
     fun checked():KakaoMessageRequest{
         require(recipient.isNotBlank()&&recipient.length<=60&&recipient==recipient.trim()&&recipient.none(Char::isISOControl))
         require(body.isNotBlank()&&body.length<=500&&body==body.trim()&&body.none{it.isISOControl()&&it!='\n'})
         require(app in apps)
+        require(negotiationRound in 0..4)
+        if(negotiationGoal!=null)require(waitForReply&&negotiationGoal.length in 3..500&&negotiationGoal.none{it.isISOControl()&&it!='\n'})
+        else require(negotiationRound==0)
         if(app=="com.towneers.www")require(listing!=null&&listing.length in 2..100&&listing==listing.trim()&&listing.none(Char::isISOControl))
         else require(listing==null)
         return this
