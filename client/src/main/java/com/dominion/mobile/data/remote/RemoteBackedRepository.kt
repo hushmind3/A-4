@@ -29,13 +29,14 @@ class RemoteBackedRepository(
     private val store: LocalStore,
     private val onRemindersChanged: (List<com.dominion.mobile.data.model.ScheduleItem>) -> Unit = {},
     private val mobileCloud:CloudAccountRepository?=null,
+    private val mobileContext:android.content.Context?=null,
     private val onJobAccepted: (String, String) -> Unit = { _, _ -> }
 ) : DominionRepository {
 
     private val api: DominionApi get() = requireNotNull(endpoint) { "Connect DOMINION first" }
     override val localExecution:Boolean get()=endpoint==null && mobileCloud!=null
     private val mobile by lazy { com.dominion.mobile.data.harness.MobileHarness(
-        requireNotNull(mobileCloud),{state.value},::update,{store.saveStateNow(state.value)},onRemindersChanged) }
+        requireNotNull(mobileCloud),{state.value},::update,{store.saveStateNow(state.value)},onRemindersChanged,mobileContext) }
 
     private val mobileExtension by lazy {
         MobileExtensionRepository(api, store::loadMobileJournal, store::saveMobileJournal)
@@ -83,9 +84,14 @@ class RemoteBackedRepository(
             val rooms=if(cached.conversations.isEmpty() && "mobile-assistant" !in cached.hiddenRooms.orEmpty())
                 listOf(com.dominion.mobile.data.model.Conversation("mobile-assistant","preset_my_id",sessionId=java.util.UUID.randomUUID().toString()))
                 else cached.conversations
-            cached.copy(characters=characters,conversations=rooms.map{c->c.copy(
+            val uncertain=cached.mobileActions.orEmpty().filter{it.status=="launching"}.map{it.messageId}.toSet()
+            cached.copy(characters=characters,
+                mobileActions=cached.mobileActions.orEmpty().map{if(it.status=="launching")it.copy(
+                    status="uncertain",result="기기 실행 중 앱 종료 · 자동 재실행하지 않음")else it},
+                conversations=rooms.map{c->c.copy(
                 sessionId=c.sessionId?:java.util.UUID.randomUUID().toString(),
-                messages=c.messages.map{m->if(m.jobStatus in setOf("running","queued"))
+                messages=c.messages.map{m->if(m.id in uncertain)m.copy(jobStatus="interrupted")
+                    else if(m.jobStatus in setOf("running","queued"))
                     m.copy(jobStatus="interrupted",status=com.dominion.mobile.data.model.MessageStatus.FAILED) else m})})
         }else cached
         local.copy(onboarded = true,

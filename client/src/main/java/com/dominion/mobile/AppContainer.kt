@@ -54,7 +54,7 @@ class AppContainer(context: Context) {
         return RemoteBackedRepository(connection?.let(ApiFactory::create), store,
             onRemindersChanged = { items ->
                 com.dominion.mobile.platform.background.ReminderMonitor.schedule(app, scope, items)
-            },mobileCloud=if(connection==null)cloudAccount else null) { roomId, jobId ->
+            },mobileCloud=if(connection==null)cloudAccount else null,mobileContext=app) { roomId, jobId ->
             connection?.let { BackgroundJobMonitor.enqueue(app, it, roomId, jobId) }
         }
     }

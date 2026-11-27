@@ -12,7 +12,10 @@ import com.dominion.mobile.data.model.Repeat
 /** Device operations are explicit user actions, not fabricated server receipts. */
 object DeviceActions {
     private fun launch(context: Context, intent: Intent): Boolean =
-        runCatching { context.startActivity(intent); true }.getOrDefault(false)
+        runCatching {
+            if(context !is android.app.Activity)intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent); true
+        }.getOrDefault(false)
 
     fun openOfficial(context: Context, service: KoreanService): Boolean =
         launch(context, Intent(Intent.ACTION_VIEW, Uri.parse(KoreanServices.officialUrl(service))))
