@@ -158,7 +158,8 @@ data class TaskItem(
     val enginePrompt: String? = null,
     val engineLanguage: String? = null,
     val requestDetails: String? = null,
-    val watchCondition: String? = null
+    val watchCondition: String? = null,
+    val koreanLookup: com.dominion.mobile.platform.network.KoreanLookup? = null
 ) {
     val progress: Float
         get() = if (steps.isEmpty()) (if (done) 1f else 0f)

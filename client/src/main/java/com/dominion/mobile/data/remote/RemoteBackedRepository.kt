@@ -220,7 +220,7 @@ class RemoteBackedRepository(
     override suspend fun submitTask(id: String) = taskLock.withLock {
         var task = state.value.tasks.firstOrNull { it.id == id } ?: error("Task not found")
         if(localExecution){
-            if(task.engineJobId==null || task.engineJobId?.startsWith("cloud:")==true){
+            if(task.koreanLookup==null&&(task.engineJobId==null || task.engineJobId?.startsWith("cloud:")==true)){
                 val cloud=requireNotNull(mobileCloud){"DOMINION Cloud account required"}
                 // Save the exact request before transmission; a lost response must
                 // reuse the same UUID and prompt rather than submit different work.
@@ -288,7 +288,7 @@ class RemoteBackedRepository(
             }
             store.saveStateNow(state.value)
             try{
-                mobile.deliver(roomId,message)
+                mobile.deliver(roomId,message,task.koreanLookup)
                 verifyTask(linked)
             }catch(e:CancellationException){throw e}
             catch(e:Exception){

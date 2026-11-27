@@ -30,6 +30,14 @@ data class KoreanService(
 
 object KoreanServices {
     val entries = listOf(
+        KoreanService("kakao-place", "카카오맵 · 장소 검색", "상점·병원·음식점 공개 정보", "https://map.kakao.com/",
+            steps=listOf("장소 검색","주소·전화·원문 확인"), instruction="공개 장소 검색 도구로 실제 조회",skillNames=listOf("kakao-map")),
+        KoreanService("naver-news", "네이버 · 최신 뉴스", "검색어 기준 최신 기사 후보", "https://news.naver.com/",
+            steps=listOf("최신순 검색","발행일·원문 확인"),instruction="네이버 뉴스 공개 검색 도구로 실제 조회",skillNames=listOf("naver-news-search")),
+        KoreanService("coupang", "쿠팡 · 상품 검색", "상품·가격·배송 조건 검색", "https://www.coupang.com/",
+            steps=listOf("공개 상품 검색","가격·배송 조건 확인"),instruction="파트너스 공개 API 결과와 수수료 고지 제공",skillNames=listOf("coupang-product-search")),
+        KoreanService("danawa", "다나와 · 가격 비교", "상품별 공개 최저가 후보", "https://search.danawa.com/",
+            steps=listOf("상품 검색","표시 가격 및 상품 링크 확인"),instruction="공개 검색 결과에서 상품별 표시 가격 추출",skillNames=listOf("danawa-price-search")),
         KoreanService("gov", "정부24 · 민원·증명서", "등본, 초본, 가족·이사 관련 민원 안내", "https://www.gov.kr/", "110", "행정복지센터",
             listOf("민원 종류와 관할 확인", "공식 발급 조건·준비물 확인", "온라인 신청 경로 안내"),
             "요청 민원의 실제 담당기관과 발급 방법, 본인 인증 요건을 조회하고 안내하세요."),

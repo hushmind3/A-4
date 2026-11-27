@@ -11,6 +11,10 @@ object KoreanWorkflows {
         ServiceWorkflow(id, title, fields.toList(), repeatable)
 
     private val entries = mapOf(
+        "kakao-place" to listOf(flow("lookup","장소 공개 검색",field("검색어","아산시 피부과"))),
+        "naver-news" to listOf(flow("lookup","최신 뉴스 검색",field("검색어","삼성전자 실적"))),
+        "coupang" to listOf(flow("lookup","상품 검색",field("검색어","무선청소기"))),
+        "danawa" to listOf(flow("lookup","상품 가격 검색",field("검색어","RTX 5070"))),
         "gov" to listOf(flow("certificate", "증명서·민원 준비", field("민원명", "주민등록등본"), field("제출 용도", "학교 제출", false))),
         "welfare" to listOf(flow("benefits", "지원제도 조사", field("지원 분야", "주거·아동·장애"), field("가구 조건", "개인식별정보 제외", false), repeatable = true)),
         "notice" to listOf(flow("deadline", "행정 기한 확인", field("알림 종류", "자동차 검사·납부"), repeatable = true)),

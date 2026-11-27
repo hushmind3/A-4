@@ -92,6 +92,9 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
             var fields by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
             val ready = workflow.fields.all { !it.required || !fields[it.label].isNullOrBlank() } &&
                 (workflow.fields.isNotEmpty() || details.isNotBlank())
+            val nativeLookup=vm.localExecution&&service.id in setOf("kakao-place","naver-news","coupang","danawa")
+            fun lookup()=if(nativeLookup)com.dominion.mobile.platform.network.KoreanLookup(
+                service.id,fields["검색어"].orEmpty()).checked() else null
             fun request(): String = service.request(region, KoreanWorkflows.compose(workflow, fields, details))
             var agent by remember { mutableStateOf(state.myCharacter()?.id ?: state.characters.firstOrNull()?.id.orEmpty()) }
             AppBottomSheet(onDismiss = { selected = null }) {
@@ -124,6 +127,9 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
                         }, modifier = Modifier.fillMaxWidth()) { Text(portal.label + " 열기") }
                     }
                     Text("주민등록번호·인증번호·비밀번호는 입력하지 마세요.", style = MaterialTheme.typography.labelSmall)
+                    if(nativeLookup)Text(if(service.id=="danawa")"공개 검색어를 다나와에 직접 전송합니다." else
+                        "공개 검색어만 k-skill 외부 프록시에 전송합니다. 개인 주소·연락처·계정정보를 넣지 마세요.",
+                        style=MaterialTheme.typography.labelSmall)
                     state.characters.forEach { character ->
                         Row {
                             RadioButton(selected = agent == character.id, onClick = { agent = character.id })
@@ -141,12 +147,13 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
                             }) { Text("가까운 기관") }
                         }
                     }
-                    Button(enabled = ready && state.character(agent) != null,
+                    Button(enabled = ready && state.character(agent) != null &&
+                        (!nativeLookup || runCatching{lookup()}.isSuccess),
                         onClick = {
-                            vm.createServiceTask(service.title + " · " + workflow.title, agent, request(), service.steps, onOpenChat)
+                            vm.createServiceTask(service.title + " · " + workflow.title, agent, request(), service.steps, onOpenChat,lookup())
                             selected = null
-                        }) { Text("실제 업무 접수") }
-                    OutlinedButton(enabled = ready, onClick = {
+                        }) { Text(if(nativeLookup)"실제 공개 검색 실행" else "실제 업무 접수") }
+                    if(!nativeLookup)OutlinedButton(enabled = ready, onClick = {
                         institutionDraft = service.id to request()
                         selected = null
                     }, modifier = Modifier.fillMaxWidth()) { Text("기관 실제 접수·인증·결제 연동") }
