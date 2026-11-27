@@ -1,5 +1,7 @@
 # Feature status
 
+> **Architecture correction, 2026-11-27:** The material below records an earlier PC-Rust integration milestone. The current A-4 source also implements independent MobileHarness execution, Cloud direct model inference, Cloud voice API clients and experimental encrypted cloud-job endpoints. **The PC Rust engine is optional for A-4.** Review the current README and [secure credential architecture](SECURE_CREDENTIAL_ARCHITECTURE.md) before designing new work. New cloud endpoints remain unprovisioned until deployed and tested.
+
 Source implementation, not production certification.
 
 | Area | Current state |

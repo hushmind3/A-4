@@ -1,29 +1,38 @@
-# DOMINION Mobile
+# DOMINION Mobile — A-4
 
-Android native companion for [DOMINION](https://github.com/hushmind3/dominion). A single conversation interface delegates real work to the existing Rust execution harness. The mobile app manages interaction, device integration and private local history; it does not implement another agent runtime.
+Native Kotlin / Jetpack Compose Android AI assistant. Designed for a user **without a PC**. The desktop DOMINION Rust application is optional.
 
-## Connect
+## Current runtime structure
 
-Build with JDK 17 and Android SDK 35. Android 12L (API 32) or newer is required.
+| Component | Responsibility | Mandatory |
+|---|---|---|
+| A-4 on Android | Conversation UI, microphone and playback, personal records, permission approval, Android app and device actions | Yes |
+| DOMINION Cloud | Account pairing, per-user model allowance, cloud model inference, planned hosted speech and durable jobs | Yes for current PC-free mode |
+| Android MobileHarness | Runs phone-specific tools and mobile task/reply loop, with Cloud inference | Included |
+| PC DOMINION / Rust engine | Optional remote models, files and PC tools | No |
 
-```sh
-./gradlew :client:assembleDebug
-```
+The mobile execution path in RemoteBackedRepository.kt activates when no PC engine endpoint is configured and a Cloud account connection is present. It uses MobileHarness and CloudAccountRepository.completeForMobile. This code path supersedes the older desktop-only baseline described in this repository's historical integration docs.
 
-Open Settings → DOMINION Cloud to approve the shared Google account. In Settings → Engine, models and tools, enter your authorized HTTPS engine origin and owner token. The two credentials are independent and protected by Android Keystore. The engine must already be reachable and securely configured; Google approval alone cannot authorize the private engine. No fictional conversations or simulated AI replies are generated when disconnected.
+## Source implementation and provisioning (2026-11-27)
 
-The existing room interface submits to the native job-producing API with a stable client message ID. New rooms are created on the engine, with tools enabled. The dedicated mobile assistant room enables tools on first submission if needed; other existing rooms keep their explicit tool settings. The engine enforces tool approval policies.
+Implemented in Android source: independent cloud model requests, on-device tool/approval handling, cloud STT/TTS API client, 16-kHz microphone capture and MP3 playback, cloud job creation and status/result queries.
 
-Select models from the engine's existing registered providers and apply a room model pool. Cloudflare, DOMINION Cloud free models, external APIs and local LLMs can be selected when already configured on that engine. Model rotation, persona, tools, memory and execution stay in DOMINION. There is no separate Cloud general-chat mode or direct inference bypass.
+Implemented in the cloud-relay source overlay: account-scoped speech endpoints, separate speech quotas, encrypted D1 job checkpoints, bounded read-only research tool loop, cron-based retry/resume code and user-scoped job routes.
 
-The Korean skill import control calls the engine's existing repository importer with explicit user confirmation. It does not install or configure the external services automatically during development. Korean UI language, Korean reasoning selection, character presentation and date/currency formatting remain in use.
+**Not yet activated in the existing production Cloudflare Worker:** these source additions need review and integration into its actual deployed source, D1 job migration, server secret configuration, a cron schedule and cloud TTS provider credentials. The overlay must not replace the existing production Worker without preserving all current bindings and login/relay endpoints.
 
-## Data and validation
+**Not yet finished:** realtime full-duplex speech and interruption, general browser/account automation, full external service OAuth permission delegation, user-key-controlled encrypted cloud memory, robust cloud push to Android, and verified live service operation.
 
-Room/SQLite databases are isolated by engine origin. Existing storage migration, message search and offline history are retained. Old direct-cloud and prototype data files are not deleted by this source update.
+Android speech is currently turn-based: record, Cloud STT, assistant task processing, Cloud TTS, play. The app does not bundle large speech models. Korean Cloud TTS needs a configured Korean-capable provider; do not report that it works before a deployed round-trip test.
 
-```sh
-./gradlew :client:testDebugUnitTest
-```
+## Credential protection
 
-See [backend integration](docs/BACKEND.md) and [feature status](docs/FEATURES.md). Source integration is not a claim of successful Android build, real device login, live inference or completed job execution. The app is still under development. Only this repository's main branch is modified; no server deployment or Cloudflare configuration is created here.
+Locally stored login pairing, owner-engine connections and vault records use Android Keystore-backed encryption. The current cloud-job encryption uses an operator-held AGENT_ENCRYPTION_KEY, which prevents a raw D1 database dump from directly revealing task contents, but **is not end-to-end encryption and does not prevent the operator from decrypting server-side records**.
+
+A future external-account automation service requires a separate credential protection layer: user-controlled master keys, bounded, revocable grants, independently attested secure execution, and user-visible credential-use audit logs. See [Secure credential architecture](docs/SECURE_CREDENTIAL_ARCHITECTURE.md).
+
+## Build and tests
+
+Android JDK 17 / SDK 35: Gradle tasks client:assembleDebug and client:testDebugUnitTest. Cloud tests: npm --prefix cloud-relay test. A passing build or contract test is not proof of live Cloudflare deployment, account sign-in, real device end-to-end speech or successful external tasks.
+
+The PC and A-4 repositories remain separate products. PC integration is an optional connector, never a prerequisite for installing or using A-4.
