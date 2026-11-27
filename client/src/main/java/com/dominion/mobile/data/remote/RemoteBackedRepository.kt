@@ -36,7 +36,8 @@ class RemoteBackedRepository(
     private val api: DominionApi get() = requireNotNull(endpoint) { "Connect DOMINION first" }
     override val localExecution:Boolean get()=endpoint==null && mobileCloud!=null
     private val mobile by lazy { com.dominion.mobile.data.harness.MobileHarness(
-        requireNotNull(mobileCloud),{state.value},::update,{store.saveStateNow(state.value)},onRemindersChanged,mobileContext) }
+        requireNotNull(mobileCloud),{state.value},::update,{store.saveStateNow(state.value)},onRemindersChanged,mobileContext,
+        {room,id->store.deviceAttachments.read(room,id)}) }
 
     private val mobileExtension by lazy {
         MobileExtensionRepository(api, store::loadMobileJournal, store::saveMobileJournal)
@@ -682,6 +683,14 @@ class RemoteBackedRepository(
         require(bytes.isNotEmpty() && bytes.size <= 8 * 1024 * 1024)
         require(name.isNotBlank() && name.length <= 240 && name.none { it.isISOControl() })
         require(state.value.conversation(roomId) != null)
+        if(localExecution){
+            val id=java.util.UUID.randomUUID().toString()
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO){
+                store.deviceAttachments.save(roomId,id,bytes)
+            }
+            return EngineAttachment(id,roomId,name,mimeType,bytes.size.toLong(),
+                if(com.dominion.mobile.data.local.DeviceDocumentText.readable(mimeType,name))"text" else null)
+        }
         val uploaded = api.uploadAttachment(AttachmentUpload(roomId, name, mimeType,
             java.util.Base64.getEncoder().encodeToString(bytes)))
         require(uploaded.roomId == roomId && uploaded.size == bytes.size.toLong())
@@ -726,6 +735,9 @@ class RemoteBackedRepository(
     override suspend fun downloadAttachment(roomId: String, id: String): ByteArray {
         java.util.UUID.fromString(id)
         require(state.value.conversation(roomId)?.messages?.any { id in it.attachmentIds.orEmpty() } == true)
+        if(localExecution)return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO){
+            requireNotNull(store.deviceAttachments.read(roomId,id)){"Device attachment missing"}
+        }
         val body = api.attachmentContent(id)
         return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             body.use { response ->

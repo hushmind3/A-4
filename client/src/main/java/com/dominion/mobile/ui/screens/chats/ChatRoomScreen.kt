@@ -300,7 +300,7 @@ fun ChatRoomScreen(
                     vm.setDraft(conversationId, "")
                 } catch (e: CancellationException) { throw e }
                 catch (_: Exception) {
-                    context.toast(tr(lang, "본체 첨부 실패 · 파일을 다시 전송할 수 있습니다.", "Attachment upload failed · retry sending"))
+                    context.toast(tr(lang, "첨부 실패 · 파일을 다시 전송할 수 있습니다.", "Attachment failed · retry sending"))
                 } finally { attachmentBusy = false }
             }
             return

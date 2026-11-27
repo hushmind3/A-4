@@ -26,6 +26,7 @@ class LocalStore(context: Context, scope: String = "unconfigured") {
     internal suspend fun saveMobileJournal(value: com.dominion.mobile.data.remote.MobileJournal) =
         withContext(kotlinx.coroutines.Dispatchers.IO) { mobileOperations.save(value) }
     internal val offlineArchive = OfflineArchiveStore(context.applicationContext, scope)
+    internal val deviceAttachments = DeviceAttachmentStore(context.applicationContext, scope)
     private val db = Room.databaseBuilder(context.applicationContext, MobileDatabase::class.java,
         "dominion_mobile_$scope.db").setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING).build()
     private val dao = db.local()
