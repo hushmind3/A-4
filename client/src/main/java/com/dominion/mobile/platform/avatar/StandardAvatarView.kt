@@ -3,7 +3,7 @@ package com.dominion.mobile.platform.avatar
 import android.content.Context
 import android.util.Log
 import android.view.Choreographer
-import android.view.SurfaceView
+import android.view.TextureView
 import android.widget.FrameLayout
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -20,7 +20,7 @@ import java.nio.ByteBuffer
 
 /** Real Filament renderable/skin/texture pipeline; ModelViewer owns and destroys its engine. */
 private class StandardAvatarSurface(context: Context): FrameLayout(context) {
-    private val child = SurfaceView(context)
+    private val child = TextureView(context)
     private var viewer: ModelViewer?=null
     private var indirect: IndirectLight?=null
     private var source: StandardAvatarAsset?=null

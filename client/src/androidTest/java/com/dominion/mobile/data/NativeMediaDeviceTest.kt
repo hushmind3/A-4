@@ -3,10 +3,6 @@ package com.dominion.mobile.data
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
-import android.view.PixelCopy
-import android.os.Handler
-import android.os.Looper
-import android.view.SurfaceView
 import android.view.View
 import android.view.ViewGroup
 import androidx.test.core.app.ActivityScenario
@@ -24,8 +20,6 @@ import org.junit.runner.RunWith
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.UUID
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 class NativeMediaDeviceTest {
@@ -50,8 +44,8 @@ class NativeMediaDeviceTest {
     }
 
     /** Render a valid embedded glTF triangle through the same activity used by imported avatars,
-     * then verify actual surface pixels with PixelCopy. No network or downloaded asset. */
-    @Test fun importedGltfProducesRealSurfacePixels() {
+     * then verify real TextureView pixels. No network or downloaded asset. */
+    @Test fun importedGltfProducesRealTexturePixels() {
         val context=ApplicationProvider.getApplicationContext<Context>()
         val id="media-"+UUID.randomUUID()
         val scope="instrumentation"
@@ -69,58 +63,49 @@ class NativeMediaDeviceTest {
                 .putExtra("model_scope",scope).putExtra("character_id",id).putExtra("name","Instrumented")
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             ActivityScenario.launch<StandardAvatarActivity>(intent).use { scenario ->
-                fun surface(view:View):SurfaceView? {
-                    if(view is SurfaceView)return view
-                    if(view is ViewGroup)for(i in 0 until view.childCount)surface(view.getChildAt(i))?.let{return it}
+                fun texture(view:View):android.view.TextureView? {
+                    if(view is android.view.TextureView)return view
+                    if(view is ViewGroup)for(i in 0 until view.childCount)
+                        texture(view.getChildAt(i))?.let{return it}
                     return null
                 }
                 var rendered=false
-                var validSurfaces=0
-                var copiedFrames=0
-                var lastPixelCopyStatus=-1
+                var availableTextures=0
+                var capturedFrames=0
                 var maxGreenSeen=0
                 var maxGreenDominance=Int.MIN_VALUE
                 var lastCenterPixel=0
-                repeat(30) {
+                repeat(45) {
                     if(rendered)return@repeat
-                    val signal=CountDownLatch(1)
                     var bitmap:Bitmap?=null
-                    var success=false
                     scenario.onActivity{activity->
-                        val view=surface(activity.window.decorView)
-                        if(view!=null && view.holder.surface.isValid && view.width>0 && view.height>0){
-                            validSurfaces++
-                            val image=Bitmap.createBitmap(view.width,view.height,Bitmap.Config.ARGB_8888)
-                            bitmap=image
-                            PixelCopy.request(view,image,{result->
-                                lastPixelCopyStatus=result
-                                success=result==PixelCopy.SUCCESS
-                                if(success)copiedFrames++
-                                signal.countDown()
-                            },Handler(Looper.getMainLooper()))
-                        }else signal.countDown()
+                        val view=texture(activity.window.decorView)
+                        if(view!=null && view.isAvailable && view.width>0 && view.height>0){
+                            availableTextures++
+                            bitmap=view.bitmap
+                            if(bitmap!=null)capturedFrames++
+                        }
                     }
-                    if(signal.await(2,TimeUnit.SECONDS)){
-                        bitmap?.let { image ->
-                            try {
-                                if(success)loop@ for(y in 0 until image.height step 4)for(x in 0 until image.width step 4){
+                    bitmap?.let { image ->
+                        try {
+                            loop@ for(y in 0 until image.height step 4)
+                                for(x in 0 until image.width step 4){
                                     val p=image.getPixel(x,y)
                                     val g=android.graphics.Color.green(p)
                                     maxGreenSeen=maxOf(maxGreenSeen,g)
                                     maxGreenDominance=maxOf(maxGreenDominance,g-
                                         maxOf(android.graphics.Color.red(p),android.graphics.Color.blue(p)))
-                                    if(x==image.width/2 || y==image.height/2) lastCenterPixel=p
+                                    if(x==image.width/2 || y==image.height/2)lastCenterPixel=p
                                     if(g>80 && g>android.graphics.Color.red(p)+35 &&
                                         g>android.graphics.Color.blue(p)+35){rendered=true;break@loop}
                                 }
-                            }finally{image.recycle()}
-                        }
+                        }finally{image.recycle()}
                     }
-                    if(!rendered)Thread.sleep(300)
+                    if(!rendered)Thread.sleep(250)
                 }
-                assertTrue("Expected actual green model pixels on Filament SurfaceView; "+
-                    "validSurfaceSamples="+validSurfaces+", successfulPixelCopies="+copiedFrames+
-                    ", pixelCopyStatus="+lastPixelCopyStatus+", maxGreen="+maxGreenSeen+
+                assertTrue("Expected actual green model pixels on Filament TextureView; "+
+                    "availableTextures="+availableTextures+", capturedFrames="+capturedFrames+
+                    ", maxGreen="+maxGreenSeen+
                     ", maxGreenDominance="+maxGreenDominance+", sampleColor="+
                     Integer.toHexString(lastCenterPixel)+
                     " (inspect DOMINION-Avatar logcat for model/renderer state)",rendered)
