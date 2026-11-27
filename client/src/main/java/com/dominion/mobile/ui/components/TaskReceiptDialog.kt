@@ -32,7 +32,7 @@ fun TaskReceiptDialog(vm: AppViewModel, id: String, onDismiss: () -> Unit) {
         catch (_: Exception) { failed = true }
         finally { refreshing = false }
     }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("본체 업무 결과") },
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(if(vm.localExecution)"AI 업무 결과" else "PC 업무 결과") },
         text = {
             Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -41,7 +41,10 @@ fun TaskReceiptDialog(vm: AppViewModel, id: String, onDismiss: () -> Unit) {
                 receipt?.let { record ->
                     Text("작업 상태: " + record.status)
                     Text("조회: " + java.text.DateFormat.getDateTimeInstance().format(java.util.Date(record.checkedAt)))
-                    Text("본체 작업 ID: " + record.jobId, style = MaterialTheme.typography.labelSmall)
+                    val cloudJob=record.jobId.startsWith("cloud:")
+                    val mobileJob=record.jobId.startsWith("mobile:")
+                    val location=if(cloudJob)"클라우드"else if(mobileJob)"휴대폰"else"PC"
+                    Text(location+" 작업 ID: " + record.jobId, style = MaterialTheme.typography.labelSmall)
                     record.reason?.let { Text("종료 사유: " + it) }
                     record.error?.let { SelectionContainer { Text(it) } }
                     if (record.outputs.isEmpty()) Text("아직 저장된 AI 작업 결과가 없습니다.")
@@ -50,12 +53,14 @@ fun TaskReceiptDialog(vm: AppViewModel, id: String, onDismiss: () -> Unit) {
                         Text(output.name ?: output.agentId ?: "에이전트", style = MaterialTheme.typography.titleSmall)
                         Text(when {
                             output.evidenceCount == null -> "실행 근거 수 미제공"
-                            output.evidenceCount > 0 -> "본체 기록 실행 근거 " + output.evidenceCount + "개"
-                            else -> "본체 기록 실행 근거 없음"
+                            output.evidenceCount > 0 -> location+" 실행 근거 "+output.evidenceCount+"개"
+                            else -> "해당 작업의 근거 기록 없음"
                         }, style = MaterialTheme.typography.labelMedium)
                         SelectionContainer { Text(output.content.orEmpty()) }
                         Text("응답 ID: " + output.messageId, style = MaterialTheme.typography.labelSmall)
-                        TextButton(enabled = !evidenceBusy && !failed && !refreshing, onClick = {
+                        if(cloudJob) Text("클라우드의 세부 도구 호출 기록은 아직 연동되지 않았습니다.",
+                            style = MaterialTheme.typography.bodySmall)
+                        else TextButton(enabled = !evidenceBusy && !failed && !refreshing, onClick = {
                             evidenceBusy = true
                             evidenceError = false
                             scope.launch {
@@ -68,7 +73,9 @@ fun TaskReceiptDialog(vm: AppViewModel, id: String, onDismiss: () -> Unit) {
                     }
                     if (evidenceBusy) LinearProgressIndicator(Modifier.fillMaxWidth())
                     if (evidenceError) Text("실행 기록 연결을 확인하지 못했습니다.", color = MaterialTheme.colorScheme.error)
-                    Text("실행 근거 개수는 본체 기록이며, 행정기관 접수나 외부 정보의 정확성 자체를 증명하지는 않습니다.",
+                    Text(if(record.jobId.startsWith("cloud:"))
+                        "현재 클라우드 작업은 공개 자료 읽기 전용입니다. 예약·신청·메시지 전송은 수행하지 않습니다."
+                        else "실행 근거 개수는 해당 실행기의 기록이며, 외부 서비스 완료를 자동으로 증명하지는 않습니다.",
                         style = MaterialTheme.typography.bodySmall)
                 }
             }
@@ -77,7 +84,7 @@ fun TaskReceiptDialog(vm: AppViewModel, id: String, onDismiss: () -> Unit) {
         dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } })
     evidence?.let { record ->
         AlertDialog(onDismissRequest = { evidence = null },
-            title = { Text("본체 도구 실행 기록") },
+            title = { Text("도구 실행 기록") },
             text = {
                 Column(Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp)) {

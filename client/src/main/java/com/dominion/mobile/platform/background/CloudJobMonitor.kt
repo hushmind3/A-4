@@ -105,7 +105,7 @@ class CloudJobWorker(context:Context,parameters:WorkerParameters):CoroutineWorke
             Intent(applicationContext,MainActivity::class.java).apply{
                 flags=Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             },PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val message=if(privateContent)"작업 상태가 갱신되었습니다." else "앱에서 결과와 실행 근거를 확인하세요."
+        val message=if(privateContent)"작업 상태가 갱신되었습니다." else "앱에서 작업 결과와 상태를 확인하세요."
         val notification=NotificationCompat.Builder(applicationContext,channel)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(if(privateContent)"DOMINION" else title)

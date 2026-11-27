@@ -336,7 +336,7 @@ class RemoteBackedRepository(
                 EngineJobInput(task.engineRoomId,task.enginePrompt,task.engineMessageId),
                 result=result.let{job->NativeJobResult(task.engineRoomId,task.engineSessionId,
                     job.status,content?.let{listOf(NativeJobOutput(task.characterId,
-                        "DOMINION Cloud",it,"cloud-reply:"+raw,0,null))}.orEmpty(),null)})
+                        "DOMINION Cloud",it,"cloud-reply:"+raw,null,null))}.orEmpty(),null)})
         }else if(localExecution)mobile.execution(requireNotNull(task.engineRoomId)).jobs.orEmpty()
             .single{it.id==task.engineJobId}
         else api.engineJob(requireNotNull(task.engineJobId))
