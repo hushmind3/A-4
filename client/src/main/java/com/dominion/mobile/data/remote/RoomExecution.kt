@@ -22,7 +22,7 @@ data class EngineJob(val id: String?, val status: String?, val sessionId: String
     val input: EngineJobInput?, val stepIndex: Int = 0, val stepTotal: Int = 0,
     val error: JsonElement? = null, val result: NativeJobResult? = null)
 data class EngineOperation(val id: String?, val tool: String?, val status: String?,
-    val arguments: JsonElement?, val result: JsonElement?)
+    val arguments: JsonElement?, val result: JsonElement?, val runId: String? = null)
 data class EngineApproval(val id: String?, val sessionId: String?, val tool: String?,
     val args: JsonElement?, val argsDigest: String?, val status: String?) {
     fun actionableIn(session: String) = !id.isNullOrBlank() && sessionId == session &&
@@ -41,7 +41,7 @@ data class EngineAttachment(val id: String?, val roomId: String?, val name: Stri
 data class NativeRoomMessage(
     val id: String?, val role: String?, val content: String?, val created_at: String?,
     val metadata: NativeRoomMetadata?,
-    val agent_id: String? = null
+    val agent_id: String? = null, val session_id: String? = null
 ) {
     fun toDomain(roomId: String): com.dominion.mobile.data.model.Message? {
         val identifier = id?.takeIf { it.isNotBlank() } ?: return null
@@ -85,7 +85,7 @@ data class NativeRoomMessage(
     }
 }
 data class NativeRoomMetadata(val clientMessageId: String?, val attachments: List<EngineAttachment>?,
-    val replyToMessageId: String? = null)
+    val replyToMessageId: String? = null, val executionId: String? = null)
 
 /** Attach actual job status only to its originating owner message in this room. */
 fun correlateRoomJobs(messages: List<com.dominion.mobile.data.model.Message>,

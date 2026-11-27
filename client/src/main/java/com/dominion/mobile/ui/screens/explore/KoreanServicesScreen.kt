@@ -18,14 +18,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dominion.mobile.data.KoreanService
 import com.dominion.mobile.data.KoreanServices
 import com.dominion.mobile.data.KoreanWorkflows
-import com.dominion.mobile.data.model.Repeat
 import android.content.Intent
 import android.net.Uri
-import android.app.DatePickerDialog
-import android.app.TimePickerDialog
-import java.time.ZoneId
-import java.time.ZonedDateTime
-import java.time.Instant
 import com.dominion.mobile.data.model.AppState
 import com.dominion.mobile.platform.DeviceActions
 import com.dominion.mobile.ui.AppViewModel
@@ -222,7 +216,7 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
                             vm.createServiceTask(service.title + " · " + workflow.title, agent, request(), service.steps, onOpenChat)
                             selected = null
                         }) { Text("실제 업무 접수") }
-                    if (workflow.repeatable) OutlinedButton(enabled = ready && state.character(agent) != null,
+                    if (workflow.repeatable) OutlinedButton(enabled = ready && state.character(agent) != null && request().length <= 3000,
                         onClick = {
                             scheduleDraft = ServiceScheduleDraft(service.title + " · " + workflow.title, agent, request())
                             selected = null

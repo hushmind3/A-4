@@ -75,6 +75,7 @@ interface DominionRepository {
     suspend fun dispatchScheduledTask(id: String, occurrence: Long): Unit = error("Engine not connected")
     suspend fun refreshTask(id: String): Unit = error("Engine not connected")
     suspend fun taskReceipt(id: String): com.dominion.mobile.data.remote.TaskReceipt = error("Engine not connected")
+    suspend fun taskEvidence(id: String, replyId: String): com.dominion.mobile.data.remote.TaskEvidence = error("Engine not connected")
 
     suspend fun changeSchedules(transform: (List<com.dominion.mobile.data.model.ScheduleItem>) ->
         List<com.dominion.mobile.data.model.ScheduleItem>): Unit = error("Reminder storage unavailable")

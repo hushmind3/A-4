@@ -25,6 +25,7 @@ fun ServiceScheduleDialog(vm: AppViewModel, draft: ServiceScheduleDraft, onDismi
         .withSecond(0).withNano(0).toInstant().toEpochMilli()) }
     var repeat by remember { mutableStateOf(Repeat.WEEKLY) }
     var saving by remember { mutableStateOf(false) }
+    var failed by remember { mutableStateOf(false) }
     AlertDialog(onDismissRequest = { if (!saving) onDismiss() }, title = { Text("정기 조사 예약") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -47,14 +48,16 @@ fun ServiceScheduleDialog(vm: AppViewModel, draft: ServiceScheduleDraft, onDismi
                         Text(option.ko, modifier = Modifier.padding(top = 12.dp))
                     }
                 }
-                if (saving) Text("저장 요청 중 · 실패 시 알림 및 일정 목록을 확인하세요.")
+                if (saving) Text("저장 요청 중")
+                if (failed) Text("저장 결과 확인 실패 · 닫고 일정 목록을 확인한 후 다시 예약하세요.", color = MaterialTheme.colorScheme.error)
             }
         },
-        confirmButton = { TextButton(enabled = !saving && due > System.currentTimeMillis() && draft.request.length <= 3000, onClick = {
+        confirmButton = { TextButton(enabled = !saving && !failed && due > System.currentTimeMillis() && draft.request.length <= 3000, onClick = {
             saving = true
-            vm.saveSchedule(null, draft.title, "생활 서비스 정기 조사", draft.agent, repeat, due, zone.id, draft.request) {
+            vm.saveSchedule(null, draft.title, "생활 서비스 정기 조사", draft.agent, repeat, due, zone.id, draft.request,
+                onFailure = { saving = false; failed = true }) {
                 onSaved()
             }
         }) { Text("예약 저장") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } })
+        dismissButton = { TextButton(enabled = !saving, onClick = onDismiss) { Text("닫기") } })
 }

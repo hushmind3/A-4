@@ -89,6 +89,12 @@ interface DominionApi {
     suspend fun decideApproval(@Body body: ApprovalDecision): ApprovalResult
     @GET("api/jobs/{id}")
     suspend fun engineJob(@Path("id") id: String): EngineJob
+    @GET("api/sessions/{id}/messages")
+    suspend fun sessionTranscript(@Path("id") id: String): List<NativeRoomMessage>
+    @GET("api/executions/{id}")
+    suspend fun nativeExecution(@Path("id") id: String): NativeExecutionIdentity
+    @GET("api/executions/{id}/operations")
+    suspend fun executionOperations(@Path("id") id: String): List<EngineOperation>
     @POST("api/jobs/{id}/cancel")
     suspend fun cancelEngineJob(@Path("id") id: String): EngineJob
     @retrofit2.http.Streaming

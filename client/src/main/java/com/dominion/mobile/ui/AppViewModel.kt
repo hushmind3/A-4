@@ -478,6 +478,7 @@ class AppViewModel(
     }
 
     suspend fun taskReceipt(id: String) = repo.taskReceipt(id)
+    suspend fun taskEvidence(id: String, replyId: String) = repo.taskEvidence(id, replyId)
 
     suspend fun refreshDispatchedTasks() {
         state.value.tasks.filter { it.engineJobId != null }.forEach { task ->
@@ -510,9 +511,11 @@ class AppViewModel(
     }
 
     fun saveSchedule(existingId: String?, title: String, whenText: String, characterId: String,
-        repeat: Repeat, scheduledAt: Long, zoneId: String, workRequest: String? = null, onSaved: () -> Unit = {}) {
+        repeat: Repeat, scheduledAt: Long, zoneId: String, workRequest: String? = null,
+        onFailure: () -> Unit = {}, onSaved: () -> Unit = {}) {
         if (title.isBlank() || scheduledAt <= System.currentTimeMillis()) {
             _notice.value = "제목과 미래 날짜·시간을 지정하세요."
+            onFailure()
             return
         }
         viewModelScope.launch {
@@ -527,7 +530,7 @@ class AppViewModel(
                 repo.changeSchedules { listOf(item) + it.filterNot { old -> old.id == item.id } }
                 onSaved()
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { _notice.value = "일정 예약을 저장하지 못했습니다." }
+            catch (_: Exception) { _notice.value = "일정 예약을 저장하지 못했습니다."; onFailure() }
         }
     }
 

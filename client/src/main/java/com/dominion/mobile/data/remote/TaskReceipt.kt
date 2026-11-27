@@ -9,6 +9,24 @@ data class NativeJobResult(val roomId: String?, val sessionId: String?, val stat
 data class NativeJobOutput(val agentId: String?, val name: String?, val content: String?,
     val messageId: String?, val evidenceCount: Int?, val toolCalls: JsonElement?)
 
+data class NativeExecutionIdentity(val id: String?, val sessionId: String?, val status: String?, val taskOutcome: String?)
+
+data class TaskEvidence(val execution: NativeExecutionIdentity, val operations: List<EngineOperation>) {
+    companion object {
+        fun executionId(task: TaskItem, result: TaskReceipt, replyId: String, rows: List<NativeRoomMessage>): String {
+            require(result.outputs.any { it.messageId == replyId })
+            val row = rows.single { it.id == replyId && it.session_id == task.engineSessionId &&
+                it.role == "assistant" && it.metadata?.replyToMessageId == task.engineMessageId }
+            return requireNotNull(row.metadata?.executionId).also { require(it.isNotBlank()) }
+        }
+        fun verified(id: String, session: String, execution: NativeExecutionIdentity, operations: List<EngineOperation>): TaskEvidence {
+            check(id.isNotBlank() && session.isNotBlank() && execution.id == id && execution.sessionId == session)
+            check(operations.all { it.runId == id })
+            return TaskEvidence(execution, operations)
+        }
+    }
+}
+
 data class TaskReceipt(val jobId: String, val status: String, val outputs: List<NativeJobOutput>,
     val reason: String?, val checkedAt: Long, val error: String?) {
     companion object {
