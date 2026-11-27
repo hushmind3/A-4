@@ -14,7 +14,7 @@ import time
 import urllib.request
 import urllib.error
 import webbrowser
-from engine_bridge import allowed
+from native_route_policy import allowed
 
 BASE = "https://dominion-cloud.dominion-hushmind.workers.dev"
 MAX = 585000

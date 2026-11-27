@@ -20,8 +20,6 @@ internal fun CloudPcPanel(repo:CloudRemoteAccount,account:String,engine:EngineCo
     var state by remember(account){mutableStateOf(RemotePcState())}
     var busy by remember{mutableStateOf(false)}
     var error by remember{mutableStateOf("")}
-    var auto by remember(account){mutableStateOf(false)}
-    var attempted by remember(account){mutableStateOf(false)}
     fun open(url:String){context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(url)))}
     fun runAction(block:suspend()->Unit){
         if(busy)return
@@ -37,14 +35,13 @@ internal fun CloudPcPanel(repo:CloudRemoteAccount,account:String,engine:EngineCo
         while(isActive){
             if(!busy)try{
                 state=repo.refresh(account)
-                val online=state.devices.filter{it.online}
                 // Discovery is automatic; switching the execution target is explicit.
             }catch(e:CancellationException){throw e}
             catch(_:Exception){error="클라우드 중계 상태 조회 실패"}
-            delay(if(state.status=="pending")3000 else 15000)
+            delay(if(state.status=="pending")3000 else 60000)
         }
     }
-    Text("Google 계정 PC 자동 검색",style=MaterialTheme.typography.titleMedium)
+    Text("선택 기능 · PC 원격 업무",style=MaterialTheme.typography.titleMedium)
     Text("본체 포트 4317 유지 · Cloudflare WebSocket · PC 등록 권한과 무료 모델 권한은 분리")
     when(state.status){
         "pending"->{
@@ -71,11 +68,11 @@ internal fun CloudPcPanel(repo:CloudRemoteAccount,account:String,engine:EngineCo
         }
         "account_mismatch"->Text("다른 Google 계정의 PC 권한이 저장되어 있습니다. 연결 권한을 해제하고 다시 승인하세요.")
         else->Button(enabled=!busy,onClick={runAction{
-            auto=true;attempted=false;state=repo.begin(account);state.approvalUrl?.let(::open)
+            state=repo.begin(account);state.approvalUrl?.let(::open)
         }}){Text("동일 Google 계정으로 PC 연결 승인")}
     }
     if(state.status in setOf("pending","approved","account_mismatch"))OutlinedButton(enabled=!busy,onClick={runAction{
-        onDisconnect();repo.disconnect();state=RemotePcState();auto=false;attempted=false
+        onDisconnect();repo.disconnect();state=RemotePcState()
     }}){Text("PC 원격 권한 해제")}
     if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
     if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)

@@ -24,10 +24,9 @@ revoke and re-register when expired. The token file is private on the PC.
 In A-4: Settings > DOMINION Cloud > Google account > PC connection approval.
 Existing inference-only sessions retain their scope. A separate explicit
 assistant_remote grant on the same account is required to control the PC.
-Select the online "DOMINION 4317" device. The first newly approved session
-automatically connects if exactly one native device is online and no engine
-is already connected. No 4318 bridge or inbound Cloudflare Tunnel required.
-The prior tunnel configuration remains untouched as an independent fallback.
+Select the online "DOMINION 4317" device explicitly only for PC-specific work.
+Mobile execution is the default. This connector is not needed for Cloudflare inference,
+nor does it implement a model-only connection. No dedicated inbound bridge is required.
 
 Transport constraints: 585 KB binary request/response cap, 165-second client
 RPC timeout, native API only, periodic snapshots instead of SSE; large uploads
