@@ -1,4 +1,5 @@
 import {emailLoginReady, startEmailLogin, verifyEmailLogin, pollEmailLogin} from './email_auth.js';
+import {voiceRoute} from './voice.js';
 import {b64url, hash, randomToken} from './token_crypto.js';
 import {assistantRoute,cleanupAssistant,ready as assistantReady,revokeAppSocket} from './assistant_link.js';
 export {AssistantSocket} from './assistant_socket.js';
@@ -546,9 +547,10 @@ export default {
     try {
       let response;
       // App sessions may never enter owner, billing or identity endpoints.
-      const appAllowed=['/v1/me','/v1/models','/v1/billing','/v1/chat/completions','/v1/apps/status','/v1/apps/disconnect'];
+      const appAllowed=['/v1/me','/v1/models','/v1/billing','/v1/chat/completions','/v1/apps/status','/v1/apps/disconnect','/v1/voice/capabilities','/v1/voice/transcriptions','/v1/voice/speech'];
       if(isAppRequest(request)&&!appAllowed.includes(path)&&!path.startsWith('/v1/assistant/'))return json({error:'Owner login required'},403,headers);
-      if(path.startsWith('/v1/assistant/'))response=await assistantRoute(request,env,{account});
+      if(path.startsWith('/v1/voice/')){const user=await account(request,env);response=await voiceRoute(request,env,user,path);}
+       else if(path.startsWith('/v1/assistant/'))response=await assistantRoute(request,env,{account});
       else if(path==='/connect'&&request.method==='GET')response=await connectPage(request,env);
       else if(path==='/v1/apps/google/approve'&&request.method==='POST'){
         if(!sameOriginGoogleApprove)return err('Same-origin approval required',403);
