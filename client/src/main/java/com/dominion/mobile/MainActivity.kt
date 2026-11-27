@@ -25,7 +25,8 @@ class MainActivity : ComponentActivity() {
 
     suspend fun applyEngine(connection: com.dominion.mobile.data.local.EngineConnection?) {
         val container = (application as DominionApplication).container
-        check(container.repository.state.value.call == null)
+        check(container.repository.state.value.call == null &&
+            !com.dominion.mobile.platform.audio.AssistantVoiceService.state.value.active)
         viewModelStore.clear()
         try { withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) { container.applyEngine(connection) } }
         finally { recreate() }

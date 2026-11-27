@@ -34,11 +34,14 @@ import kotlin.coroutines.resumeWithException
 class NoSpeechDetected : Exception("No sustained speech detected")
 
 object EngineVoiceAudio {
+    private val microphoneLease=AtomicBoolean(false)
     @SuppressLint("MissingPermission")
     suspend fun record(context: Context, stop: AtomicBoolean,
         autoEndpoint: Boolean = false, duringPlayback: Boolean = false,
         speechStarted: AtomicBoolean? = null): ByteArray = withContext(Dispatchers.IO) {
         require(ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
+        check(microphoneLease.compareAndSet(false,true)){"Microphone already in use"}
+        try {
         val rate = WaveAudio.SAMPLE_RATE
         val minimum = AudioRecord.getMinBufferSize(rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         require(minimum > 0)
@@ -78,6 +81,7 @@ object EngineVoiceAudio {
             echo?.release()
             recorder.release()
         }
+        }finally{microphoneLease.set(false)}
     }
 
     fun supportsBargeIn(): Boolean = AcousticEchoCanceler.isAvailable()

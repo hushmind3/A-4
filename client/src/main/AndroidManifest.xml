@@ -130,6 +130,8 @@
             android:exported="false"
             android:foregroundServiceType="microphone|camera" />
 
+        <service android:name=".platform.audio.AssistantVoiceService" android:exported="false"
+            android:foregroundServiceType="microphone" android:stopWithTask="false" />
         <receiver android:name=".platform.background.NotificationReplyReceiver" android:exported="false" />
         <receiver
             android:name=".platform.widget.HomeScreenWidgetProvider"

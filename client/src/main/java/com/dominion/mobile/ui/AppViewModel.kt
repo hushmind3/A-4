@@ -461,7 +461,7 @@ class AppViewModel(
         val snapshot = repo.state.value
         val conversation = snapshot.conversation(conversationId) ?: return false
         if (repo.connection.value != com.dominion.mobile.data.ConnectionState.CONNECTED ||
-            snapshot.call != null) return false
+            snapshot.call != null || com.dominion.mobile.platform.audio.AssistantVoiceService.state.value.active) return false
         mutate { it.copy(call = CallSession(
             conversationId = conversationId,
             characterId = conversation.characterId,

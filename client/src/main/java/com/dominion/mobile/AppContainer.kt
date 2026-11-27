@@ -55,7 +55,7 @@ class AppContainer(context: Context) {
 
     /** Call after cancelling the old ViewModel and with no active call. */
     @Synchronized fun applyEngine(connection: EngineConnection?) {
-        check(repository.state.value.call == null)
+        check(repository.state.value.call == null && !com.dominion.mobile.platform.audio.AssistantVoiceService.state.value.active)
         stores.values.forEach { it.flush() }
         val next = buildRepository(connection)
         if (connection == null) credentials.clear() else credentials.save(connection)

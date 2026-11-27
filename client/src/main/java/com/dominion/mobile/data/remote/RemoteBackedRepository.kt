@@ -401,6 +401,49 @@ class RemoteBackedRepository(
         }
     }
 
+    override suspend fun submitAssistantVoice(roomId:String,session:String,nonce:String,text:String):Message =
+        roomMutationLock.withLock {
+            require(nonce.startsWith("voice_") && runCatching {
+                java.util.UUID.fromString(nonce.removePrefix("voice_")).toString()==nonce.removePrefix("voice_")
+            }.getOrDefault(false) && text.isNotBlank() && text.length<=32000)
+            val room=requireNotNull(state.value.conversation(roomId))
+            check(room.sessionId==session && state.value.call==null && !state.value.settings.appLock)
+            check(room.messages.none{it.id==nonce || it.clientMessageId==nonce})
+            val live=api.roomExecution(roomId)
+            check(live.room?.id==roomId && live.sessionId==session)
+            val message=Message(id=nonce,conversationId=roomId,sender=MessageSender.USER,text=text,
+                createdAt=System.currentTimeMillis(),status=com.dominion.mobile.data.model.MessageStatus.SENDING,
+                clientMessageId=nonce,jobStatus="voice_submitting")
+            update{current->
+                check(current.conversation(roomId)?.sessionId==session)
+                current.copy(conversations=current.conversations.map{c->
+                    if(c.id==roomId)c.copy(messages=c.messages+message,updatedAt=message.createdAt)else c
+                })
+            }
+            store.saveStateNow(state.value)
+            try{
+                val ack=deliverMessage(roomId,message)
+                val confirmed=api.roomExecution(roomId)
+                check(confirmed.sessionId==session && confirmed.room?.id==roomId)
+                update{current->current.copy(conversations=current.conversations.map{c->
+                    if(c.id==roomId && c.sessionId==session)c.copy(
+                        messages=com.dominion.mobile.data.MessageSync.reconcile(c.messages,listOf(ack)))else c
+                })}
+                store.saveStateNow(state.value)
+                ack
+            }catch(e:CancellationException){throw e}
+            catch(e:Exception){
+                update{current->current.copy(conversations=current.conversations.map{c->
+                    if(c.id==roomId && c.sessionId==session)c.copy(messages=c.messages.map{
+                        if(it.id==nonce && it.status!=com.dominion.mobile.data.model.MessageStatus.SENT)
+                            it.copy(status=com.dominion.mobile.data.model.MessageStatus.FAILED,jobStatus="voice_unconfirmed")else it
+                    })else c
+                })}
+                store.saveStateNow(state.value)
+                throw e
+            }
+        }
+
     override suspend fun reserveNotificationReply(roomId: String, session: String, nonce: String, text: String): Boolean =
         roomMutationLock.withLock {
             require(nonce.startsWith("notification_") && java.util.UUID.fromString(nonce.removePrefix("notification_")).toString() ==
