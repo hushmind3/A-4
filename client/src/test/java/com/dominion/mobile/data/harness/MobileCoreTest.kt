@@ -24,6 +24,18 @@ class MobileCoreTest{
   CloudCompletionRequest("dominion/free-auto",bounded).validated()
   assertEquals(3,MobileCore.MAX_READ_STEPS)
  }
+ @Test fun validatesNewNativeToolContracts(){
+  assertEquals(0,MobileCore.validate("battery.status",JsonObject()).size())
+  val mail=JsonObject().apply{
+   addProperty("address","person@example.com")
+   addProperty("subject","회의")
+   addProperty("body","시간 확인")
+  }
+  assertEquals("person@example.com",MobileCore.validate("email.draft",mail)["address"].asString)
+  assertTrue(runCatching{
+   MobileCore.validate("email.draft",JsonObject().apply{addProperty("address","http://127.0.0.1")})
+  }.isFailure)
+ }
  @Test fun rejectsUnexpectedToolAndFields(){
   assertNull(MobileCore.action("""{"tool":"clock","args":{},"extra":1}"""))
   assertTrue(runCatching{MobileCore.validate("shell",JsonObject())}.isFailure)
