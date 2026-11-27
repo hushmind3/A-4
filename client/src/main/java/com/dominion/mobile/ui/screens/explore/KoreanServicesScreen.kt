@@ -17,6 +17,15 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dominion.mobile.data.KoreanService
 import com.dominion.mobile.data.KoreanServices
+import com.dominion.mobile.data.KoreanWorkflows
+import com.dominion.mobile.data.model.Repeat
+import android.content.Intent
+import android.net.Uri
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import java.time.Instant
 import com.dominion.mobile.data.model.AppState
 import com.dominion.mobile.platform.DeviceActions
 import com.dominion.mobile.ui.AppViewModel
@@ -25,11 +34,12 @@ import com.dominion.mobile.ui.theme.LocalDominionPalette
 
 @Composable
 fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
-    onOpenChat: (String) -> Unit, onTasks: () -> Unit, onAgenda: () -> Unit, onDeviceActions: () -> Unit) {
+    onOpenChat: (String) -> Unit, onTasks: () -> Unit, onAgenda: () -> Unit, onDeviceActions: () -> Unit, onEngineSettings: () -> Unit) {
     val p = LocalDominionPalette.current
     val context = LocalContext.current
     val connection by vm.connection.collectAsStateWithLifecycle()
     var selected by remember { mutableStateOf<KoreanService?>(null) }
+    var scheduleDraft by remember { mutableStateOf<ServiceScheduleDraft?>(null) }
     var query by remember { mutableStateOf("") }
     var skills by remember { mutableStateOf<List<com.dominion.mobile.data.remote.EngineSkillState>?>(null) }
     var skillError by remember { mutableStateOf(false) }
@@ -132,21 +142,58 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
             dismissButton = { TextButton(enabled = !skillBusy, onClick = { skillReview = null }) { Text("닫기") } })
     }
 
+    scheduleDraft?.let { draft ->
+        ServiceScheduleDialog(vm, draft, onDismiss = { scheduleDraft = null }, onSaved = {
+            scheduleDraft = null
+            context.toast("반복 AI 업무 예약을 저장했습니다.")
+        })
+    }
     selected?.let { service ->
         key(service.id) {
             var region by remember { mutableStateOf("") }
             var details by remember { mutableStateOf("") }
+            val workflows = remember(service.id) { KoreanWorkflows.forService(service.id) }
+            var workflow by remember { mutableStateOf(workflows.first()) }
+            var fields by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+            val ready = workflow.fields.all { !it.required || !fields[it.label].isNullOrBlank() } &&
+                (workflow.fields.isNotEmpty() || details.isNotBlank())
+            fun request(): String = service.request(region, KoreanWorkflows.compose(workflow, fields, details))
             var agent by remember { mutableStateOf(state.myCharacter()?.id ?: state.characters.firstOrNull()?.id.orEmpty()) }
             AppBottomSheet(onDismiss = { selected = null }) {
                 SheetTitle(service.title, "사용자가 선택한 내용만 본체에 전달")
                 Column(Modifier.fillMaxWidth().heightIn(max = 480.dp).verticalScroll(rememberScrollState()).padding(18.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     AppTextField(region, { region = it.take(100) }, label = "지역 (선택)", placeholder = "시·군·구")
-                    AppTextField(details, { details = it.take(3000) }, label = "무엇을 처리할까요?",
+                    Text("업무 유형", style = MaterialTheme.typography.titleSmall)
+                    workflows.forEach { option ->
+                        Row {
+                            RadioButton(selected = workflow.id == option.id, onClick = {
+                                workflow = option
+                                fields = emptyMap()
+                            })
+                            Text(option.title, modifier = Modifier.padding(top = 12.dp))
+                        }
+                    }
+                    workflow.fields.forEach { field ->
+                        AppTextField(fields[field.label].orEmpty(), { value ->
+                            fields = fields + (field.label to value.take(300))
+                        }, label = field.label + if (field.required) " (필수)" else " (선택)",
+                            placeholder = field.example)
+                    }
+                    AppTextField(details, { details = it.take(1200) }, label = "추가 요청",
                         placeholder = service.summary, singleLine = false, maxLines = 4)
+                    KoreanWorkflows.portals(service.id).forEach { portal ->
+                        OutlinedButton(onClick = {
+                            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(portal.url))) }
+                                .onFailure { context.toast("공식 사이트를 열 수 없습니다.") }
+                        }, modifier = Modifier.fillMaxWidth()) { Text(portal.label + " 열기") }
+                    }
                     Text("주민등록번호·인증번호·비밀번호는 입력하지 마세요.", style = MaterialTheme.typography.labelSmall)
                     if (service.skillNames.isNotEmpty()) {
                         Text("관련 도구: " + service.skillNames.joinToString(", "), style = MaterialTheme.typography.labelSmall)
+                        if (skills?.any { it.name in service.skillNames } == false) {
+                            TextButton(onClick = { selected = null; onEngineSettings() }) { Text("본체 스킬 가져오기·설정") }
+                        }
                         skills.orEmpty().filter { it.name in service.skillNames && !it.id.isNullOrBlank() }.forEach { item ->
                             TextButton(enabled = !skillBusy, onClick = { reviewSkill(requireNotNull(item.id)) }) {
                                 Text(item.name.orEmpty() + if (item.isActive()) " · 활성" else " · 원문 확인 및 설정")
@@ -170,11 +217,16 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
                             }) { Text("가까운 기관") }
                         }
                     }
-                    Button(enabled = details.isNotBlank() && agent.isNotBlank(),
+                    Button(enabled = ready && state.character(agent) != null,
                         onClick = {
-                            vm.createServiceTask(service.title, agent, service.request(region, details), service.steps, onOpenChat)
+                            vm.createServiceTask(service.title + " · " + workflow.title, agent, request(), service.steps, onOpenChat)
                             selected = null
                         }) { Text("실제 업무 접수") }
+                    if (workflow.repeatable) OutlinedButton(enabled = ready && state.character(agent) != null,
+                        onClick = {
+                            scheduleDraft = ServiceScheduleDraft(service.title + " · " + workflow.title, agent, request())
+                            selected = null
+                        }) { Text("정기 조사 예약") }
                     Text("접수 실패 시 할 일 메뉴에서 동일 업무를 재확인할 수 있습니다.",
                         style = MaterialTheme.typography.labelSmall, color = p.textSecondary)
                 }

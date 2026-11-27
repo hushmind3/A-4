@@ -14,7 +14,8 @@ data class KoreanService(
         ExploreCategory.KOREA, 0xFF3FB6A8, steps, instruction)
 
     fun request(region: String, details: String): String = buildString {
-        append("대한민국 생활·행정 업무: ").append(title).append("\n공식 출발점: ").append(url)
+        append("대한민국 생활·행정 업무: ").append(title).append("\n조회 출발점: ").append(url)
+        KoreanWorkflows.portals(id).forEach { append("\n공식 참고: ").append(it.label).append(" ").append(it.url) }
         if (region.isNotBlank()) append("\n사용자가 입력한 지역: ").append(region.trim().take(100))
         append("\n사용자 요청: ").append(details.trim().take(3000))
         append("\n수행 범위: ").append(instruction)

@@ -157,7 +157,8 @@ fun DominionAppRoot(vm: AppViewModel) {
                     onBack = { nav.popBackStack() }, onOpenChat = { nav.navigate(Routes.chat(it)) },
                     onTasks = { nav.navigate(Routes.TASKS) },
                     onAgenda = { nav.navigate(Routes.DEVICE_AGENDA) },
-                    onDeviceActions = { nav.navigate(Routes.DEVICE_ACTIONS) })
+                    onDeviceActions = { nav.navigate(Routes.DEVICE_ACTIONS) },
+                    onEngineSettings = { nav.navigate(Routes.ENGINE_SETTINGS) })
             }
             composable(Routes.MAIN) {
                 MainScreen(state = state, vm = vm, onNavigate = { nav.navigate(it) })
