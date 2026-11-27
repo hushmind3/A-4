@@ -56,6 +56,10 @@ class MobileCoreTest{
   assertEquals("paused",MobileCore.terminalStatus(false,false,listOf("completed","failed")))
   assertEquals("completed",MobileCore.terminalStatus(false,false,listOf("failed","completed")))
   assertEquals("needs_review",MobileCore.terminalStatus(true,false,listOf("completed")))
+  assertEquals("paused",MobileCore.terminalStatus(false,false,emptyList(),requiresExecution=true))
+  assertEquals("completed",MobileCore.terminalStatus(false,false,emptyList()))
+  assertEquals("completed",MobileCore.terminalStatus(false,false,listOf("completed"),requiresExecution=true))
+  assertEquals("needs_review",MobileCore.terminalStatus(true,false,emptyList(),requiresExecution=true))
   assertTrue(MobileCore.toolLike("""{"tool":"clock","args":{},"extra":1}"""))
  }
  @Test fun validatesActualFutureSchedule(){

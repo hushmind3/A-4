@@ -243,7 +243,7 @@ class RemoteBackedRepository(
                 }.joinToString(", ")
             }
         val result=cloud.completeForMobile(state.value.settings.mobileModel?:"dominion/free-auto",
-            listOf(CloudChatMessage("system",system),CloudChatMessage("user",request)),1200)
+            listOf(CloudChatMessage("system",system),CloudChatMessage("user",request)),1024)
         check(cloud.savedAccountId()==account)
         return com.dominion.mobile.data.ErrandWorkflowDraft.parse(goal.trim(),result.content,
             agents.map{it.id}.toSet(),apps.map{it.packageName}.toSet())
@@ -510,7 +510,7 @@ class RemoteBackedRepository(
             val action=com.dominion.mobile.data.harness.MobileActionRecord(actionId,room.id,context.sessionId,
                 owner.id,task.characterId,"phone.navigate",args,
                 com.dominion.mobile.data.harness.MobileCore.digest(context.initialMessageId+"\n"+context.app),
-                if(status=="running")"launching" else if(status=="paused")"completed" else status,detail.take(3000))
+                if(status=="running")"launching" else status,detail.take(3000))
             update{st->
                 check(st.conversation(room.id)?.sessionId==context.sessionId)
                 val record=Message("phone-receipt:"+owner.id,room.id,MessageSender.ASSISTANT,detail.take(3000),
