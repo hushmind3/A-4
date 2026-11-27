@@ -533,10 +533,10 @@ class AppViewModel(
         repo.changeEngineSkill(review, enabled)
 
     fun createPrivateErrand(title:String,characterId:String,request:String,pkg:String,onAccepted:(String)->Unit,
-        kakaoMessage:com.dominion.mobile.data.KakaoMessageRequest?=null){
+        kakaoMessage:com.dominion.mobile.data.KakaoMessageRequest?=null,publicRead:Boolean=false){
         viewModelScope.launch {
             try{
-                val room=repo.createPhoneErrand(title,characterId,request,pkg,kakaoMessage)
+                val room=repo.createPhoneErrand(title,characterId,request,pkg,kakaoMessage,publicRead)
                 onAccepted(room)
             }catch(e:CancellationException){throw e}
             catch(_:Exception){_notice.value="설치 앱·비서·업무 요청을 확인해 주세요."}

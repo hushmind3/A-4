@@ -732,9 +732,10 @@ fun ChatRoomScreen(
             replanContext=conversation.sessionId?.takeIf{it.isNotBlank()}?.let{ session ->
                 conversation.messages.firstOrNull{it.id==message.replyTo &&
                     it.sender==com.dominion.mobile.data.model.MessageSender.USER && it.text.isNotBlank()}?.let{ owner ->
+                    val task=state.tasks.firstOrNull{it.engineRoomId==conversationId&&it.engineMessageId==owner.id&&
+                        it.phonePackage==plan.app}
                     com.dominion.mobile.data.PhoneReplanContext(conversationId,session,plan.app,message.id,owner.text.take(4000),
-                        state.tasks.firstOrNull{it.engineRoomId==conversationId&&it.engineMessageId==owner.id&&
-                            it.phonePackage==plan.app}?.kakaoMessage)
+                        task?.kakaoMessage,task?.phonePublicRead==true)
                 }
             },
             onDismiss = { phonePlanMessage = null },

@@ -161,7 +161,8 @@ data class TaskItem(
     val watchCondition: String? = null,
     val koreanLookup: com.dominion.mobile.platform.network.KoreanLookup? = null,
     val phonePackage: String? = null,
-    val kakaoMessage: com.dominion.mobile.data.KakaoMessageRequest? = null
+    val kakaoMessage: com.dominion.mobile.data.KakaoMessageRequest? = null,
+    val phonePublicRead:Boolean=false
 ) {
     val progress: Float
         get() = if (steps.isEmpty()) (if (done) 1f else 0f)

@@ -142,6 +142,9 @@ class PhoneNavigationService : AccessibilityService() {
             var recorded=false
             var endStatus="paused"
             var sendAttempted=false
+            var resultVerified=false
+            var approvedResults=emptyList<String>()
+            var feedback=""
             val verified=mutableListOf<String>()
             try {
                 if(replan!=null)recorded=initialRepo.recordPhoneErrand(replan,"running","기기 업무 실행 시작 · "+plan.app)
@@ -171,11 +174,33 @@ class PhoneNavigationService : AccessibilityService() {
                     var activePlan=plan
                     while(true) {
                     validRoom()
+                    if(replan?.publicRead==true)check(com.dominion.mobile.data.PhonePublicResult.permits(activePlan,replan.initialRequest))
                     var nextFrame:VisualFrame?=null
                     var needsSemanticReplan=false
                     var localCompleted=0
                     for (step in activePlan.steps) {
                         validRoom()
+                        if(step.action=="report_result"){
+                            check(recorded&&replan?.publicRead==true&&step.label in approvedResults)
+                            validRoom()
+                            val root=requireNotNull(rootInActiveWindow)
+                            try{
+                                check(root.packageName?.toString()==plan.app)
+                                check(apply(root,plan.app,PhoneNavigationStep("inspect","화면")))
+                            }finally{root.recycle()}
+                            val fresh=_observed.value?.takeIf{it.packageName==plan.app}?.results.orEmpty()
+                            if(step.label !in fresh){
+                                feedback="Previously observed result changed; use fresh screen evidence."
+                                needsSemanticReplan=true
+                                break
+                            }
+                            verified.add("검증한 결과: "+step.label)
+                            verified.addAll(approvedResults.filter{it in fresh}.distinct().take(20))
+                            resultVerified=true
+                            completed++;endStatus="completed"
+                            _status.value="공개 검색 결과 확인 · 실제 화면 근거 저장"
+                            break
+                        }
                         if(step.action=="send_message"){
                             val intent=requireNotNull(replan?.kakaoMessage){"No explicit message payload"}
                             check(recorded&&plan.app=="com.kakao.talk"&&!sendAttempted)
@@ -265,6 +290,7 @@ class PhoneNavigationService : AccessibilityService() {
                             if (!success) delay(180)
                         }
                         if(!success && replan!=null) {
+                            feedback="Failed "+step.action+" on "+step.label+"; inspect and choose a different observed control."
                             // A failed target is not success: require a fresh observation.
                             if(engine==null){
                                 approveStep(PhoneNavigationStep("inspect","실패한 앱 화면 조작 요소 관찰"),
@@ -288,7 +314,7 @@ class PhoneNavigationService : AccessibilityService() {
                             needsSemanticReplan=true
                         delay(500)
                     }
-                    if(sendAttempted)break
+                    if(sendAttempted||resultVerified)break
                     val frame=nextFrame
                     val mobileReplan=engine==null && replan!=null &&
                         (needsSemanticReplan || frame!=null || activePlan.steps.last().action=="inspect" ||
@@ -307,20 +333,24 @@ class PhoneNavigationService : AccessibilityService() {
                     val evidence:String
                     if(mobileReplan){
                         approveStep(PhoneNavigationStep("inspect",
-                            "현재 앱의 조작 버튼 문구만 클라우드 AI에 전달하고 재계획"),plan.app,1,1)
+                            if(replan.publicRead)"현재 공개 검색 결과와 버튼 문구를 AI에 전달 (개인 화면이면 중지)"
+                            else "현재 앱의 조작 버튼 문구만 클라우드 AI에 전달하고 재계획"),plan.app,1,1)
                         validRoom()
                         val view=requireNotNull(rootInActiveWindow)
                         try{check(view.packageName?.toString()==plan.app)
                             apply(view,plan.app,PhoneNavigationStep("inspect","화면"))
                         }finally{view.recycle()}
-                        val controls=_observed.value?.takeIf{it.packageName==plan.app}?.labels.orEmpty()
-                        if(controls.isEmpty()){
+                        val observation=_observed.value?.takeIf{it.packageName==plan.app}
+                        val controls=observation?.labels.orEmpty()
+                        approvedResults=if(replan.publicRead)observation?.results.orEmpty() else emptyList()
+                        if(controls.isEmpty()&&approvedResults.isEmpty()){
                             _status.value="읽을 수 있는 조작 버튼 없음 · 실행 "+completed+"단계"
                             break
                         }
-                        evidence=VisualGesture.digest(controls.joinToString("\n").toByteArray())
+                        evidence=VisualGesture.digest((controls+approvedResults).joinToString("\n").toByteArray())
                         _status.value="모바일 클라우드에서 다음 조작 판단 중"
-                        proposal=repo.replanPhoneControls(replan,controls)
+                        proposal=repo.replanPhoneControls(replan,controls,approvedResults,feedback)
+                        feedback=""
                     }else{
                         val shot=requireNotNull(frame)
                         approveStep(PhoneNavigationStep("visual_inspect",
@@ -359,7 +389,8 @@ class PhoneNavigationService : AccessibilityService() {
                 if(recorded&&replan!=null)withContext(NonCancellable){
                     val detail="실제 앱: "+plan.app+"\n"+_status.value+
                         "\n확인한 화면 문구: "+verified.distinct().joinToString(", ").ifBlank{"없음"}+
-                        (if(endStatus=="completed")"\n기기 화면에서 새 메시지를 확인했습니다. 서버 수신·읽음은 확인하지 않았습니다."
+                        (if(resultVerified)"\n실제 화면에 있는 조회 결과만 기록했습니다. 거래·예약·결제는 수행하지 않았습니다."
+                         else if(endStatus=="completed")"\n기기 화면에서 새 메시지를 확인했습니다. 서버 수신·읽음은 확인하지 않았습니다."
                          else "\n최종 외부 결과는 확인되지 않았습니다. 발송을 시도했다면 재발송 전에 직접 확인하세요.")
                     try{initialRepo.recordPhoneErrand(replan,endStatus,detail)}
                     catch(_:Exception){_status.value+=" · 업무 기록 저장 실패"}
@@ -547,8 +578,16 @@ class PhoneNavigationService : AccessibilityService() {
                 val title=if(intent!=null&&nodes.any{it.packageName?.toString()==pkg&&it.isVisibleToUser&&!it.isEditable&&
                     listOf(it.text?.toString(),it.contentDescription?.toString()).contains(intent.recipient)})listOf(intent.recipient)else emptyList()
                 val observed=(title+controls).distinct().take(24)
-                _observed.value = ObservedControls(pkg, observed)
-                return observed.isNotEmpty()
+                val publicRead=activeErrand?.publicRead==true&&pkg in com.dominion.mobile.data.PhonePublicResult.packages
+                val results=if(publicRead){
+                    val raw=nodes.filter{it.packageName?.toString()==pkg&&it.isVisibleToUser&&!it.isPassword&&!it.isEditable}
+                        .mapNotNull{it.text?.toString()?.trim()}.filter{it.isNotBlank()}
+                    check(!com.dominion.mobile.data.PhonePublicResult.sensitive(raw)){"개인정보가 포함될 수 있는 화면"}
+                    raw.mapNotNull(com.dominion.mobile.data.PhonePublicResult::text)
+                        .filter{it !in observed}.distinct().take(30)
+                }else emptyList()
+                _observed.value = ObservedControls(pkg, observed,results)
+                return observed.isNotEmpty()||results.isNotEmpty()
             }
             val scrollAction = when (step.action) {
                 "scroll_forward" -> AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
@@ -587,7 +626,7 @@ class PhoneNavigationService : AccessibilityService() {
             while(queue.isNotEmpty()) queue.removeFirst().recycle()
         }
     }
-    data class ObservedControls(val packageName: String, val labels: List<String>)
+    data class ObservedControls(val packageName: String, val labels: List<String>,val results:List<String> = emptyList())
 
     data class VisualFrame(val packageName: String, val windowId: Int, val bounds: Rect,
         val png: ByteArray, val digest: String)

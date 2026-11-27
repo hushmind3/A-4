@@ -94,6 +94,9 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
             var appQuery by remember{mutableStateOf("")}
             var details by remember{mutableStateOf("")}
             var sendMessage by remember{mutableStateOf(false)}
+            var publicRead by remember{mutableStateOf(false)}
+            val canPublicRead=errand.id in setOf("search","shopping","delivery","transport","used")&&
+                selectedApp?.packageName in com.dominion.mobile.data.PhonePublicResult.packages
             var recipient by remember{mutableStateOf("")}
             var messageBody by remember{mutableStateOf("")}
             val isKakao=errand.id=="messenger"&&selectedApp?.packageName=="com.kakao.talk"
@@ -116,6 +119,10 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
                     }
                     if(preferred.isEmpty())Text("추천 앱을 자동 확인하지 못했습니다. 설치된 공식 앱을 직접 선택하세요.")
                     selectedApp?.let{Text("실행 대상: "+it.label+" ("+it.packageName+")")}
+                    if(canPublicRead){
+                        Row{Checkbox(publicRead,{publicRead=it});Text("공개 검색 결과 수집 및 완료",Modifier.padding(top=12.dp))}
+                        if(publicRead)Text("상품·가격·업체 등 화면의 공개 결과를 확인 후 기록합니다. 주문·예약·로그인은 실행하지 않습니다.")
+                    }
                     if(isKakao){
                         Row{Checkbox(sendMessage,{sendMessage=it});Text("직접 지정한 메시지 발송",Modifier.padding(top=12.dp))}
                     }
@@ -136,7 +143,7 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
                         val request=if(payload!=null)"카카오톡 대화방 이름: "+payload.recipient+
                             "\n지정한 대화방을 찾아 사용자 입력 메시지를 별도 승인 후 발송합니다. 메시지 본문은 기기에만 저장되어 있습니다."
                             else com.dominion.mobile.data.KoreanErrands.request(errand.id,app.packageName,app.label,details)
-                        vm.createPrivateErrand(errand.title,agent,request,app.packageName,onOpenChat,payload)
+                        vm.createPrivateErrand(errand.title,agent,request,app.packageName,onOpenChat,payload,canPublicRead&&publicRead)
                         privateErrand=null
                     }){Text("업무 등록 및 실행 검토")}
                 }

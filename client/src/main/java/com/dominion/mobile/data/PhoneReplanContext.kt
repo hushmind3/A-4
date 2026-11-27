@@ -9,12 +9,45 @@ data class KakaoMessageRequest(val recipient:String,val body:String){
     }
 }
 
+/** Public lookup is deliberately separate from reservation, payment and messaging.
+ * Only selected public-search apps may return non-editable visible result text. */
+object PhonePublicResult {
+    val packages=setOf("com.nhn.android.search","com.nhn.android.nmap","net.daum.android.map",
+        "com.coupang.mobile","com.sampleapp","com.fineapp.yogiyo","com.coupang.mobile.eats",
+        "com.skt.tmap.ku","com.towneers.www")
+    private val sensitiveScreen=listOf("비밀번호","인증번호","주민등록번호","계좌번호","카드번호",
+        "결제수단","배송지 관리","주문내역","주문 내역","채팅방","내 계정","개인정보",
+        "password","verification code","credit card","my account")
+    private val transaction=listOf("결제","구매","송금","삭제","발송","전송","로그인","인증","제출","가입",
+        "주문하기","주문 확정","주문하기","예약하기","예약 확정","호출하기","호출 확정","장바구니",
+        "checkout","purchase","book now","confirm","send","buy","pay","order now","login")
+    fun sensitive(labels:List<String>):Boolean=labels.any{label->sensitiveScreen.any{label.contains(it,true)}}
+    fun safeLabel(label:String):Boolean=transaction.none{label.contains(it,true)}
+    fun text(value:String):String? {
+        val clean=value.trim()
+        if(clean.length !in 2..100||clean.any(Char::isISOControl)||sensitive(listOf(clean)))return null
+        if(clean.contains('@')||Regex("[0-9][0-9 .-]{6,}[0-9]").containsMatchIn(clean))return null
+        return clean
+    }
+    fun permits(plan:PhoneNavigationPlan,request:String):Boolean =
+        plan.app in packages&&plan.version==2&&PhoneNavigationPlan.valid(plan)&&plan.steps.all{step->
+            when(step.action){
+                "inspect","expect","report_result","scroll_forward","scroll_backward"->true
+                "click"->safeLabel(step.label)
+                "search_text"->safeLabel(step.label)&&step.value?.let{request.contains(it)&&text(it)!=null}==true
+                else->false
+            }
+        }
+}
+
 /** Bound one user-approved device task to one existing DOMINION room. */
 data class PhoneReplanContext(val roomId:String,val sessionId:String,val app:String,
-    val initialMessageId:String,val initialRequest:String,val kakaoMessage:KakaoMessageRequest?=null) {
+    val initialMessageId:String,val initialRequest:String,val kakaoMessage:KakaoMessageRequest?=null,
+    val publicRead:Boolean=false) {
     init { require(roomId.isNotBlank() && sessionId.isNotBlank() && PhoneNavigationPlan.eligiblePackage(app) &&
         initialMessageId.isNotBlank() && initialRequest.isNotBlank() && initialRequest.length<=4000)
         if(kakaoMessage!=null){require(app=="com.kakao.talk");kakaoMessage.checked()}
+        if(publicRead)require(kakaoMessage==null&&app in PhonePublicResult.packages)
     }
 
 }

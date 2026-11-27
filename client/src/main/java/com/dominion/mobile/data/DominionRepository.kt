@@ -18,7 +18,7 @@ interface DominionRepository {
         error("Execution server not connected")
     /** Approved semantic controls on the handset. This path never requires a PC or screenshot. */
     suspend fun replanPhoneControls(context:com.dominion.mobile.data.PhoneReplanContext,
-        controls:List<String>):com.dominion.mobile.data.PhoneNavigationPlan? =
+        controls:List<String>,results:List<String> = emptyList(),feedback:String = ""):com.dominion.mobile.data.PhoneNavigationPlan? =
         error("Phone controls replanning unavailable")
     suspend fun replanPhoneNavigation(context:com.dominion.mobile.data.PhoneReplanContext,
         digest:String,png:ByteArray,width:Int,height:Int):com.dominion.mobile.data.PhoneNavigationPlan? =
@@ -118,7 +118,7 @@ interface DominionRepository {
     suspend fun inspectEngineSkill(id: String): com.dominion.mobile.data.remote.SkillReview = error("Engine not connected")
     suspend fun changeEngineSkill(review: com.dominion.mobile.data.remote.SkillReview, enabled: Boolean): Unit = error("Engine not connected")
     suspend fun createPhoneErrand(title:String,characterId:String,request:String,pkg:String,
-        kakaoMessage:KakaoMessageRequest?=null):String =
+        kakaoMessage:KakaoMessageRequest?=null,publicRead:Boolean=false):String =
         error("Native phone errand unavailable")
     suspend fun recordPhoneErrand(context:PhoneReplanContext,status:String,detail:String):Boolean = false
     suspend fun submitTask(id: String): Unit = error("Engine not connected")
