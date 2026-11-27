@@ -1,5 +1,9 @@
 package com.dominion.mobile.ui.components
 
+import android.content.Intent
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -7,7 +11,10 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.dominion.mobile.data.TaskExport
 import com.dominion.mobile.data.remote.TaskReceipt
 import com.dominion.mobile.ui.AppViewModel
 import kotlinx.coroutines.CancellationException
@@ -16,6 +23,25 @@ import com.dominion.mobile.data.remote.TaskEvidence
 
 @Composable
 fun TaskReceiptDialog(vm: AppViewModel, id: String, onDismiss: () -> Unit) {
+    val context=LocalContext.current
+    val appState by vm.state.collectAsStateWithLifecycle()
+    val taskTitle=appState.tasks.firstOrNull{it.id==id}?.title?.takeIf{it.isNotBlank()} ?: "DOMINION 작업"
+    var exportText by remember(id) { mutableStateOf<String?>(null) }
+    var exportName by remember(id) { mutableStateOf(TaskExport.filename(taskTitle)) }
+    val saveDocument=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")){uri->
+        val text=exportText
+        if(uri!=null&&text!=null){
+            try{
+                context.contentResolver.openOutputStream(uri)?.use{out->
+                    out.write(text.toByteArray(Charsets.UTF_8))
+                } ?: error("파일을 열 수 없습니다")
+                Toast.makeText(context,"작업 결과를 저장했습니다.",Toast.LENGTH_SHORT).show()
+            }catch(_:Exception){
+                Toast.makeText(context,"파일 저장에 실패했습니다.",Toast.LENGTH_LONG).show()
+            }
+        }
+        exportText=null
+    }
     var receipt by remember(id) { mutableStateOf<TaskReceipt?>(null) }
     var failed by remember(id) { mutableStateOf(false) }
     var refreshing by remember(id) { mutableStateOf(true) }
@@ -75,6 +101,29 @@ fun TaskReceiptDialog(vm: AppViewModel, id: String, onDismiss: () -> Unit) {
                                 finally { evidenceBusy = false }
                             }
                         }) { Text("실제 도구 실행 기록 보기") }
+                    }
+                    if(record.outputs.isNotEmpty()){
+                        Row(horizontalArrangement=Arrangement.spacedBy(4.dp)){
+                            TextButton(onClick={
+                                exportName=TaskExport.filename(taskTitle)
+                                exportText=TaskExport.document(taskTitle,record)
+                                saveDocument.launch(exportName)
+                            }){Text("결과 파일로 저장")}
+                            TextButton(onClick={
+                                val text=TaskExport.document(taskTitle,record)
+                                runCatching{
+                                    context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply{
+                                        type="text/plain"
+                                        putExtra(Intent.EXTRA_SUBJECT,taskTitle)
+                                        putExtra(Intent.EXTRA_TEXT,text)
+                                    },"메신저·앱으로 공유"))
+                                }.onFailure{
+                                    Toast.makeText(context,"공유할 앱을 열 수 없습니다.",Toast.LENGTH_LONG).show()
+                                }
+                            }){Text("메신저·앱으로 공유")}
+                        }
+                        Text("공유는 사용자가 선택한 앱에서 직접 전송합니다. DOMINION이 자동 전송하지 않습니다.",
+                            style=MaterialTheme.typography.bodySmall)
                     }
                     if(cloudJob) {
                         val calls=record.cloudEvidence

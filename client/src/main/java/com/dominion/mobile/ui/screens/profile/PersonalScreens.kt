@@ -263,6 +263,7 @@ fun TasksScreen(
 ) {
     val p = LocalDominionPalette.current
     val lang = LocalLang.current
+    val context = androidx.compose.ui.platform.LocalContext.current
     var filter by remember { mutableIntStateOf(0) }
     var showAdd by remember { mutableStateOf(false) }
     var showWorkflow by remember { mutableStateOf(false) }
@@ -271,6 +272,7 @@ fun TasksScreen(
     val busyTasks by vm.taskBusy.collectAsStateWithLifecycle()
     var receiptTarget by remember { mutableStateOf<String?>(null) }
     var followupTarget by remember { mutableStateOf<String?>(null) }
+    var followupScheduleTarget by remember { mutableStateOf<String?>(null) }
     val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     LaunchedEffect(owner, vm) {
         owner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
@@ -317,6 +319,7 @@ fun TasksScreen(
                     onOpenChat = { task.engineRoomId?.let(onOpenChat) },
                     onReceipt = { receiptTarget = task.id },
                     onFollowup = { followupTarget=task.id },
+                    onFollowupSchedule = { followupScheduleTarget=task.id },
                     onPauseWorkflow = { task.workflowId?.let{vm.pauseTaskWorkflow(it,!task.workflowPaused)} },
                     busy = task.id in busyTasks
                 )
@@ -362,6 +365,20 @@ fun TasksScreen(
         val task=state.tasks.firstOrNull{it.id==id}
         if(task!=null&&task.replyCandidate!=null&&task.replyCandidateAt!=null&&task.kakaoMessage!=null){
             ErrandFollowupDialog(task,vm,onDismiss={followupTarget=null},onOpenChat=onOpenChat)
+        }
+    }
+    followupScheduleTarget?.let{id->
+        val task=state.tasks.firstOrNull{it.id==id}
+        val request=task?.let{it.enginePrompt ?: it.requestDetails}?.takeIf{it.isNotBlank()}
+        if(task!=null&&request!=null){
+            com.dominion.mobile.ui.screens.explore.ServiceScheduleDialog(vm,
+                draft=com.dominion.mobile.ui.screens.explore.ServiceScheduleDraft(
+                    task.title+" · 정기 확인",task.characterId,request.take(2900)),
+                onDismiss={followupScheduleTarget=null},
+                onSaved={followupScheduleTarget=null;
+                    android.widget.Toast.makeText(context,
+                        "정기 확인 예약을 저장했습니다.",android.widget.Toast.LENGTH_SHORT).show()},
+                watchCondition="이전 결과와 비교해 새 공지·기한·금액·처리 상태가 확인되면 알려줘")
         }
     }
     receiptTarget?.let { id ->
@@ -518,6 +535,7 @@ private fun TaskCard(
     onOpenChat: () -> Unit,
     onReceipt: () -> Unit,
     onFollowup:()->Unit,
+    onFollowupSchedule:()->Unit,
     onPauseWorkflow:()->Unit,
     busy: Boolean
 ) {
@@ -604,6 +622,11 @@ private fun TaskCard(
         }
         if (task.engineJobId != null) TextButton(onClick = onReceipt) {
             Text(tr(lang, "실제 실행 결과·근거", "Execution result and evidence"))
+        }
+        if(task.phonePackage==null&&(!task.enginePrompt.isNullOrBlank()||!task.requestDetails.isNullOrBlank())){
+            TextButton(enabled=!busy,onClick=onFollowupSchedule){
+                Text(tr(lang,"정기 확인 예약","Schedule follow-up"))
+            }
         }
         if (task.steps.isNotEmpty()) {
             Spacer(Modifier.height(10.dp))

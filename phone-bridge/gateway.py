@@ -33,6 +33,13 @@ def public(row):
     if not row: raise HTTPException(404,"call_not_found")
     return {k:row[k] for k in ("id","status","created","updated","answered","consent","summary","evidence","reason")}
 
+@app.get("/v1/health", dependencies=[Depends(auth)])
+async def health():
+    # Authenticated configuration check only. Never reveals numbers, goals or
+    # call records and never dispatches a billable outbound call.
+    return {"status":"ok","approved_numbers":len(ALLOWED)}
+
+
 @app.get("/v1/calls/{call_id}", dependencies=[Depends(auth)])
 async def status(call_id:uuid.UUID):
     return public(journal.get(str(call_id)))

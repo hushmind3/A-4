@@ -755,6 +755,7 @@ class RemoteBackedRepository(
                         engineStatus=result.status
                     )
                     saveCloudReceipt(linked,cloudEngineJob(linked,result))
+                    if(result.status in setOf("queued","running"))fastWatchCloudJobs()
                     if(result.status=="done"&&result.result==null)verifyTask(linked)
                     return@withLock
                 }
@@ -866,6 +867,7 @@ class RemoteBackedRepository(
             val linked=task.copy(engineJobId="cloud:"+result.id,engineSessionId=clientId,engineMessageId=clientId,
                 engineStatus=result.status)
             saveCloudReceipt(linked,cloudEngineJob(linked,result))
+            if(result.status in setOf("queued","running"))fastWatchCloudJobs()
             if(result.status=="done"&&result.result==null)verifyTask(linked)
         }
     }
@@ -899,6 +901,14 @@ class RemoteBackedRepository(
                     else st.conversations.map{if(it.id==room.id)room else it})
         }
         store.saveStateNow(state.value)
+    }
+
+    /** Keep the phone-side status current while the app is backgrounded without
+     * adding FCM keys or a local server. The bounded worker chain only reads. */
+    private fun fastWatchCloudJobs(){
+        val context=mobileContext?:return
+        val account=mobileCloud?.savedAccountId()?:return
+        com.dominion.mobile.platform.background.CloudJobMonitor.scheduleNext(context,account,0,0L)
     }
 
     private suspend fun taskJob(task:com.dominion.mobile.data.model.TaskItem):EngineJob=

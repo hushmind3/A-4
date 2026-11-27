@@ -21,9 +21,11 @@ Implemented in the cloud-relay source overlay: account-scoped speech endpoints, 
 
 **Deployed to the existing production Cloudflare Worker (2026-11-27):** live Worker version 61dbc468-2b36-4d9a-bb3e-cd4370160bf6, built from ef1c2a5fc3f315bf1e4057d991ef666e6c8af221. D1 migration 0004, the server-held job encryption secret and dedicated one-minute recovery trigger are configured. Existing login, model and relay bindings were retained. Korean TTS provider configuration and actual signed-account end-to-end verification remain outstanding. See [deployment record](cloud-relay/README.md).
 
-**Not yet finished:** realtime full-duplex speech and interruption, general browser/account automation, full external service OAuth permission delegation, user-key-controlled encrypted cloud memory, robust cloud push to Android, and verified live service operation.
+**Not yet finished:** true streaming full-duplex speech, general authenticated browser/account automation, full external service OAuth permission delegation, user-key-controlled encrypted cloud memory, provider push (FCM) to Android, and verified live service operation.
 
-Android speech is currently turn-based: record, Cloud STT, assistant task processing, Cloud TTS, play. The app does not bundle large speech models. Korean Cloud TTS needs a configured Korean-capable provider; do not report that it works before a deployed round-trip test.
+Android speech is turn-based: record, Cloud STT, assistant task processing, Cloud TTS, play. When Korean Cloud TTS is not configured, the client now falls back to the device's installed `TextToSpeech` engine and labels that mode explicitly; no speech model is bundled. On devices with platform echo cancellation, an explicit "자동 끼어들기" option listens during cloud or device playback and submits only the captured interrupting speech through the existing Cloud STT path. This is concurrent listen/playback with turn-based inference, not full-duplex streaming; real-device AEC, Korean device TTS and live account round-trips still need verification.
+
+Background cloud work now has a bounded one-minute fast-watch chain (at most 20 checks) after submission, while the existing 15-minute periodic worker remains the fallback. Notifications open the exact task conversation only after the same signed-in cloud account hash is verified. This reduces, but does not replace, server push/FCM. Phone-bridge setup now has an authenticated `/v1/health` check before any billable call. Completed task results can be saved as UTF-8 text or shared to a user-selected messenger/app; arbitrary task requests can be scheduled as evidence-gated follow-up checks.
 
 ## Credential protection
 

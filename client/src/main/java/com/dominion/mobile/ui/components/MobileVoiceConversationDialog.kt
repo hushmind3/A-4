@@ -15,8 +15,12 @@ import com.dominion.mobile.DominionApplication
 import com.dominion.mobile.data.model.Lang
 import com.dominion.mobile.data.model.MessageSender
 import com.dominion.mobile.data.model.MessageStatus
+import com.dominion.mobile.platform.audio.DeviceSpeech
+import com.dominion.mobile.platform.audio.DeviceSpeechAvailability
 import com.dominion.mobile.platform.audio.EngineVoiceAudio
 import com.dominion.mobile.platform.audio.CloudVoicePlayback
+import com.dominion.mobile.platform.audio.VoiceDelivery
+import com.dominion.mobile.platform.audio.VoiceTtsMode
 import com.dominion.mobile.ui.AppViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -49,9 +53,16 @@ fun MobileVoiceConversationDialog(vm:AppViewModel,roomId:String,onDismiss:()->Un
     var continuous by remember(roomId){mutableStateOf(false)}
     var nextTurn by remember(roomId){mutableIntStateOf(0)}
     var originalAccount by remember(roomId){mutableStateOf(cloud.savedAccountId())}
+    var deviceSpeech by remember{mutableStateOf<DeviceSpeechAvailability?>(null)}
+    var bargeIn by remember(roomId){mutableStateOf(false)}
+    val bargeAvailable=remember{EngineVoiceAudio.supportsBargeIn()}
     fun sessionValid()=vm.state.value.conversation(roomId)?.sessionId==originalSession &&
         !originalSession.isNullOrBlank() && originalAccount!=null && cloud.savedAccountId()==originalAccount
     var voiceCapabilities by remember{mutableStateOf<com.dominion.mobile.data.remote.CloudVoiceCapabilities?>(null)}
+    val hostedTts=voiceCapabilities?.let{if(language=="ko")it.tts_ko else it.tts_en}==true
+    val deviceTtsForLanguage=if(language=="ko")deviceSpeech?.korean==true else deviceSpeech?.english==true
+    val ttsMode=VoiceDelivery.choose(hostedTts,deviceTtsForLanguage)
+    val canBargeIn=bargeAvailable&&voiceCapabilities?.stt==true
 
     fun record(){
         if(recording||waiting!=null||!sessionValid())return
@@ -95,6 +106,10 @@ fun MobileVoiceConversationDialog(vm:AppViewModel,roomId:String,onDismiss:()->Un
         }catch(cancelled:CancellationException){throw cancelled}
         catch(_:Exception){phase="클라우드 연결을 확인해 주세요";checked=true}
     }
+    LaunchedEffect(Unit){
+        deviceSpeech=runCatching{DeviceSpeech.availability(context)}.getOrNull()
+        if(bargeAvailable)phase="마이크를 눌러 클라우드 음성 대화를 시작하세요 · 자동 끼어들기 사용 가능"
+    }
     // Auto-listen only after a successful response and explicit user opt-in.
     // Do not keep the microphone open while a job awaits approval or fails.
     LaunchedEffect(nextTurn){
@@ -103,6 +118,11 @@ fun MobileVoiceConversationDialog(vm:AppViewModel,roomId:String,onDismiss:()->Un
     }
     LaunchedEffect(room?.sessionId, state.settings.lang, checked, cloud.savedAccountId()){
         if(!checked)return@LaunchedEffect
+        if(originalAccount==null){
+            continuous=false
+            phase="DOMINION Cloud 계정을 연결하면 음성 인식을 사용할 수 있습니다"
+            return@LaunchedEffect
+        }
         if(!sessionValid()||(if(state.settings.lang==Lang.KO)"ko" else "en")!=language){
             continuous=false;stopRecording.set(true);recordingJob?.cancel();speakingJob?.cancel();waiting=null
             phase="대화방 또는 계정 변경으로 음성 대화 중지"
@@ -125,28 +145,84 @@ fun MobileVoiceConversationDialog(vm:AppViewModel,roomId:String,onDismiss:()->Un
             if(owner?.jobStatus=="needs_review"){
                 continuous=false
                 phase="도구 실행 승인 필요 · 대화방에서 검토해 주세요"
-            }else if(voiceCapabilities?.let{if(language=="ko")it.tts_ko else it.tts_en}!=true){
+            }else if(ttsMode==VoiceTtsMode.NONE){
                 continuous=false
-                phase="텍스트 답변 완료 · 클라우드 음성 합성을 설정하면 음성 재생됩니다"
+                phase="텍스트 답변 완료 · 이 기기에서 사용할 수 있는 음성 출력이 없습니다"
             }else{
                 speakingJob?.cancel()
                 speakingJob=scope.launch{
+                    var device:DeviceSpeech.Session?=null
                     try{
-                        phase="클라우드에서 답변 음성을 생성 중"
+                        var mode=ttsMode
+                        if(mode==VoiceTtsMode.DEVICE){
+                            device=DeviceSpeech.open(context,language)
+                                ?: error("기기 음성 엔진을 시작하지 못했습니다")
+                        }
+                        phase=if(mode==VoiceTtsMode.CLOUD)"클라우드에서 답변 음성을 생성 중"
+                            else "기기 음성으로 답변을 준비 중"
+                        var interrupted=false
                         for(chunk in reply.text.take(2400).chunked(600)){
                             check(sessionValid()){"대화방 또는 계정 변경"}
-                            val audio=cloud.speakForMobile(chunk,language)
-                            check(sessionValid()){"대화방 또는 계정 변경"}
-                            phase="🔊 클라우드 음성 답변 재생 중"
-                            CloudVoicePlayback.play(context,audio)
+                            val stop=AtomicBoolean(false)
+                            var captured:ByteArray?=null
+                            if(mode==VoiceTtsMode.CLOUD){
+                                val audio=runCatching{cloud.speakForMobile(chunk,language)}.getOrNull()
+                                if(audio==null){
+                                    // A hosted TTS outage must not silence a configured
+                                    // device engine. No cloud text leaves the device here.
+                                    if(deviceTtsForLanguage){
+                                        mode=VoiceTtsMode.DEVICE
+                                        device=DeviceSpeech.open(context,language)
+                                    }
+                                    if(device==null)error("클라우드·기기 음성 출력을 사용할 수 없습니다")
+                                }else{
+                                    check(sessionValid()){"대화방 또는 계정 변경"}
+                                    if(bargeIn&&bargeAvailable){
+                                        phase="🔊 클라우드 답변 재생 중 · 말씀하시면 끼어들 수 있어요"
+                                        captured=CloudVoicePlayback.playListening(context,audio)
+                                    }else{
+                                        phase="🔊 클라우드 음성 답변 재생 중"
+                                        CloudVoicePlayback.play(context,audio)
+                                    }
+                                }
+                            }
+                            if(mode==VoiceTtsMode.DEVICE){
+                                if(device==null)device=DeviceSpeech.open(context,language)
+                                val speaker=requireNotNull(device){"기기 음성 엔진을 시작하지 못했습니다"}
+                                if(bargeIn&&bargeAvailable){
+                                    phase="🔊 기기 음성 답변 재생 중 · 말씀하시면 끼어들 수 있어요"
+                                    captured=speaker.speakListening(context,chunk,stop)
+                                }else{
+                                    phase="🔊 기기 음성 답변 재생 중"
+                                    check(speaker.speak(chunk,stop,communication=false)){"기기 음성 재생 실패"}
+                                }
+                            }
+                            if(captured!=null){
+                                check(sessionValid()){"대화방 또는 계정 변경"}
+                                phase="끼어들기 감지 · 음성 인식 중"
+                                val transcript=cloud.transcribeForMobile(captured,language)
+                                check(sessionValid()){"대화방 또는 계정 변경"}
+                                recognized=transcript
+                                val nextMessage=vm.sendMessage(roomId,transcript) ?: error("대화방 작업 접수 실패")
+                                answer=""
+                                waiting=nextMessage
+                                phase="도미니온이 끼어든 요청을 처리 중"
+                                interrupted=true
+                                break
+                            }
                         }
-                        phase=if(continuous)"답변 완료 · 다음 발화 준비 중" else "답변 완료 · 마이크를 눌러 이어서 말씀하세요"
-                        if(continuous&&sessionValid())nextTurn++
+                        if(!interrupted){
+                            phase=if(continuous)"답변 완료 · 다음 발화 준비 중" else "답변 완료 · 마이크를 눌러 이어서 말씀하세요"
+                            if(continuous&&sessionValid())nextTurn++
+                        }
                     }catch(cancelled:CancellationException){throw cancelled}
                     catch(e:Exception){
                         continuous=false
-                        phase="텍스트 답변 완료 · 클라우드 음성 출력을 확인해 주세요"
-                    }finally{speakingJob=null}
+                        phase="텍스트 답변 완료 · 음성 출력을 확인해 주세요 ("+(e.message?:"오디오 오류")+")"
+                    }finally{
+                        device?.close()
+                        speakingJob=null
+                    }
                 }
             }
         }
@@ -165,11 +241,19 @@ fun MobileVoiceConversationDialog(vm:AppViewModel,roomId:String,onDismiss:()->Un
         text={
             Column(verticalArrangement=Arrangement.spacedBy(10.dp)){
                 Text(phase,style=MaterialTheme.typography.titleSmall)
+                if(checked&&voiceCapabilities==null)
+                    Text("DOMINION Cloud 계정 연결이 필요합니다.",
+                        color=MaterialTheme.colorScheme.error)
                 if(checked&&voiceCapabilities?.stt==false)
                     Text("클라우드 음성 인식이 아직 설정되지 않았습니다.",
                         color=MaterialTheme.colorScheme.error)
-                if(checked&&voiceCapabilities?.let{if(language=="ko")!it.tts_ko else !it.tts_en}==true)
-                    Text("이 언어의 서버 음성 합성이 아직 연결되지 않았습니다. 텍스트 답변은 유지됩니다.",
+                if(checked&&ttsMode==VoiceTtsMode.DEVICE)
+                    Text(if(voiceCapabilities==null)
+                        "이 기기의 TTS 엔진은 정상입니다. 계정 연결 후 답변 재생에 사용됩니다."
+                        else "서버 음성 합성 대신 이 기기의 TTS로 답변을 읽습니다.",
+                        style=MaterialTheme.typography.bodySmall)
+                if(checked&&ttsMode==VoiceTtsMode.NONE)
+                    Text("사용 가능한 음성 출력이 없어 텍스트 답변만 표시됩니다.",
                         style=MaterialTheme.typography.bodySmall)
                 Row {
                     Checkbox(continuous,{enabled->
@@ -182,9 +266,17 @@ fun MobileVoiceConversationDialog(vm:AppViewModel,roomId:String,onDismiss:()->Un
                             style=MaterialTheme.typography.bodySmall)
                     }
                 }
+                Row {
+                    Checkbox(bargeIn,{bargeIn=it},enabled=canBargeIn)
+                    Column(Modifier.padding(top=6.dp)) {
+                        Text(if(bargeAvailable)"자동 끼어들기 (기기 반향 제거)" else "자동 끼어들기 (기기 미지원)")
+                        Text("답변을 듣는 중에 말하면 재생을 멈추고 그 발화를 새 요청으로 접수합니다.",
+                            style=MaterialTheme.typography.bodySmall)
+                    }
+                }
                 if(recognized.isNotBlank())Text("나: "+recognized)
                 if(answer.isNotBlank())Text("도미니온: "+answer.take(1800))
-                Text("음성 인식·합성은 서버에서 실행합니다. 휴대폰에는 음성 AI 모델을 설치하지 않습니다.",
+                Text("음성 인식은 서버에서 실행합니다. 클라우드 합성이 없으면 기기 TTS만 사용하며, 휴대폰에 음성 AI 모델을 설치하지 않습니다.",
                     style=MaterialTheme.typography.bodySmall)
             }
         },

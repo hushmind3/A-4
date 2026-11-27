@@ -28,6 +28,11 @@ origin and bearer token in the Android Korean services telephone dialog.
 Keep transport/provider logs private, disable audio recording and review
 speech-provider retention and Korean telecommunications obligations.
 
+The gateway also exposes authenticated `GET /v1/health`, which returns only
+`status` and the count of configured approved numbers. The Android dialog uses
+this check before a billable call approval; it never reveals numbers, goals or
+call records.
+
 The worker uses a bounded single approved destination, unique persistent
 request ID, no auto-redial, operator allowlist, one active call, daily cap
 and SIP duration cap. It discloses AI and requires explicit spoken consent

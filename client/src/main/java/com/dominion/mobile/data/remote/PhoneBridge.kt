@@ -22,6 +22,12 @@ internal data class PhoneBridgeConfig(val origin:String,val token:String){
     }
 }
 internal data class PhoneBridgeCall(val id:String,val number:String,val goal:String,val approved:Boolean=true)
+internal data class PhoneBridgeHealth(val status:String="",val approved_numbers:Int=0) {
+    fun checked():PhoneBridgeHealth {
+        require(status=="ok"&&approved_numbers>=0)
+        return this
+    }
+}
 internal data class PhoneBridgeState(val config:PhoneBridgeConfig,val pending:PhoneBridgeCall?=null)
 internal data class PhoneBridgeReceipt(val id:String,val status:String,val answered:Int=0,val consent:Int=0,
     val summary:String?=null,val evidence:String?=null,val reason:String?=null){
@@ -36,6 +42,20 @@ internal class PhoneBridge(context:Context,account:String){
         .retryOnConnectionFailure(false).build()
     fun load()=store.load()
     fun save(value:PhoneBridgeState)=store.save(value.copy(config=value.config.checked()))
+    suspend fun health(config:PhoneBridgeConfig):PhoneBridgeHealth=withContext(Dispatchers.IO){
+        val checked=config.checked()
+        val request=Request.Builder().url(checked.origin+"/v1/health")
+            .header("Authorization","Bearer "+checked.token).get().build()
+        http.newCall(request).execute().use{response->
+            check(response.isSuccessful){"전화 어댑터 응답 "+response.code}
+            val body=requireNotNull(response.body)
+            check(body.contentLength() in -1..2048)
+            val source=body.source()
+            source.request(2049)
+            check(source.buffer.size<=2048)
+            gson.fromJson(source.readUtf8(),PhoneBridgeHealth::class.java).checked()
+        }
+    }
     suspend fun request(config:PhoneBridgeConfig,call:PhoneBridgeCall,method:String):PhoneBridgeReceipt?=withContext(Dispatchers.IO){
         val checked=config.checked()
         require(call.id.matches(Regex("[a-f0-9-]{36}"))&&call.number.matches(Regex("\\+82[1-9][0-9]{7,10}"))&&call.goal.length in 3..800)

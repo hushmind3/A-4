@@ -25,7 +25,12 @@ import java.util.concurrent.TimeUnit
  */
 object CloudJobMonitor {
     private const val NAME="dominion-cloud-jobs-v1"
+    private const val FAST="dominion-cloud-jobs-fast-v1"
     private const val SCOPE="account_hash"
+    private const val FAST_ATTEMPT="fast_attempt"
+    private const val FAST_FLAG="fast_watch"
+    internal const val MAX_FAST_ATTEMPTS=20
+    internal const val FAST_DELAY_MS=60_000L
 
     internal fun accountHash(accountId:String):String =
         MessageDigest.getInstance("SHA-256")
@@ -33,16 +38,61 @@ object CloudJobMonitor {
             .joinToString(""){"%02x".format(it.toInt() and 255)}
     internal fun isTerminal(status:String?)=status in setOf("done","failed","cancelled")
     internal fun isActive(status:String?)=status in setOf("queued","running")
+    internal fun matchesAccount(accountId:String?,expectedHash:String?):Boolean =
+        accountId!=null&&expectedHash!=null&&accountHash(accountId)==expectedHash
+    internal fun shouldContinueFast(attempt:Int,hasActiveWork:Boolean):Boolean =
+        hasActiveWork&&attempt in 0 until MAX_FAST_ATTEMPTS
 
     fun install(context:Context,accountId:String?) {
         val worker=WorkManager.getInstance(context)
-        if(accountId.isNullOrBlank()){worker.cancelUniqueWork(NAME);return}
+        if(accountId.isNullOrBlank()){
+            worker.cancelUniqueWork(NAME)
+            worker.cancelUniqueWork(FAST)
+            return
+        }
         val request=PeriodicWorkRequestBuilder<CloudJobWorker>(15,TimeUnit.MINUTES)
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .setInputData(workDataOf(SCOPE to accountHash(accountId)))
             .build()
         worker.enqueueUniquePeriodicWork(NAME,ExistingPeriodicWorkPolicy.UPDATE,request)
+        // The first periodic run may be delayed by the OS. A bounded one-time
+        // chain checks soon after submission and while the app is backgrounded.
+        pollNow(context,accountId,0,0L)
     }
+
+    /**
+     * Schedule one immediate short-interval check. The worker appends at most
+     * [MAX_FAST_ATTEMPTS] follow-ups, then the existing 15-minute periodic work
+     * remains the durable fallback. No job is executed on the device.
+     */
+    fun pollNow(context:Context,accountId:String?,attempt:Int=0,delayMs:Long=FAST_DELAY_MS) {
+        val worker=WorkManager.getInstance(context)
+        if(accountId.isNullOrBlank()){worker.cancelUniqueWork(FAST);return}
+        val request=OneTimeWorkRequestBuilder<CloudJobWorker>()
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            .setInitialDelay(delayMs.coerceAtLeast(0L),TimeUnit.MILLISECONDS)
+            .setInputData(workDataOf(SCOPE to accountHash(accountId),FAST_FLAG to true,
+                FAST_ATTEMPT to attempt.coerceIn(0,MAX_FAST_ATTEMPTS)))
+            .build()
+        worker.enqueueUniqueWork(FAST,ExistingWorkPolicy.REPLACE,request)
+    }
+
+    /** Called from a running worker or a repository update: appending cannot
+     * cancel the current check. */
+    internal fun scheduleNext(context:Context,accountId:String,attempt:Int,
+        delayMs:Long=FAST_DELAY_MS) {
+        if(accountId.isBlank()||attempt !in 0 until MAX_FAST_ATTEMPTS)return
+        val request=OneTimeWorkRequestBuilder<CloudJobWorker>()
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            .setInitialDelay(delayMs.coerceAtLeast(0L),TimeUnit.MILLISECONDS)
+            .setInputData(workDataOf(SCOPE to accountHash(accountId),FAST_FLAG to true,FAST_ATTEMPT to attempt))
+            .build()
+        WorkManager.getInstance(context).enqueueUniqueWork(FAST,ExistingWorkPolicy.APPEND_OR_REPLACE,request)
+    }
+
+    internal fun cancelFast(context:Context)=
+        WorkManager.getInstance(context).cancelUniqueWork(FAST)
+
     internal fun expectedScope(data:Data)=data.getString(SCOPE)
 }
 
@@ -53,8 +103,11 @@ class CloudJobWorker(context:Context,parameters:WorkerParameters):CoroutineWorke
         val repo=container.repository
         val account=container.cloudAccount.savedAccountId()
         val expected=CloudJobMonitor.expectedScope(inputData)
+        val fast=inputData.getBoolean("fast_watch",false)
+        val attempt=inputData.getInt("fast_attempt",0)
         if(container.engine!=null||account==null||expected!=CloudJobMonitor.accountHash(account)){
             WorkManager.getInstance(applicationContext).cancelWorkById(id)
+            if(fast)CloudJobMonitor.cancelFast(applicationContext)
             return Result.success()
         }
         val pending=repo.state.value.tasks.filter{
@@ -85,6 +138,17 @@ class CloudJobWorker(context:Context,parameters:WorkerParameters):CoroutineWorke
             repo.state.value.tasks.filter{it.phonePackage!=null&&com.dominion.mobile.data.TaskHandoff.ready(it)&&
                 it.engineStatus=="needs_review"}.take(8).forEach{notifyOnce(account,it.id,"needs_review")}
         }
+        if(fast){
+            val scoped=container.repository===repo&&container.engine==null&&
+                container.cloudAccount.savedAccountId()==account
+            val active=scoped&&repo.state.value.tasks.any{
+                com.dominion.mobile.data.remote.TaskDispatch.needsCloudRefresh(it,
+                    repo.state.value.conversation(it.engineRoomId.orEmpty()))
+            }
+            if(CloudJobMonitor.shouldContinueFast(attempt,active))
+                CloudJobMonitor.scheduleNext(applicationContext,account,attempt+1)
+            else CloudJobMonitor.cancelFast(applicationContext)
+        }
         return if(transientFailure)Result.retry() else Result.success()
     }
 
@@ -111,9 +175,14 @@ class CloudJobWorker(context:Context,parameters:WorkerParameters):CoroutineWorke
         }
         val privateContent=settings.hideContent||!settings.messagePreview
         val requestCode=key.hashCode() and 0x7fffffff
+        val room=container.repository.state.value.tasks.firstOrNull{it.id==taskId}?.engineRoomId
         val destination=PendingIntent.getActivity(applicationContext,requestCode,
             Intent(applicationContext,MainActivity::class.java).apply{
                 flags=Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                if(room!=null){
+                    putExtra("dominion_notification_room",room)
+                    putExtra("dominion_notification_cloud",CloudJobMonitor.accountHash(account))
+                }
             },PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val message=if(privateContent)"작업 상태가 갱신되었습니다." else if(status=="needs_review")
             "선행 작업 확인 완료. 앱에서 다음 실행을 검토하세요." else "앱에서 작업 결과와 상태를 확인하세요."

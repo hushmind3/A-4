@@ -17,4 +17,10 @@ class ScheduledDispatchTest {
         assertNull(ScheduledDispatch.due(item.copy(enabled = false), 2000))
         assertNull(ScheduledDispatch.due(item.copy(workRequest = null), 2000))
     }
+    @Test fun administrativeFollowUpKeepsWatchCondition(){
+        val scheduled=item.copy(watchCondition="새 공고나 기한 변경만 알려줘")
+        val task=ScheduledDispatch.task(scheduled,1000)
+        assertEquals("새 공고나 기한 변경만 알려줘",task.watchCondition)
+        assertTrue(task.requestDetails.orEmpty().contains("WATCH_MATCH"))
+    }
 }

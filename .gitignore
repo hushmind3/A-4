@@ -12,6 +12,8 @@ captures/
 *.keystore
 *.jks
 .kotlin/
+__pycache__/
+*.pyc
 
 # Craft Anything evidence and records
 /checks/

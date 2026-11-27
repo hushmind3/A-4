@@ -845,6 +845,18 @@ fun ChatRoomScreen(
                     context.toast(tr(lang, "복사했어요", "Copied"))
                     messageMenu = null
                 }
+                SheetRow(tr(lang, "메신저·앱으로 공유", "Share to messenger"), Glyph.SEND) {
+                    runCatching {
+                        context.startActivity(android.content.Intent.createChooser(
+                            android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(android.content.Intent.EXTRA_TEXT, message.text)
+                            }, tr(lang, "메신저·앱 선택", "Choose a messenger")))
+                    }.onFailure {
+                        context.toast(tr(lang, "공유할 앱을 열 수 없습니다.", "No share app available"))
+                    }
+                    messageMenu = null
+                }
             }
             if (com.dominion.mobile.data.ArchiveIndex.fromMessage(message).isNotEmpty()) {
                 SheetRow(tr(lang, "보관함에 저장", "Save to archive"), Glyph.FILE) {

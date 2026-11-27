@@ -306,10 +306,14 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
                             vm.createServiceTask(service.title + " · " + workflow.title, agent, exactRequest, service.steps, onOpenChat,call)
                             selected = null
                         }) { Text(if(nativeLookup)"실제 공개 검색 실행" else "실제 업무 접수") }
-                    if(!nativeLookup)OutlinedButton(enabled = ready, onClick = {
+                    if(!nativeLookup&&!vm.localExecution)OutlinedButton(enabled = ready, onClick = {
                         institutionDraft = service.id to request()
                         selected = null
                     }, modifier = Modifier.fillMaxWidth()) { Text("기관 실제 접수·인증·결제 연동") }
+                    if(!nativeLookup&&vm.localExecution)Text(
+                        "기관 인증·제출·결제는 공식 앱이나 웹에서 직접 진행합니다. " +
+                            "AI는 공식 절차·서류·기한을 조사하고, 완료 결과는 업무 결과에서 파일 저장이나 메신저 공유로 넘길 수 있습니다.",
+                        style=MaterialTheme.typography.bodySmall,color=p.textSecondary)
                     if (workflow.repeatable) OutlinedButton(enabled = ready && state.character(agent) != null && request().length <= 3000,
                         onClick = {
                             scheduleDraft = ServiceScheduleDraft(service.title + " · " + workflow.title, agent, request())

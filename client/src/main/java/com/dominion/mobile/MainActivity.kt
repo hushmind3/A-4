@@ -81,14 +81,22 @@ class MainActivity : ComponentActivity() {
         intent.getStringExtra("dominion_notification_room")?.let { roomId ->
             val originKey = intent.getStringExtra("dominion_notification_origin")
             val credential=intent.getStringExtra("dominion_notification_credential")
+            val cloudHash=intent.getStringExtra("dominion_notification_cloud")
             intent.removeExtra("dominion_notification_room")
             intent.removeExtra("dominion_notification_origin")
             intent.removeExtra("dominion_notification_credential")
-            val current = (application as DominionApplication).container.engine
-            if (current != null && originKey ==
-                com.dominion.mobile.platform.background.BackgroundJobMonitor.originKey(current.origin) &&
-                credential==com.dominion.mobile.platform.background.NotificationReplyReceiver.credentialKey(current)) {
-                viewModel.openRoomFromNotification(roomId)
+            intent.removeExtra("dominion_notification_cloud")
+            val container=(application as DominionApplication).container
+            val current = container.engine
+            when {
+                current != null && originKey ==
+                    com.dominion.mobile.platform.background.BackgroundJobMonitor.originKey(current.origin) &&
+                    credential==com.dominion.mobile.platform.background.NotificationReplyReceiver.credentialKey(current) ->
+                    viewModel.openRoomFromNotification(roomId)
+                current == null && cloudHash != null &&
+                    com.dominion.mobile.platform.background.CloudJobMonitor.matchesAccount(
+                        container.cloudAccount.savedAccountId(),cloudHash) ->
+                    viewModel.openRoomFromNotification(roomId)
             }
             return
         }

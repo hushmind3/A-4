@@ -38,7 +38,10 @@ free inference quota. A PC with local models is an OPTIONAL execution node.
 - Live DOMINION Cloud signed-account/Android roundtrip and Korean speech provider configuration (Worker deployment, D1 migration, encrypted-job key and Cron configuration are applied)
 - Full DOMINION Rust harness parity, long-range autonomous plan/verify/retry,
   recovery of running jobs after process termination, and post-approval steps
-- Independent realtime voice/video calls with interruption and AI participant
+- Independent realtime voice/video calls with interruption and AI participant.
+  Cloud voice now falls back to device TTS and offers AEC-gated interruption on
+  supported phones, but streaming full-duplex inference and live Korean TTS
+  provider verification remain outstanding.
 - General visual screen understanding and multimodal model file support
 - Per-account opt-in cross-device memory sync and arbitrary cloud provider routing
 - End-to-end test for login -> device operations -> restart -> verified result

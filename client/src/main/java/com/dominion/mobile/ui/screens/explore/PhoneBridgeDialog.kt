@@ -33,6 +33,7 @@ internal fun PhoneBridgeDialog(onDismiss:()->Unit){
     var goal by remember{mutableStateOf(saved?.pending?.goal.orEmpty())}
     var pending by remember{mutableStateOf(saved?.pending)}
     var receipt by remember{mutableStateOf<PhoneBridgeReceipt?>(null)}
+    var health by remember{mutableStateOf<PhoneBridgeHealth?>(null)}
     var missing by remember{mutableStateOf(false)}
     var busy by remember{mutableStateOf(false)}
     var confirm by remember{mutableStateOf(false)}
@@ -58,6 +59,20 @@ internal fun PhoneBridgeDialog(onDismiss:()->Unit){
             finally{busy=false}
         }
     }
+    fun checkHealth(){
+        if(busy)return
+        scope.launch{
+            busy=true;error="";health=null
+            try{
+                validAccount()
+                val result=bridge.health(config())
+                validAccount()
+                health=result
+            }catch(e:CancellationException){throw e}
+            catch(_:Exception){error="전화 어댑터 연결을 확인하지 못했습니다. HTTPS 주소·토큰·서버 상태를 확인하세요."}
+            finally{busy=false}
+        }
+    }
     LaunchedEffect(bridge,pending?.id){
         if(pending!=null){
             while(isActive&&container.cloudAccount.savedAccountId()==account){
@@ -75,6 +90,10 @@ internal fun PhoneBridgeDialog(onDismiss:()->Unit){
             Text("자체 SIP 연결 어댑터가 필요한 실제 업체 전화 문의입니다. 발신 비용이 발생할 수 있습니다. 상대에게 AI임을 밝히고 동의 후 문의합니다.")
             OutlinedTextField(origin,{origin=it},enabled=pending==null&&!busy,label={Text("전화 어댑터 HTTPS 주소")},singleLine=true)
             OutlinedTextField(token,{token=it},enabled=pending==null&&!busy,label={Text("전화 어댑터 접속 토큰")},visualTransformation=PasswordVisualTransformation(),singleLine=true)
+            if(pending==null){
+                TextButton(enabled=!busy&&runCatching{config();true}.getOrDefault(false),onClick={checkHealth()}){Text("연결 확인")}
+                health?.let{Text("어댑터 연결됨 · 승인된 발신 번호 "+it.approved_numbers+"개")}
+            }
             OutlinedTextField(number,{number=it.take(14)},enabled=pending==null&&!busy,label={Text("승인된 업체 번호 (+82...)")},singleLine=true)
             OutlinedTextField(goal,{goal=it.take(800)},enabled=pending==null&&!busy,label={Text("전화 문의 목적")},maxLines=5)
             pending?.let{call->

@@ -49,8 +49,8 @@ class AppContainer(context: Context) {
     init {
         restoreJobWatches()
         com.dominion.mobile.platform.background.EngineSyncMonitor.install(app,engine)
-        com.dominion.mobile.platform.background.CloudJobMonitor.install(app,
-            if(engine==null)cloudAccount.savedAccountId() else null)
+        val cloudForJobs=if(engine==null)cloudAccount.savedAccountId() else null
+        com.dominion.mobile.platform.background.CloudJobMonitor.install(app,cloudForJobs)
         com.dominion.mobile.platform.background.ReminderMonitor.install(app)
         com.dominion.mobile.platform.background.ReminderMonitor.schedule(app,
             reminderScope(), repository.state.value.schedules)

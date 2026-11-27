@@ -24,8 +24,7 @@ fun MobileModelPicker(vm:AppViewModel,onDismiss:()->Unit){
         try{
             val cloud=(context.applicationContext as DominionApplication).container.cloudAccount.refresh()
             check(cloud.status=="approved")
-            models=cloud.models.filter{it.free}
-            if(models.none{it.id==selected})selected=models.firstOrNull()?.id.orEmpty()
+            models=cloud.models.filter{it.free&&it.id!="dominion/free-auto"}
         }catch(e:CancellationException){throw e}catch(_:Exception){error="DOMINION Cloud에서 Google 계정을 연결해 주세요."}
         finally{loading=false}
     }
@@ -34,8 +33,14 @@ fun MobileModelPicker(vm:AppViewModel,onDismiss:()->Unit){
             Text("모바일 비서는 DOMINION Cloud 계정의 AI 모델을 사용합니다. PC 설치가 필요하지 않습니다.")
             if(loading)LinearProgressIndicator(Modifier.fillMaxWidth())
             if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
+            Row{RadioButton(selected=="dominion/free-auto",{selected="dominion/free-auto"})
+                Column(Modifier.padding(top=8.dp)){
+                    Text("자동 선택")
+                    Text("사용 가능한 무료 모델을 서버가 고르고, 실패하면 다른 무료 모델로 재시도합니다.",
+                        style=MaterialTheme.typography.bodySmall)
+                }}
             models.forEach{m->Row{RadioButton(selected==m.id,{selected=m.id});Text(m.name,Modifier.padding(top=12.dp))}}
         }
-    },confirmButton={TextButton(enabled=!loading&&models.any{it.id==selected},onClick={vm.selectMobileModel(selected);onDismiss()}){Text("적용")}},
+    },confirmButton={TextButton(enabled=!loading&&(selected=="dominion/free-auto"||models.any{it.id==selected}),onClick={vm.selectMobileModel(selected);onDismiss()}){Text("적용")}},
         dismissButton={TextButton(onClick=onDismiss){Text("닫기")}})
 }

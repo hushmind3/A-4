@@ -19,4 +19,17 @@ class CloudJobMonitorTest {
         assertTrue(CloudJobMonitor.isTerminal("cancelled"))
         assertFalse(CloudJobMonitor.isTerminal("running"))
     }
+    @Test fun fastWatchIsBoundedAndStopsWithoutActiveWork(){
+        assertTrue(CloudJobMonitor.shouldContinueFast(0,true))
+        assertTrue(CloudJobMonitor.shouldContinueFast(CloudJobMonitor.MAX_FAST_ATTEMPTS-1,true))
+        assertFalse(CloudJobMonitor.shouldContinueFast(CloudJobMonitor.MAX_FAST_ATTEMPTS,true))
+        assertFalse(CloudJobMonitor.shouldContinueFast(0,false))
+    }
+    @Test fun notificationRoomRequiresTheSameCloudAccount(){
+        val hash=CloudJobMonitor.accountHash("google:owner")
+        assertTrue(CloudJobMonitor.matchesAccount("google:owner",hash))
+        assertFalse(CloudJobMonitor.matchesAccount("google:other",hash))
+        assertFalse(CloudJobMonitor.matchesAccount(null,hash))
+        assertFalse(CloudJobMonitor.matchesAccount("google:owner",null))
+    }
 }

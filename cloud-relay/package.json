@@ -2,6 +2,6 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test native_relay_policy.test.js voice.test.js agent_jobs.test.js worker_entry.test.js cloud_jobs_sqlite.test.js"
+    "test": "node --test native_relay_policy.test.js voice.test.js agent_jobs.test.js worker_entry.test.js cloud_jobs_sqlite.test.js free_models.test.js"
   }
 }

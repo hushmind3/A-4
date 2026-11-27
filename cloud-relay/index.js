@@ -487,6 +487,13 @@ async function proxy(request, env, user) {
   }
   return json(result, status === 'completed' ? 200 : 502);
 }
+// Healthy models first, then a stable id order. The auto path may try all
+// configured free models, not only whichever five happened to be first.
+export function rankFreeCandidates(models, unavailable = () => false) {
+  return models.filter(x => x && x.free === true && typeof x.id === 'string')
+    .sort((a, b) => (Number(unavailable(a.id)) - Number(unavailable(b.id))) ||
+      a.id.localeCompare(b.id));
+}
 async function routeCompletion(request, env, user) {
   const raw = await request.clone().text();
   let body;
@@ -494,14 +501,17 @@ async function routeCompletion(request, env, user) {
   const available = await availableModels(env);
   if (available.some(x => x.id === body.model)) return freeProxy(request, env, user);
   if (body.model === 'dominion/free-auto') {
-    const candidates = available.filter(x => x.free).slice(0, 5);
+    const candidates = rankFreeCandidates(available, id => !modelAvailable(id)).slice(0, 12);
     if (!candidates.length) return err('No healthy free models available', 503);
+    let lastUnavailable = null;
     for (const candidate of candidates) {
       const attempted = new Request(request, { body: JSON.stringify({ ...body, model: candidate.id }) });
       const response = await freeProxy(attempted, env, user);
       if (response.ok || response.status === 429) return response;
+      if (response.status !== 503) return response;
+      lastUnavailable = response;
     }
-    return err('All free models temporarily unavailable', 503);
+    return lastUnavailable || err('All free models temporarily unavailable', 503);
   }
   if(user.scope==='app')return err('External app credentials permit free models only',403);
   return proxy(request, env, user);
