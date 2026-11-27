@@ -49,6 +49,8 @@ class AppContainer(context: Context) {
     init {
         restoreJobWatches()
         com.dominion.mobile.platform.background.EngineSyncMonitor.install(app,engine)
+        com.dominion.mobile.platform.background.CloudJobMonitor.install(app,
+            if(engine==null)cloudAccount.savedAccountId() else null)
         com.dominion.mobile.platform.background.ReminderMonitor.install(app)
         com.dominion.mobile.platform.background.ReminderMonitor.schedule(app,
             reminderScope(), repository.state.value.schedules)
@@ -82,6 +84,7 @@ class AppContainer(context: Context) {
         val next=buildRepository(null,newScope)
         activeScope=newScope
         repository=next
+        com.dominion.mobile.platform.background.CloudJobMonitor.install(app,accountId)
         com.dominion.mobile.platform.background.ReminderMonitor.schedule(
             app,newScope,next.state.value.schedules)
         return true
@@ -99,6 +102,8 @@ class AppContainer(context: Context) {
         activeScope=scope
         repository = next
         com.dominion.mobile.platform.background.EngineSyncMonitor.install(app,connection)
+        com.dominion.mobile.platform.background.CloudJobMonitor.install(app,
+            if(connection==null)cloudAccount.savedAccountId() else null)
         restoreJobWatches()
         com.dominion.mobile.platform.background.ReminderMonitor.schedule(app,
             reminderScope(), next.state.value.schedules)
