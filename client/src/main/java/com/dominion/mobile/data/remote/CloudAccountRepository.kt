@@ -86,6 +86,10 @@ class CloudAccountRepository(context: Context) {
     private val store = EncryptedRecordStore(appContext, "dominion_cloud_session", CloudPairing::class.java)
     private val lock = Mutex()
     val remote=CloudRemoteAccount(appContext)
+    /** Verified account from encrypted pairing; no network or token is exposed. */
+    fun savedAccountId():String? = runCatching{
+        loadPairing()?.verifiedAccountId?.takeIf{it.isNotBlank()}
+    }.getOrNull()
     private val engineLinks=EncryptedRecordStore(appContext,"dominion_cloud_engine_links",CloudEngineLinks::class.java)
     private fun links()=engineLinks.load()?:CloudEngineLinks()
     private fun saveLinks(value:CloudEngineLinks)=engineLinks.save(value)

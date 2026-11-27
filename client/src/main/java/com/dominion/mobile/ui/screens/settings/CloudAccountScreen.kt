@@ -45,10 +45,22 @@ fun CloudAccountScreen(vm:AppViewModel,onBack:()->Unit) {
         runCatching{context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(url)))}
             .onFailure{error=true}
     }
+    fun showAccount(next:CloudAccountSnapshot){
+        snapshot=next
+        val container=(context.applicationContext as DominionApplication).container
+        if(container.switchCloudAccount(next.accountId)){
+            // Clear the previous account's ViewModel and Compose tree on a scope change.
+            var candidate:android.content.Context=context
+            while(candidate is android.content.ContextWrapper){
+                if(candidate is android.app.Activity){candidate.recreate();break}
+                candidate=candidate.baseContext
+            }
+        }
+    }
     suspend fun refresh(){
         if(busy)return
         busy=true
-        try{snapshot=repo.refresh();error=false}
+        try{showAccount(repo.refresh());error=false}
         catch(e:CancellationException){throw e}
         catch(_:Exception){error=true}
         finally{busy=false}
@@ -58,7 +70,7 @@ fun CloudAccountScreen(vm:AppViewModel,onBack:()->Unit) {
         busy=true
         scope.launch{
             try{
-                val result=block();snapshot=result;error=false
+                val result=block();showAccount(result);error=false
                 if(approve)result.approvalUrl?.let(::open)
             }catch(e:CancellationException){throw e}
             catch(_:Exception){error=true}

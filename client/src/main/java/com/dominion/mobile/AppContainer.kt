@@ -8,6 +8,7 @@ import com.dominion.mobile.data.local.LocalStore
 import com.dominion.mobile.data.remote.ApiFactory
 import com.dominion.mobile.data.remote.RemoteBackedRepository
 import com.dominion.mobile.platform.background.BackgroundJobMonitor
+import java.security.MessageDigest
 
 class AppContainer(context: Context) {
     private val app = context.applicationContext
@@ -21,8 +22,14 @@ class AppContainer(context: Context) {
         private set
     private val stores = mutableMapOf<String, LocalStore>()
     private val scopeStore=EncryptedRecordStore(app,"dominion_engine_scopes",com.dominion.mobile.data.local.EngineScopeRegistry::class.java)
+    private fun mobileScope(id:String?):String =
+        id?.takeIf{it.isNotBlank()}?.let{account->
+            val digest=MessageDigest.getInstance("SHA-256").digest(account.toByteArray(Charsets.UTF_8))
+                .joinToString(""){"%02x".format(it.toInt() and 255)}
+            "mobile-account-"+digest.take(24)
+        }?:"unconfigured"
     private fun resolveScope(connection:EngineConnection?,legacy:Boolean=false):String{
-        if(connection==null)return "unconfigured"
+        if(connection==null)return mobileScope(cloudAccount.savedAccountId())
         val registry=scopeStore.load()?:com.dominion.mobile.data.local.EngineScopeRegistry()
         val (next,scope)=registry.resolve(connection,legacy)
         if(next!=registry)scopeStore.save(next)
@@ -57,6 +64,27 @@ class AppContainer(context: Context) {
             },mobileCloud=if(connection==null)cloudAccount else null,mobileContext=app) { roomId, jobId ->
             connection?.let { BackgroundJobMonitor.enqueue(app, it, roomId, jobId) }
         }
+    }
+
+    /**
+     * Account changes swap the complete local database, encrypted journal and reminder scope.
+     * The Activity must recreate its ViewModel after a true result so no stale repository is shown.
+     * Unsigned-in legacy data remains in the separate "unconfigured" store, never copied
+     * into an arbitrary Google account.
+     */
+    @Synchronized fun switchCloudAccount(accountId:String?):Boolean {
+        if(accountId != cloudAccount.savedAccountId() || engine!=null)return false
+        val newScope=mobileScope(accountId)
+        if(newScope==activeScope)return false
+        check(repository.state.value.call==null &&
+            !com.dominion.mobile.platform.audio.AssistantVoiceService.state.value.active)
+        stores.values.forEach{it.flush()}
+        val next=buildRepository(null,newScope)
+        activeScope=newScope
+        repository=next
+        com.dominion.mobile.platform.background.ReminderMonitor.schedule(
+            app,newScope,next.state.value.schedules)
+        return true
     }
 
     /** Call after cancelling the old ViewModel and with no active call. */
