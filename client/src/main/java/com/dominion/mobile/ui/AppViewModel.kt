@@ -477,6 +477,8 @@ class AppViewModel(
         }
     }
 
+    suspend fun taskReceipt(id: String) = repo.taskReceipt(id)
+
     suspend fun refreshDispatchedTasks() {
         state.value.tasks.filter { it.engineJobId != null }.forEach { task ->
             try { repo.refreshTask(task.id) }

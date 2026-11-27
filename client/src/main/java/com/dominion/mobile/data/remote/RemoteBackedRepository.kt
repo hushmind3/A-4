@@ -189,6 +189,14 @@ class RemoteBackedRepository(
         if (task.engineJobId != null) verifyTask(task)
     }
 
+    override suspend fun taskReceipt(id: String): TaskReceipt = taskLock.withLock {
+        val task = requireNotNull(state.value.tasks.firstOrNull { it.id == id })
+        val job = api.engineJob(requireNotNull(task.engineJobId))
+        val receipt = TaskReceipt.from(task, job)
+        saveTaskLink(task.copy(engineStatus = receipt.status))
+        receipt
+    }
+
     private suspend fun verifyTask(task: com.dominion.mobile.data.model.TaskItem) {
         val job = api.engineJob(requireNotNull(task.engineJobId))
         check(TaskDispatch.matches(task, job)) { "Task receipt mismatch" }

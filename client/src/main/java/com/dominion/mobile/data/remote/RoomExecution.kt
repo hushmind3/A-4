@@ -20,7 +20,7 @@ data class EngineJobInput(val roomId: String? = null, val input: String? = null,
     val messageId: String? = null, val sourceMessageId: String? = null)
 data class EngineJob(val id: String?, val status: String?, val sessionId: String?,
     val input: EngineJobInput?, val stepIndex: Int = 0, val stepTotal: Int = 0,
-    val error: JsonElement? = null)
+    val error: JsonElement? = null, val result: NativeJobResult? = null)
 data class EngineOperation(val id: String?, val tool: String?, val status: String?,
     val arguments: JsonElement?, val result: JsonElement?)
 data class EngineApproval(val id: String?, val sessionId: String?, val tool: String?,

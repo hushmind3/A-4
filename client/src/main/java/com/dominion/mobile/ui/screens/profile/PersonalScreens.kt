@@ -265,6 +265,7 @@ fun TasksScreen(
     var showAdd by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<String?>(null) }
     val busyTasks by vm.taskBusy.collectAsStateWithLifecycle()
+    var receiptTarget by remember { mutableStateOf<String?>(null) }
     val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     LaunchedEffect(owner, vm) {
         owner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
@@ -303,6 +304,7 @@ fun TasksScreen(
                     onDelete = { deleteTarget = task.id },
                     onDispatch = { vm.dispatchTask(task.id) },
                     onOpenChat = { task.engineRoomId?.let(onOpenChat) },
+                    onReceipt = { receiptTarget = task.id },
                     busy = task.id in busyTasks
                 )
             }
@@ -318,6 +320,11 @@ fun TasksScreen(
                 }
             }
         }
+    }
+
+    receiptTarget?.let { id ->
+        com.dominion.mobile.ui.components.TaskReceiptDialog(vm, id,
+            onDismiss = { receiptTarget = null })
     }
 
     if (showAdd) {
@@ -353,6 +360,7 @@ private fun TaskCard(
     onDelete: () -> Unit,
     onDispatch: () -> Unit,
     onOpenChat: () -> Unit,
+    onReceipt: () -> Unit,
     busy: Boolean
 ) {
     val p = LocalDominionPalette.current
@@ -409,6 +417,9 @@ private fun TaskCard(
                     else tr(lang, "AI에게 맡기기", "Assign to AI"))
             }
             if (task.engineRoomId != null) TextButton(onClick = onOpenChat) { Text(tr(lang, "작업 대화 열기", "Open job chat")) }
+        }
+        if (task.engineJobId != null) TextButton(onClick = onReceipt) {
+            Text(tr(lang, "실제 실행 결과·근거", "Execution result and evidence"))
         }
         if (task.steps.isNotEmpty()) {
             Spacer(Modifier.height(10.dp))
