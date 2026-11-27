@@ -74,7 +74,8 @@ import androidx.compose.ui.platform.LocalContext
 fun CallScreen(
     state: AppState,
     vm: AppViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onOpenChat: (String) -> Unit
 ) {
     val context = LocalContext.current
     val lang = LocalLang.current
@@ -150,6 +151,12 @@ fun CallScreen(
         }
     }
 
+    var requestInstruction by remember(call.sessionId) { mutableStateOf(false) }
+    var lastInstruction by remember(call.sessionId) { mutableStateOf<String?>(null) }
+    val instruction = state.conversation(call.conversationId)?.messages?.firstOrNull {
+        it.id == lastInstruction || (lastInstruction != null && it.clientMessageId == lastInstruction)
+    }
+    LaunchedEffect(call.sessionId) { vm.minimizeCall(false) }
     val accent = Color(character.color)
     Box(
         Modifier
@@ -302,6 +309,25 @@ fun CallScreen(
             }
 
             if (mediaReady && media.error != null) Text(media.error.orEmpty(), color = Color(0xFFFFB4AB), modifier = Modifier.padding(8.dp))
+            if (call.phase in setOf(CallPhase.WAITING_PEER, CallPhase.PEER_PRESENT, CallPhase.RECONNECTING)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                    androidx.compose.material3.TextButton(onClick = { requestInstruction = true }) {
+                        Text(tr(lang, "작업 요청", "Assign work"), color = Color.White)
+                    }
+                    androidx.compose.material3.TextButton(onClick = {
+                        vm.minimizeCall(true)
+                        onOpenChat(call.conversationId)
+                    }) { Text(tr(lang, "대화·결과 확인", "Chat and results"), color = Color.White) }
+                }
+                instruction?.let { row ->
+                    Text(tr(lang, "요청 상태: ", "Request: ") + when (row.status) {
+                        com.dominion.mobile.data.model.MessageStatus.SENDING -> tr(lang, "전송 중", "Sending")
+                        com.dominion.mobile.data.model.MessageStatus.FAILED -> tr(lang, "실패 · 대화에서 재시도", "Failed · retry in chat")
+                        else -> row.jobStatus ?: tr(lang, "서버 접수", "Accepted")
+                    }, color = Color.White.copy(alpha = 0.8f), modifier = Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.Center)
+                }
+            }
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -361,6 +387,17 @@ fun CallScreen(
             }
         }
     }
+    if (requestInstruction) com.dominion.mobile.ui.components.TextPromptDialog(
+        title = tr(lang, "통화 중 작업 요청", "Assign work during call"),
+        label = tr(lang, "현재 대화방으로 전달할 요청", "Request for the current room"),
+        confirmLabel = tr(lang, "본체에 보내기", "Send to engine"),
+        singleLine = false,
+        onConfirm = { text ->
+            val id = vm.sendCallInstruction(call.sessionId, text)
+            if (id != null) { lastInstruction = id; requestInstruction = false }
+            else context.toast(tr(lang, "요청을 대기열에 넣지 못했습니다.", "Could not queue request"))
+        },
+        onDismiss = { requestInstruction = false })
 }
 
 @Composable

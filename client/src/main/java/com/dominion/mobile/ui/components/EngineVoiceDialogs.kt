@@ -41,6 +41,7 @@ fun EngineVoiceInputDialog(vm: AppViewModel, onDismiss: () -> Unit, onTranscript
     var error by remember { mutableStateOf<String?>(null) }
     var job by remember { mutableStateOf<Job?>(null) }
     var recording by remember { mutableStateOf(false) }
+    var converting by remember { mutableStateOf(false) }
     var audio by remember { mutableStateOf<ByteArray?>(null) }
     var transcript by remember { mutableStateOf("") }
     val stop = remember { AtomicBoolean(false) }
@@ -50,7 +51,7 @@ fun EngineVoiceInputDialog(vm: AppViewModel, onDismiss: () -> Unit, onTranscript
         catch (_: Exception) { error = "본체 음성 상태를 조회하지 못했습니다."; available = false }
     }
     fun begin() {
-        if (job?.isActive == true || available != true || vm.state.value.call != null) return
+        if (recording || converting || available != true || vm.state.value.call != null) return
         error = null; audio = null; transcript = ""; stop.set(false); recording = true
         job = scope.launch {
             try { audio = EngineVoiceAudio.record(context, stop) }
@@ -73,28 +74,30 @@ fun EngineVoiceInputDialog(vm: AppViewModel, onDismiss: () -> Unit, onTranscript
                 if (recording) {
                     LinearProgressIndicator(Modifier.fillMaxWidth())
                     Button(onClick = { stop.set(true) }) { Text("녹음 끝내기") }
-                } else if (job?.isActive != true) {
+                } else if (!converting) {
                     OutlinedButton(enabled = available == true, onClick = { permission.launch(Manifest.permission.RECORD_AUDIO) }) {
                         Text(if (audio == null) "녹음 시작" else "다시 녹음")
                     }
                 }
                 if (audio != null && !recording) {
-                    Button(enabled = job?.isActive != true, onClick = {
+                    Button(enabled = !converting, onClick = {
                         val wav = audio ?: return@Button
                         error = null
+                        converting = true
                         job = scope.launch {
                             try { transcript = vm.transcribeVoice(wav) }
                             catch (e: CancellationException) { throw e }
                             catch (_: Exception) { error = "음성 변환 실패 · 녹음은 유지합니다." }
+                            finally { converting = false }
                         }
                     }) { Text("본체에서 문자로 변환") }
                 }
-                if (job?.isActive == true && !recording) LinearProgressIndicator(Modifier.fillMaxWidth())
+                if (converting) LinearProgressIndicator(Modifier.fillMaxWidth())
                 if (transcript.isNotBlank()) OutlinedTextField(transcript, { transcript = it.take(32000) },
                     label = { Text("변환 결과 확인") }, maxLines = 4)
             }
         },
-        confirmButton = { TextButton(enabled = transcript.isNotBlank() && job?.isActive != true,
+        confirmButton = { TextButton(enabled = transcript.isNotBlank() && !converting && !recording,
             onClick = { onTranscript(transcript) }) { Text("작성창에 넣기") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } })
 }

@@ -58,6 +58,9 @@ class CallForegroundService : Service() {
             return START_NOT_STICKY
         }
         if (intent?.action == ACTION_END) {
+            val expected = intent.getStringExtra("sessionId")
+            if (expected == null || repo.state.value.call?.sessionId != expected || sessionId != expected)
+                return START_NOT_STICKY
             repo.update { com.dominion.mobile.data.CallHistory.finish(it) }
             stopSelf()
             return START_NOT_STICKY
@@ -241,6 +244,7 @@ class CallForegroundService : Service() {
         }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val end = PendingIntent.getService(this, 2, Intent(this, CallForegroundService::class.java).apply {
             action = ACTION_END
+            putExtra("sessionId", sessionId)
         }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val notification = NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)

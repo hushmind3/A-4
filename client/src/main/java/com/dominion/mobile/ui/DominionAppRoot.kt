@@ -95,6 +95,13 @@ fun DominionAppRoot(vm: AppViewModel) {
                 launchSingleTop = true
             }
         }
+        val openCallRequest by vm.openCallRequest.collectAsStateWithLifecycle()
+        LaunchedEffect(openCallRequest, state.call) {
+            if (openCallRequest) {
+                if (state.call != null) nav.navigate(Routes.CALL) { launchSingleTop = true }
+                vm.consumeOpenCall()
+            }
+        }
         val notificationRoom by vm.notificationRoom.collectAsStateWithLifecycle()
         LaunchedEffect(notificationRoom, state.conversations) {
             val roomId = notificationRoom
@@ -172,7 +179,11 @@ fun DominionAppRoot(vm: AppViewModel) {
                 )
             }
             composable(Routes.CALL) {
-                CallScreen(state = state, vm = vm, onBack = { nav.popBackStack() })
+                CallScreen(state = state, vm = vm, onBack = { nav.popBackStack() },
+                    onOpenChat = { id ->
+                        nav.popBackStack()
+                        nav.navigate(Routes.chat(id)) { launchSingleTop = true }
+                    })
             }
             composable(
                 route = "character/{id}",

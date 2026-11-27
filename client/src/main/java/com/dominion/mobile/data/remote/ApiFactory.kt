@@ -26,7 +26,12 @@ object ApiFactory {
                     header("X-Client-Platform", "android")
                     header("X-Dominion-Token", connection.ownerToken)
                 }.build()
-                chain.proceed(request)
+                val seconds = when (request.url.encodedPath) {
+                    "/api/voice/transcribe" -> 310
+                    "/api/voice/speak" -> 130
+                    else -> 60
+                }
+                chain.withReadTimeout(seconds, TimeUnit.SECONDS).proceed(request)
             }
             .build()
 

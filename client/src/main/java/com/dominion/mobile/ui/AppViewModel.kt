@@ -117,10 +117,10 @@ class AppViewModel(
     // -------------------------------------------------------------------- chats
 
     fun sendMessage(conversationId: String, text: String, card: MessageCard? = null,
-        attachmentIds: List<String> = emptyList()) {
+        attachmentIds: List<String> = emptyList()): String? {
         val trimmed = text.trim()
-        if (trimmed.isEmpty() && card == null) return
-        if (repo.state.value.conversation(conversationId) == null || conversationId in _roomChanges.value) return
+        if (trimmed.isEmpty() && card == null) return null
+        if (repo.state.value.conversation(conversationId) == null || conversationId in _roomChanges.value) return null
         val now = System.currentTimeMillis()
         val message = Message(
             id = id("msg"),
@@ -148,6 +148,7 @@ class AppViewModel(
         }
 
         deliverRemoteMessage(message)
+        return message.id
     }
 
     suspend fun serviceAccounts() = repo.serviceAccounts()
@@ -393,6 +394,21 @@ class AppViewModel(
             video = false, requestVideo = video
         )) }
         return true
+    }
+
+    private val _openCallRequest = MutableStateFlow(false)
+    val openCallRequest = _openCallRequest.asStateFlow()
+
+    fun requestOpenCall() { if (state.value.call != null) _openCallRequest.value = true }
+    fun consumeOpenCall() { _openCallRequest.value = false }
+
+    fun sendCallInstruction(sessionId: String, text: String): String? {
+        val call = state.value.call ?: return null
+        if (call.sessionId != sessionId || call.phase !in setOf(
+            com.dominion.mobile.data.model.CallPhase.WAITING_PEER,
+            com.dominion.mobile.data.model.CallPhase.PEER_PRESENT,
+            com.dominion.mobile.data.model.CallPhase.RECONNECTING)) return null
+        return sendMessage(call.conversationId, text.take(32000))
     }
 
     fun toggleCallMute() = mutate { s ->

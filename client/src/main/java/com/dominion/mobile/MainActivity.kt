@@ -54,6 +54,11 @@ class MainActivity : ComponentActivity() {
 
     private fun handleIntent(intent: Intent?) {
         if (intent == null) return
+        if (intent.action == "com.dominion.mobile.action.OPEN_CALL") {
+            viewModel.requestOpenCall()
+            intent.action = null
+            return
+        }
         intent.getStringExtra("dominion_notification_room")?.let { roomId ->
             val originKey = intent.getStringExtra("dominion_notification_origin")
             intent.removeExtra("dominion_notification_room")
