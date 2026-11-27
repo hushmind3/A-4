@@ -38,6 +38,11 @@ fun CallAssistantDialog(vm: AppViewModel, callId: String, roomId: String,
     var work by remember { mutableStateOf<Job?>(null) }
     var pending by remember { mutableStateOf<String?>(null) }
     var session by remember { mutableStateOf<String?>(null) }
+    var approvals by remember { mutableStateOf<List<com.dominion.mobile.data.remote.EngineApproval>>(emptyList()) }
+    var reviewed by remember { mutableStateOf<com.dominion.mobile.data.remote.EngineApproval?>(null) }
+    var deciding by remember { mutableStateOf(false) }
+    var skipSpeech by remember { mutableStateOf(false) }
+    var playback by remember { mutableStateOf<Job?>(null) }
     val stopCapture = remember { AtomicBoolean(false) }
 
     fun valid(expected: String): Boolean {
@@ -109,8 +114,9 @@ fun CallAssistantDialog(vm: AppViewModel, callId: String, roomId: String,
                                     requireNotNull(vm.state.value.conversation(roomId)).messages, roomId, nonce))
                                 check(owner.status != MessageStatus.FAILED &&
                                     owner.jobStatus !in setOf("failed","cancelled","paused","interrupted","stopped","needs_review"))
-                                if (execution.approvals.orEmpty().any { it.actionableIn(expected) }) {
-                                    phase = "본체 도구 승인 대기 · 채팅에서 확인"
+                                approvals = execution.approvals.orEmpty().filter { it.actionableIn(expected) }
+                                if (approvals.isNotEmpty()) {
+                                    phase = "본체 도구 승인 대기"
                                     delay(1500); continue
                                 }
                                 val replies = VoiceTurn.replies(
@@ -118,13 +124,19 @@ fun CallAssistantDialog(vm: AppViewModel, callId: String, roomId: String,
                                 if (replies.isEmpty()) { phase = "본체 작업·응답 대기"; delay(1200); continue }
                                 answer = replies.joinToString("\n\n") { it.text }
                                 phase = "본체 음성 응답 중"
-                                for (chunk in replies.flatMap { WaveAudio.speechChunks(it.text) }) {
-                                    check(valid(expected))
-                                    val speech = vm.synthesizeCallVoice(callId, roomId, expected, chunk)
-                                    check(valid(expected))
-                                    EngineVoiceAudio.play(context, speech, communication = true,
-                                        existingCallFocus = true, onSpeechLevel = onSpeechLevel)
+                                skipSpeech = false
+                                val reader = launch {
+                                    for (chunk in replies.flatMap { WaveAudio.speechChunks(it.text) }) {
+                                        check(valid(expected))
+                                        val speech = vm.synthesizeCallVoice(callId, roomId, expected, chunk)
+                                        check(valid(expected))
+                                        EngineVoiceAudio.play(context, speech, communication = true,
+                                            existingCallFocus = true, onSpeechLevel = onSpeechLevel)
+                                    }
                                 }
+                                playback = reader
+                                try { reader.join() } finally { playback = null }
+                                if (skipSpeech) phase = "응답 읽기 중단 · 다음 발화"
                                 pending = null
                                 // No microphone sink during playback; allow output tail to decay.
                                 delay(400)
@@ -166,6 +178,14 @@ fun CallAssistantDialog(vm: AppViewModel, callId: String, roomId: String,
                     TextButton(onClick = { pending = null }) { Text("기존 작업은 채팅에 두고 새 발화") }
                 }
                 if (busy && phase == "듣는 중") TextButton(onClick = { stopCapture.set(true) }) { Text("발화 종료") }
+                if (busy && playback != null) TextButton(onClick = {
+                    skipSpeech = true; playback?.cancel()
+                }) { Text("응답 끊고 다음 발화") }
+                approvals.take(5).forEach { approval ->
+                    TextButton(enabled = !deciding, onClick = { reviewed = approval }) {
+                        Text((approval.tool ?: "도구") + " · 승인 내용 확인")
+                    }
+                }
             }
         },
         confirmButton = { TextButton(enabled = consent && !busy && (!vision || media.localVideo != null),
@@ -173,4 +193,32 @@ fun CallAssistantDialog(vm: AppViewModel, callId: String, roomId: String,
         dismissButton = { TextButton(onClick = {
             if (busy) stop() else onDismiss()
         }) { Text(if (busy) "중단" else "닫기") } })
+
+    reviewed?.let { item ->
+        fun decide(allow: Boolean) {
+            if (deciding) return
+            val expected = session ?: return
+            deciding = true
+            scope.launch {
+                try {
+                    check(valid(expected) && item.actionableIn(expected))
+                    vm.decideApproval(roomId, item, allow)
+                    reviewed = null
+                } catch (e: CancellationException) { throw e }
+                catch (_: Exception) { error = "승인 결과 확인 실패 · 본체에서 다시 확인하세요." }
+                finally { deciding = false }
+            }
+        }
+        AlertDialog(onDismissRequest = { if (!deciding) reviewed = null },
+            title = { Text("본체 도구 실행 확인") },
+            text = { Column(Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState())) {
+                Text(item.tool.orEmpty())
+                androidx.compose.foundation.text.selection.SelectionContainer { Text(item.args?.toString().orEmpty()) }
+            } },
+            confirmButton = { TextButton(enabled = !deciding && busy, onClick = { decide(true) }) { Text("실행 허용") } },
+            dismissButton = { Row {
+                TextButton(enabled = !deciding && busy, onClick = { decide(false) }) { Text("거부") }
+                TextButton(enabled = !deciding, onClick = { reviewed = null }) { Text("닫기") }
+            } })
+    }
 }

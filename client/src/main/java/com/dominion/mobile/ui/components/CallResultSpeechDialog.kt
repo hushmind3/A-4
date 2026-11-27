@@ -31,7 +31,7 @@ fun CallResultSpeechDialog(vm: AppViewModel, callId: String, roomId: String, non
     var progress by remember { mutableStateOf("") }
     var answer by remember { mutableStateOf("") }
     var work by remember { mutableStateOf<Job?>(null) }
-    val originalSession = remember { state.conversation(roomId)?.sessionId }
+    var originalSession by remember { mutableStateOf(state.conversation(roomId)?.sessionId) }
     fun safe(): Boolean {
         val s = vm.state.value
         val call = s.call
@@ -43,7 +43,15 @@ fun CallResultSpeechDialog(vm: AppViewModel, callId: String, roomId: String, non
             m.room?.localParticipant?.isMicrophoneEnabled == false
     }
     LaunchedEffect(Unit) {
-        try { ready = vm.voiceStatus().piper?.available == true }
+        try {
+            withTimeout(10_000L) {
+                while (!vm.refreshConversationNow(roomId)) delay(300)
+            }
+            val verified = requireNotNull(vm.roomExecution(roomId).sessionId)
+            check(originalSession == null || originalSession == verified)
+            originalSession = verified
+            ready = vm.voiceStatus().piper?.available == true
+        }
         catch (e: CancellationException) { throw e }
         catch (_: Exception) { error = "본체 음성 상태 조회 실패" }
     }
