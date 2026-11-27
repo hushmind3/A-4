@@ -47,6 +47,11 @@ interface DominionRepository {
         com.dominion.mobile.data.remote.EngineAttachment = error("Engine not connected")
 
     suspend fun downloadAttachment(roomId: String, id: String): ByteArray = error("Engine not connected")
+    suspend fun readArchiveAttachment(item: com.dominion.mobile.data.model.ArchiveItem): ByteArray =
+        downloadAttachment(requireNotNull(item.conversationId), requireNotNull(item.attachmentId))
+    suspend fun pinArchiveAttachment(item: com.dominion.mobile.data.model.ArchiveItem): Unit = error("Archive storage unavailable")
+    suspend fun unpinArchiveAttachment(item: com.dominion.mobile.data.model.ArchiveItem): Unit = error("Archive storage unavailable")
+    suspend fun offlineArchiveIds(): Set<String> = emptySet()
 
     suspend fun serviceAccounts(): List<com.dominion.mobile.data.remote.ServiceAccount> = error("본체 연결 필요")
     suspend fun serviceConnectors(): List<com.dominion.mobile.data.remote.ServiceConnector> = error("본체 연결 필요")

@@ -372,6 +372,40 @@ class RemoteBackedRepository(
         return uploaded
     }
 
+    private val archiveLock = Mutex()
+
+    private fun archived(item: com.dominion.mobile.data.model.ArchiveItem): Boolean =
+        state.value.archive.any { it.id == item.id && it.conversationId == item.conversationId &&
+            it.attachmentId == item.attachmentId && item.attachmentId != null }
+
+    override suspend fun offlineArchiveIds(): Set<String> = archiveLock.withLock {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            state.value.archive.filter { it.attachmentId != null && store.offlineArchive.has(it) }.map { it.id }.toSet()
+        }
+    }
+
+    override suspend fun readArchiveAttachment(item: com.dominion.mobile.data.model.ArchiveItem): ByteArray = archiveLock.withLock {
+        if (archived(item)) {
+            val cached = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { store.offlineArchive.read(item) }
+            if (cached != null) return@withLock cached
+        }
+        downloadAttachment(requireNotNull(item.conversationId), requireNotNull(item.attachmentId))
+    }
+
+    override suspend fun pinArchiveAttachment(item: com.dominion.mobile.data.model.ArchiveItem) = archiveLock.withLock {
+        check(archived(item)) { "Archive the item before saving offline" }
+        val bytes = downloadAttachment(requireNotNull(item.conversationId), requireNotNull(item.attachmentId))
+        check(archived(item))
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            store.offlineArchive.write(item, bytes)
+        }
+    }
+
+    override suspend fun unpinArchiveAttachment(item: com.dominion.mobile.data.model.ArchiveItem) = archiveLock.withLock {
+        check(archived(item))
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { store.offlineArchive.remove(item) }
+    }
+
     override suspend fun downloadAttachment(roomId: String, id: String): ByteArray {
         java.util.UUID.fromString(id)
         require(state.value.conversation(roomId)?.messages?.any { id in it.attachmentIds.orEmpty() } == true)

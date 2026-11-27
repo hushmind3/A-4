@@ -90,22 +90,32 @@ fun ArchiveScreen(
     var selected by remember { mutableIntStateOf(0) }
     var detail by remember { mutableStateOf<ArchiveItem?>(null) }
     var viewing by remember { mutableStateOf<ArchiveItem?>(null) }
+    var search by remember { mutableStateOf("") }
+    var offlineOnly by remember { mutableStateOf(false) }
+    var offlineIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var cacheRevision by remember { mutableIntStateOf(0) }
+    LaunchedEffect(vm, state.archive, cacheRevision) {
+        try { offlineIds = vm.offlineArchiveIds() }
+        catch (e: CancellationException) { throw e }
+        catch (_: Exception) { offlineIds = emptySet() }
+    }
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
     var pendingSave by remember { mutableStateOf<ArchiveItem?>(null) }
     val allItems = if (roomId == null) state.archive else
         ArchiveIndex.roomItems(state.conversation(roomId)?.messages.orEmpty())
     LaunchedEffect(roomId) { if (roomId != null) vm.refreshConversationNow(roomId) }
-    val items = when (selected) {
+    val items = (when (selected) {
         1 -> allItems.filter { it.type == ArchiveType.IMAGE }
         2 -> allItems.filter { it.type == ArchiveType.FILE }
         3 -> allItems.filter { it.type == ArchiveType.LINK }
         4 -> allItems.filter { it.type == ArchiveType.VIDEO }
         else -> allItems
-    }
+    }).filter { (!offlineOnly || it.id in offlineIds) &&
+        (search.isBlank() || (it.title + " " + it.meta + " " + it.mimeType.orEmpty()).contains(search, true)) }
     suspend fun bytesFor(item: ArchiveItem): ByteArray =
         if (item.type == ArchiveType.LINK) requireNotNull(ArchiveIndex.safeUrl(item.url)).toByteArray(Charsets.UTF_8)
-        else vm.downloadAttachment(requireNotNull(item.conversationId), requireNotNull(item.attachmentId))
+        else vm.readArchiveAttachment(item)
     val saveDocument = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         val item = pendingSave
         pendingSave = null
@@ -146,6 +156,11 @@ fun ArchiveScreen(
                 GlyphIcon(Glyph.IMAGE, p.textPrimary, size = 19.dp)
             }
         }
+        Column(Modifier.padding(horizontal = 16.dp)) {
+            com.dominion.mobile.ui.components.AppTextField(search, { search = it.take(200) },
+                placeholder = tr(lang, "파일·링크 검색", "Search files and links"))
+            FilterChipItem(tr(lang, "오프라인 저장만", "Offline only"), offlineOnly, onClick = { offlineOnly = !offlineOnly })
+        }
         LazyRow(
             contentPadding = PaddingValues(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -171,7 +186,7 @@ fun ArchiveScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 items(items, key = { it.id }) { item ->
-                    ArchiveCard(item, onClick = { detail = item })
+                    ArchiveCard(item, offline = item.id in offlineIds, onClick = { detail = item })
                 }
             }
         }
@@ -226,6 +241,24 @@ fun ArchiveScreen(
                     viewing = item
                 }
             }
+            if (item.attachmentId != null && state.archive.any { it.id == item.id }) {
+                SheetRow(if (item.id in offlineIds) "오프라인 사본 삭제" else "오프라인 열람용으로 저장", Glyph.FILE) {
+                    if (!busy) {
+                        val remove = item.id in offlineIds
+                        busy = true
+                        detail = null
+                        scope.launch {
+                            try {
+                                if (remove) vm.unpinArchiveAttachment(item) else vm.pinArchiveAttachment(item)
+                                cacheRevision++
+                                context.toast(if (remove) "기기 사본을 삭제했습니다." else "암호화된 오프라인 사본 저장 완료")
+                            } catch (e: CancellationException) { throw e }
+                            catch (_: Exception) { context.toast("오프라인 저장·삭제 실패 · 연결 및 저장 공간을 확인하세요.") }
+                            finally { busy = false }
+                        }
+                    }
+                }
+            }
             SheetRow(tr(lang, "기기에 저장", "Save to device"), Glyph.FILE) {
                 if (!busy && pendingSave == null) {
                     pendingSave = item
@@ -265,7 +298,7 @@ fun ArchiveScreen(
 }
 
 @Composable
-private fun ArchiveCard(item: ArchiveItem, onClick: () -> Unit) {
+private fun ArchiveCard(item: ArchiveItem, offline: Boolean = false, onClick: () -> Unit) {
     val p = LocalDominionPalette.current
     val accent = Color(item.color)
     Column(
@@ -317,7 +350,7 @@ private fun ArchiveCard(item: ArchiveItem, onClick: () -> Unit) {
             overflow = TextOverflow.Ellipsis
         )
         Text(
-            item.meta,
+            if (offline) "오프라인 · " + item.meta else item.meta,
             style = MaterialTheme.typography.labelSmall,
             color = p.textTertiary,
             maxLines = 1,

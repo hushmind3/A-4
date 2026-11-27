@@ -17,6 +17,7 @@ class LocalStore(context: Context, scope: String = "unconfigured") {
     private val prefs = context.getSharedPreferences("dominion_mobile_$scope", Context.MODE_PRIVATE)
     private val gson = GsonBuilder().serializeNulls().create()
     private val vaultCipher = VaultRecordCipher(scope)
+    internal val offlineArchive = OfflineArchiveStore(context.applicationContext, scope)
     private val db = Room.databaseBuilder(context.applicationContext, MobileDatabase::class.java,
         "dominion_mobile_$scope.db").setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING).build()
     private val dao = db.local()
@@ -104,7 +105,10 @@ class LocalStore(context: Context, scope: String = "unconfigured") {
     })
 
     fun saveState(state: AppState) { enqueue(Write(clean(state))) }
-    fun clearState() { enqueue(Write(null)) }
+    fun clearState() {
+        offlineArchive.clear()
+        enqueue(Write(null))
+    }
 
     private fun enqueue(write: Write) {
         pending.set(write)

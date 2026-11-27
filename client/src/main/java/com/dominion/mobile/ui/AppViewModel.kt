@@ -293,6 +293,11 @@ class AppViewModel(
         finally { lock.unlock() }
     }
 
+    suspend fun readArchiveAttachment(item: com.dominion.mobile.data.model.ArchiveItem) = repo.readArchiveAttachment(item)
+    suspend fun pinArchiveAttachment(item: com.dominion.mobile.data.model.ArchiveItem) = repo.pinArchiveAttachment(item)
+    suspend fun unpinArchiveAttachment(item: com.dominion.mobile.data.model.ArchiveItem) = repo.unpinArchiveAttachment(item)
+    suspend fun offlineArchiveIds() = repo.offlineArchiveIds()
+
     fun archiveMessage(message: Message) {
         val items = com.dominion.mobile.data.ArchiveIndex.fromMessage(message)
         if (items.isEmpty()) { _notice.value = "보관할 원본 파일 또는 웹 링크가 없습니다."; return }
