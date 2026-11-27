@@ -35,8 +35,8 @@ export function decision(text){
     ['wiki-ko','wiki-en','github'].includes(a.args.source)&&typeof a.args.query==='string'&&
     a.args.query.trim().length>=2&&a.args.query.length<=160&&!/[\x00-\x1f\x7f]/.test(a.args.query))
     return {kind:'web.search',source:a.args.source,query:a.args.query.trim()};
-  if(a.tool==='web.read'&&Object.keys(a.args).length===1&&safeSite(a.args.url))
-    return {kind:'web.read',url:a.args.url};
+  if(['web.read','browser.read'].includes(a.tool)&&Object.keys(a.args).length===1&&safeSite(a.args.url))
+    return {kind:a.tool,url:a.args.url};
   return null;
 }
 const associated=(account,id,part)=>new TextEncoder().encode('dominion-cloud-job:'+account+':'+id+':'+part);
@@ -96,7 +96,27 @@ export async function boundedText(response,max=60000){
 }
 const publicFetch=(url,fetcher)=>fetcher(url,{redirect:'manual',signal:AbortSignal.timeout(10000),
   headers:{accept:'text/html,text/plain,application/json','user-agent':'DOMINION-Cloud/1.0 (public research assistant)'}});
-export async function observation(op,fetcher=fetch){
+export const browserReady=env=>typeof env?.BROWSER?.quickAction==='function';
+// A separate, fresh browser context for each public read. Never accept
+// model-supplied cookies, scripts, selectors, headers or credentials.
+export async function renderPublicPage(op,env){
+  if(!safeSite(op.url)||!browserReady(env))throw Error('Browser unavailable');
+  const url=new URL(op.url);
+  // Match the exact HTTPS origin; do not permit cross-origin redirects or
+  // third-party requests. The pattern syntax follows Browser Run Quick Actions.
+  const originPattern='/^https:\\/\\/'+url.hostname.replaceAll('.','\\.')+'(?:\\/|$)/';
+  const response=await env.BROWSER.quickAction('markdown',{
+    url:url.href,allowRequestPattern:[originPattern],
+    rejectResourceTypes:['image','font','media'],
+    gotoOptions:{waitUntil:'networkidle2',timeout:12000}
+  });
+  const raw=await boundedText(response,120000);
+  let data;try{data=JSON.parse(raw)}catch{throw Error('Invalid browser response')}
+  if(data?.success!==true||typeof data.result!=='string'||!data.result.trim())throw Error('No rendered content');
+  return 'Browser-rendered public page '+url.href+': '+data.result.trim().slice(0,2800);
+}
+export async function observation(op,fetcher=fetch,env={}){
+  if(op.kind==='browser.read')return renderPublicPage(op,env);
   if(op.kind==='clock')return 'Current UTC: '+new Date().toISOString();
   if(op.kind==='web.search'){
     const github=op.source==='github';
@@ -133,6 +153,8 @@ export async function jobRoute(request,env,user,ctx,infer){
   if(!app(user))return failure('Mobile inference grant required',403);
   if(!env.AGENT_ENCRYPTION_KEY)return failure('Cloud jobs not configured',503);
   const path=new URL(request.url).pathname;
+  if(path==='/v1/agent/jobs/capabilities'&&request.method==='GET')
+    return reply({tools:['clock','web.read','web.search',...(browserReady(env)?['browser.read']:[])],max_steps:maxSteps,read_only:true});
   if(path==='/v1/agent/jobs'&&request.method==='POST'){
     if(Number(request.headers.get('content-length'))>5500)return failure('Oversized task',413);
     const raw=await request.text();if(raw.length>5500)return failure('Oversized task',413);
@@ -219,6 +241,7 @@ export async function runJob(env,id,infer,{leaseSeconds=90}={}){
     const state={messages:checkpointMessages(saved?.messages||[],prompt),
       evidence:Array.isArray(saved?.evidence)?saved.evidence.slice(0,maxSteps):[]};
     const messages=state.messages.map(m=>({...m}));
+    if(browserReady(env))messages[0].content+=' For JavaScript-heavy pages you may use {"tool":"browser.read","args":{"url":"https://..."}} for a fresh public read on an allowed host. No logins, clicking or form submission.';
     if(row.steps===maxSteps-1)messages[0].content+=' This is the final model step. Return final JSON with available evidence and limitations, not another tool.';
     const answer=await infer(messages,{id:row.account_id,scope:'app',capability:'inference'});
     const step=decision(answer);
@@ -231,7 +254,7 @@ export async function runJob(env,id,infer,{leaseSeconds=90}={}){
     }
     // Persist actual tool receipts, never model-authored claims of execution.
     let observed,status='ok';
-    try{observed=await observation(step)}catch{
+    try{observed=await observation(step,fetch,env)}catch{
       status='failed';
       observed='Tool failed: '+step.kind+'; no evidence retrieved. Try an alternative source or explain the limitation.';
     }

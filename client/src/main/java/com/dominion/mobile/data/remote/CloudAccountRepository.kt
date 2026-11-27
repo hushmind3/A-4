@@ -76,7 +76,7 @@ data class CloudTask(val id:String,val status:String,val steps:Int=0,
         require(result==null||result.length<=5000)
         evidence?.let { rows ->
             require(rows.size<=5 && rows.map{it.step}.distinct().size==rows.size)
-            require(rows.all{it.step in 1..steps && it.tool in setOf("clock","web.read","web.search") &&
+            require(rows.all{it.step in 1..steps && it.tool in setOf("clock","web.read","web.search","browser.read") &&
                 it.status in setOf("ok","failed") && it.observed_at>0 &&
                 it.source.length<=1000 && it.observation.length<=4000})
         }

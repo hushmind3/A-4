@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {safeSite,decision,seal,unseal,jobRoute,boundedText,observation,checkpointMessages} from './agent_jobs.js';
+import {safeSite,decision,seal,unseal,jobRoute,boundedText,observation,checkpointMessages,browserReady,renderPublicPage} from './agent_jobs.js';
 const env={AGENT_ENCRYPTION_KEY:Buffer.alloc(32,17).toString('base64')};
 test('no localhost or lookalike hosts',()=>{
  for(const url of ['http://ko.wikipedia.org','https://localhost/',
@@ -89,4 +89,33 @@ test('checkpoint preserves system and original user request across many steps',(
  for(let i=0;i<12;i++)messages=checkpointMessages([...messages,{role:'assistant',content:'step '+i},{role:'user',content:'obs '+i}],'original question');
  assert.equal(messages.length,10);assert.equal(messages[0].role,'system');
  assert.equal(messages[1].content,'original question');assert.equal(messages.at(-1).content,'obs 11');
+});
+
+test('browser read accepts only an allowlisted URL and no extra arguments',()=>{
+ assert.deepEqual(decision('{"tool":"browser.read","args":{"url":"https://developers.cloudflare.com/"}}'),
+   {kind:'browser.read',url:'https://developers.cloudflare.com/'});
+ assert.equal(decision('{"tool":"browser.read","args":{"url":"https://localhost/"}}'),null);
+ assert.equal(decision('{"tool":"browser.read","args":{"url":"https://developers.cloudflare.com/","cookies":[]}}'),null);
+});
+test('Browser Run receives a fresh restricted markdown request and returns actual content',async()=>{
+ let calls=0;
+ const env={BROWSER:{async quickAction(action,options){
+   calls++;assert.equal(action,'markdown');assert.equal(options.url,'https://developers.cloudflare.com/');
+   assert.equal(options.gotoOptions.waitUntil,'networkidle2');
+   assert.equal(options.cookies,undefined);assert.equal(options.setExtraHTTPHeaders,undefined);
+   const pattern=new RegExp(options.allowRequestPattern[0].slice(1,-1));
+   assert.ok(pattern.test('https://developers.cloudflare.com/docs'));
+   assert.ok(!pattern.test('https://developers.cloudflare.com.evil.test/'));
+   assert.ok(!pattern.test('https://localhost/'));
+   return Response.json({success:true,result:'# Real rendered document'});
+ }}};
+ assert.equal(browserReady(env),true);
+ assert.match(await renderPublicPage({url:'https://developers.cloudflare.com/'},env),/Real rendered document/);
+ assert.equal(calls,1);
+});
+test('missing browser binding and failed render are not reported as success',async()=>{
+ assert.equal(browserReady({}),false);
+ await assert.rejects(renderPublicPage({url:'https://developers.cloudflare.com/'},{}),/unavailable/);
+ await assert.rejects(renderPublicPage({url:'https://developers.cloudflare.com/'},
+   {BROWSER:{async quickAction(){return Response.json({success:false,result:'fake'})}}}),/No rendered content/);
 });

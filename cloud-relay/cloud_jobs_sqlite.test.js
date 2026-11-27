@@ -146,3 +146,31 @@ test('cancellation while inference is running cannot publish a stale completion'
   assert.equal(result.status,'cancelled');assert.equal(result.result,null);
  }finally{sqlite.close()}
 });
+
+test('authenticated Worker exposes only configured browser capabilities and records rendered evidence',async()=>{
+ const {sqlite,send,env,pending}=await fixture();
+ try{
+  let cap=await(await send('a','/v1/agent/jobs/capabilities')).json();
+  assert.ok(!cap.tools.includes('browser.read'));
+  env.BROWSER={async quickAction(action,options){
+   assert.equal(action,'markdown');assert.equal(options.url,'https://developers.cloudflare.com/');
+   return Response.json({success:true,result:'Rendered browser content'});
+  }};
+  cap=await(await send('a','/v1/agent/jobs/capabilities')).json();
+  assert.ok(cap.tools.includes('browser.read'));
+  const response=await send('a','/v1/agent/jobs','POST',{prompt:'Read the rendered documentation',client_id:'55555555-5555-4555-8555-555555555555'});
+  const {id}=await response.json();await Promise.all(pending);
+  let calls=0;
+  await tickJobs(env,async messages=>{
+   assert.match(messages[0].content,/browser.read/);
+   if(++calls===1)return '{"tool":"browser.read","args":{"url":"https://developers.cloudflare.com/"}}';
+   assert.match(messages.at(-1).content,/Rendered browser content/);
+   return '{"final":"Rendered documentation was read."}';
+  });
+  const job=await(await send('a','/v1/agent/jobs/'+id)).json();
+  assert.equal(job.status,'done');
+  assert.equal(job.evidence[1].tool,'browser.read');
+  assert.match(job.evidence[1].observation,/Rendered browser content/);
+  assert.equal((await send('b','/v1/agent/jobs/'+id)).status,404);
+ }finally{sqlite.close()}
+});
