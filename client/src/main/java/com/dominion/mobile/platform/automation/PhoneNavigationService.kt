@@ -116,6 +116,7 @@ class PhoneNavigationService : AccessibilityService() {
         val configured = serviceInfo
         configured.packageNames = arrayOf(plan.app)
         try { serviceInfo = configured } catch (_: Exception) { return false }
+        _observed.value = null
         _status.value = "대상 앱 열기 요청"
         work = scope.launch {
             var completed = 0
@@ -156,7 +157,8 @@ class PhoneNavigationService : AccessibilityService() {
                     }
                 }
                 _status.value = "기기 실행 확인 " + completed + "/" + plan.steps.size +
-                    " · 마지막 화면 문구 확인. 외부 거래·신청 완료 증명은 아닙니다."
+                    if (plan.steps.last().action == "inspect") " · 실제 화면 조작 요소 확인"
+                    else " · 마지막 화면 문구 확인. 외부 거래·신청 완료 증명은 아닙니다."
             } catch (e: CancellationException) {
                 _status.value = "중단 · 확인된 단계 " + completed + "/" + plan.steps.size
                 if (e !is TimeoutCancellationException) throw e
@@ -189,6 +191,19 @@ class PhoneNavigationService : AccessibilityService() {
             }
             // Reject a password screen even within an allowed map app.
             check(nodes.none { it.isPassword })
+            // Only visible action labels; never collect editable text, passwords, or screenshots.
+            // Keep observations in process memory until the owner explicitly selects what to share.
+            val controls = nodes.asSequence().filter { node ->
+                node.packageName?.toString() == pkg && node.isVisibleToUser && node.isEnabled &&
+                    !node.isPassword && !node.isEditable && node.isClickable
+            }.flatMap { node -> sequenceOf(node.contentDescription, node.text) }
+                .mapNotNull { it?.toString()?.trim()?.takeIf { label ->
+                    label.isNotBlank() && label.length <= 80 && label.none(Char::isISOControl)
+                } }.distinct().take(24).toList()
+            if (step.action == "inspect") {
+                _observed.value = ObservedControls(pkg, controls)
+                return controls.isNotEmpty()
+            }
             val scrollAction = when (step.action) {
                 "scroll_forward" -> AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
                 "scroll_backward" -> AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
@@ -208,7 +223,10 @@ class PhoneNavigationService : AccessibilityService() {
                         else -> false
                     }
             }
-            val target = matches.singleOrNull() ?: return false
+            val target = matches.singleOrNull() ?: run {
+                _observed.value = ObservedControls(pkg, controls)
+                return false
+            }
             return when (step.action) {
                 "click" -> target.performAction(AccessibilityNodeInfo.ACTION_CLICK)
                 "search_text" -> target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT,Bundle().apply {
@@ -223,8 +241,13 @@ class PhoneNavigationService : AccessibilityService() {
             while(queue.isNotEmpty()) queue.removeFirst().recycle()
         }
     }
+    data class ObservedControls(val packageName: String, val labels: List<String>)
+
     companion object {
         private var instance: PhoneNavigationService? = null
+        private val _observed = MutableStateFlow<ObservedControls?>(null)
+        val observed = _observed.asStateFlow()
+        fun clearObserved() { _observed.value = null }
         private val _connected = MutableStateFlow(false)
         val connected = _connected.asStateFlow()
         private val _status = MutableStateFlow("")

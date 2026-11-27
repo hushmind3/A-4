@@ -51,11 +51,14 @@ data class PhoneNavigationPlan(val app: String, val steps: List<PhoneNavigationS
 
         fun valid(plan: PhoneNavigationPlan): Boolean =
             (plan.version == 1 && plan.app in apps || plan.version == 2 && eligiblePackage(plan.app)) &&
-            plan.steps.size in 1..8 && plan.steps.last().action == "expect" &&
+            plan.steps.size in 1..8 &&
+            (plan.steps.last().action == "expect" || plan.version == 2 && plan.steps.last().action == "inspect") &&
+            plan.steps.dropLast(1).none { it.action == "inspect" } &&
             plan.steps.all { step ->
                 step.label.isNotBlank() && step.label.length <= 100 && step.label.none(Char::isISOControl) &&
                     when (step.action) {
                         "expect" -> step.value == null
+                        "inspect" -> plan.version == 2 && step.value == null && step.label in setOf("화면", "Screen")
                         "click", "scroll_forward", "scroll_backward" ->
                             step.value == null && permittedLabel(plan, step.action, step.label)
                         "search_text" -> permittedLabel(plan, step.action, step.label) &&
@@ -104,7 +107,7 @@ data class PhoneNavigationPlan(val app: String, val steps: List<PhoneNavigationS
                         require(step.keySet() == setOf("action","label","value"))
                         PhoneNavigationStep(action,label,read(step,"value",250))
                     }
-                    "expect" -> {
+                    "expect", "inspect" -> {
                         require(step.keySet() == setOf("action","label"))
                         PhoneNavigationStep(action,label)
                     }
@@ -116,13 +119,15 @@ data class PhoneNavigationPlan(val app: String, val steps: List<PhoneNavigationS
         fun selectedAppPrompt(request: String, app: String, title: String): String {
             require(eligiblePackage(app))
             val safeTitle = title.filterNot(Char::isISOControl).take(100)
-            return "사용자가 선택한 설치 앱: $safeTitle ($app)\\n사용자 요청: " + request.take(2000) + "\\n" + """
+            return "사용자가 선택한 설치 앱: $safeTitle ($app)\n사용자 요청: " + request.take(2000) + "\n" + """
                 dominion-phone-plan 코드 펜스 하나에 실제 기기 탐색 JSON을 반환하세요.
                 {"schema":"dominion-phone-plan/v2","app":"$app","steps":[{"action":"click","label":"검색"},{"action":"search_text","label":"검색","value":"사용자 검색어"},{"action":"expect","label":"확인할 화면 문구"}]}
-                앱 패키지는 변경하지 마세요. 최대 8단계, 마지막은 expect입니다.
+                앱 패키지는 변경하지 마세요. 최대 8단계, 마지막은 expect 또는 inspect입니다.
                 click은 사용자가 실제 화면에서 확인할 정확한 탐색 버튼 문구, search_text는 검색 입력란만 가능합니다.
                 스크롤은 scroll_forward/scroll_backward와 label "화면"입니다.
-                화면 문구를 추측해 자동 실행하지 마세요. 로그인·인증·결제·발송·삭제·제출은 사용자가 직접 처리합니다.
+                실제 화면 문구가 불명확하면 마지막 단계 {"action":"inspect","label":"화면"}으로 관찰을 요청하세요.
+                사용자가 검토하여 전달한 실제 화면 조작 요소만 다음 계획의 근거로 사용하세요.
+                로그인·인증·결제·발송·삭제·제출은 사용자가 직접 처리합니다.
                 """.trimIndent()
         }
         fun prompt(request: String): String = "사용자 요청: " + request.take(2000) + "\n" + """
