@@ -63,14 +63,23 @@ data class CloudVoiceCapabilities(val stt:Boolean=false, val tts_en:Boolean=fals
 data class CloudTranscript(val text:String,val language:String,val remaining:Int)
 private data class CloudSpeechText(val text:String,val language:String)
 private data class CloudTaskRequest(val client_id:String,val prompt:String)
+data class CloudToolReceipt(val step:Int,val tool:String,val status:String,
+    val observed_at:Long,val source:String,val observation:String)
 data class CloudTask(val id:String,val status:String,val steps:Int=0,
-    val result:String?=null,val error:String?=null,val updated_at:Long=0) {
+    val result:String?=null,val error:String?=null,val updated_at:Long=0,
+    val evidence:List<CloudToolReceipt>?=null) {
     fun checked(expectedId:String?=null):CloudTask {
         require(runCatching{java.util.UUID.fromString(id).toString()==id}.getOrDefault(false))
         require(expectedId==null||expectedId==id)
         require(status in setOf("queued","running","done","failed","cancelled"))
         require(steps in 0..5)
         require(result==null||result.length<=5000)
+        evidence?.let { rows ->
+            require(rows.size<=5 && rows.map{it.step}.distinct().size==rows.size)
+            require(rows.all{it.step in 1..steps && it.tool in setOf("clock","web.read","web.search") &&
+                it.status in setOf("ok","failed") && it.observed_at>0 &&
+                it.source.length<=1000 && it.observation.length<=4000})
+        }
         return this
     }
 }

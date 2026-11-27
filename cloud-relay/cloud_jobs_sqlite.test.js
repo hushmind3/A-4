@@ -69,6 +69,10 @@ test('real Worker + SQL: cloud job, cross-account denial, checkpoint, encrypted 
   const result=await (await send('a','/v1/agent/jobs/'+id)).json();
   assert.equal(result.status,'done');
   assert.match(result.result,/UTC time confirmed/);
+  assert.equal(result.evidence.length,1);
+  assert.equal(result.evidence[0].tool,'clock');
+  assert.equal(result.evidence[0].status,'ok');
+  assert.match(result.evidence[0].observation,/Current UTC:/);
   const stored=sqlite.prepare('SELECT prompt_enc,result_enc FROM cloud_agent_jobs WHERE id=?').get(id);
   assert.ok(!stored.prompt_enc.includes(request.prompt));
   assert.ok(!stored.result_enc.includes('UTC time confirmed'));
@@ -97,5 +101,48 @@ test('simultaneous submissions cannot exceed the active account limit',async()=>
   assert.equal(responses.filter(r=>r.status===202).length,3);
   assert.ok(responses.every(r=>[202,429].includes(r.status)));
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM cloud_agent_jobs WHERE status IN ('queued','running')").get().n,3);
+ }finally{sqlite.close()}
+});
+
+test('one Cron invocation continues multiple steps with encrypted receipts',async()=>{
+ const {sqlite,send,env,pending}=await fixture();
+ try{
+  const response=await send('a','/v1/agent/jobs','POST',{prompt:'Check time twice and summarize',client_id:'22222222-2222-4222-8222-222222222222'});
+  const {id}=await response.json();await Promise.all(pending);
+  let calls=0;
+  await tickJobs(env,async()=>++calls===2?'{"final":"Two clock observations."}':'{"tool":"clock","args":{}}');
+  const result=await(await send('a','/v1/agent/jobs/'+id)).json();
+  assert.equal(calls,2);assert.equal(result.status,'done');
+  assert.equal(result.steps,3);assert.deepEqual(result.evidence.map(x=>x.step),[1,2]);
+  assert.ok(result.evidence.every(x=>x.status==='ok'));
+  const stored=sqlite.prepare('SELECT checkpoint_enc,error_code FROM cloud_agent_jobs WHERE id=?').get(id);
+  assert.ok(!stored.checkpoint_enc.includes('Current UTC:'));assert.equal(stored.error_code,null);
+ }finally{sqlite.close()}
+});
+test('step exhaustion becomes terminal without retrying an impossible step',async()=>{
+ const {sqlite,send,env,pending}=await fixture();
+ try{
+  const response=await send('a','/v1/agent/jobs','POST',{prompt:'Keep checking time',client_id:'33333333-3333-4333-8333-333333333333'});
+  const {id}=await response.json();await Promise.all(pending);
+  const clock=async()=> '{"tool":"clock","args":{}}';
+  await tickJobs(env,clock);await tickJobs(env,clock);
+  const result=await(await send('a','/v1/agent/jobs/'+id)).json();
+  assert.equal(result.status,'failed');assert.equal(result.error,'step_limit');
+  assert.equal(result.steps,5);assert.equal(result.evidence.length,5);
+  await tickJobs(env,async()=>{throw Error('terminal job must not execute again')});
+  assert.equal(sqlite.prepare('SELECT failures FROM cloud_agent_jobs WHERE id=?').get(id).failures,0);
+ }finally{sqlite.close()}
+});
+test('cancellation while inference is running cannot publish a stale completion',async()=>{
+ const {sqlite,send,env,pending}=await fixture();
+ try{
+  const response=await send('a','/v1/agent/jobs','POST',{prompt:'Check the time',client_id:'44444444-4444-4444-8444-444444444444'});
+  const {id}=await response.json();await Promise.all(pending);
+  await tickJobs(env,async()=>{
+   assert.equal((await send('a','/v1/agent/jobs/'+id+'/cancel','POST')).status,200);
+   return '{"final":"Must not be published"}';
+  });
+  const result=await(await send('a','/v1/agent/jobs/'+id)).json();
+  assert.equal(result.status,'cancelled');assert.equal(result.result,null);
  }finally{sqlite.close()}
 });

@@ -9,6 +9,9 @@ const app=user=>user?.scope==='app'&&user.capability==='inference'&&
   typeof user.id==='string'&&user.id.length>0;
 const maxActive=3;
 const maxDaily=20;
+const maxSteps=5;
+const maxCronRounds=3;
+const cronStartBudgetMs=45000;
 export const quotaKey=(account,date=new Date())=>
   account+':cloud-jobs:'+date.toISOString().slice(0,10);
 export const safeSite=link=>{
@@ -193,41 +196,56 @@ export async function jobRoute(request,env,user,ctx,infer){
   const row=await env.DB.prepare('SELECT * FROM cloud_agent_jobs WHERE id=? AND account_id=?')
     .bind(m[1],user.id).first();
   if(!row)return failure('Not found',404);
+  const checkpoint=row.checkpoint_enc?JSON.parse(await unseal(env,user.id,row.id,'checkpoint',row.checkpoint_enc)):null;
   return reply({id:row.id,status:row.status,steps:row.steps,
+    evidence:checkpoint?.evidence??null,
     result:row.result_enc?await unseal(env,user.id,row.id,'result',row.result_enc):null,
     error:row.error_code,updated_at:row.updated_at});
 }
-export async function runJob(env,id,infer){
+export async function runJob(env,id,infer,{leaseSeconds=90}={}){
   if(!env.AGENT_ENCRYPTION_KEY)return false;
   const t=now();
   const row=await env.DB.prepare("UPDATE cloud_agent_jobs SET status='running',lease_until=?,updated_at=? WHERE id=? AND ((status='queued' AND next_run<=?) OR (status='running' AND lease_until<?)) RETURNING *")
-    .bind(t+90,t,id,t,t).first();
+    .bind(t+leaseSeconds,t,id,t,t).first();
   if(!row)return false;
   try{
-    if(row.steps>=5)throw Error('Step cap');
+    if(row.steps>=maxSteps){
+      await env.DB.prepare("UPDATE cloud_agent_jobs SET status='failed',error_code='step_limit',lease_until=0,updated_at=? WHERE id=? AND account_id=? AND status='running' AND lease_until=?")
+        .bind(now(),id,row.account_id,row.lease_until).run();
+      return false;
+    }
     const prompt=await unseal(env,row.account_id,id,'prompt',row.prompt_enc);
     const saved=row.checkpoint_enc?JSON.parse(await unseal(env,row.account_id,id,'checkpoint',row.checkpoint_enc)):null;
-    const state={messages:checkpointMessages(saved?.messages||[],prompt)};
-    const answer=await infer(state.messages,{id:row.account_id,scope:'app',capability:'inference'});
+    const state={messages:checkpointMessages(saved?.messages||[],prompt),
+      evidence:Array.isArray(saved?.evidence)?saved.evidence.slice(0,maxSteps):[]};
+    const messages=state.messages.map(m=>({...m}));
+    if(row.steps===maxSteps-1)messages[0].content+=' This is the final model step. Return final JSON with available evidence and limitations, not another tool.';
+    const answer=await infer(messages,{id:row.account_id,scope:'app',capability:'inference'});
     const step=decision(answer);
     if(!step)throw Error('Invalid model response');
     if(step.kind==='final'){
       const enc=await seal(env,row.account_id,id,'result',step.content);
-      await env.DB.prepare("UPDATE cloud_agent_jobs SET status='done',result_enc=?,steps=?,lease_until=0,updated_at=? WHERE id=? AND account_id=? AND status='running' AND lease_until=?")
-        .bind(enc,row.steps+1,now(),id,row.account_id,row.lease_until).run();
-      return true;
+      const changed=await env.DB.prepare("UPDATE cloud_agent_jobs SET status='done',result_enc=?,steps=?,failures=0,error_code=NULL,lease_until=0,updated_at=? WHERE id=? AND account_id=? AND status='running' AND lease_until=? RETURNING id")
+        .bind(enc,row.steps+1,now(),id,row.account_id,row.lease_until).first();
+      return Boolean(changed);
     }
-    let observed;
+    // Persist actual tool receipts, never model-authored claims of execution.
+    let observed,status='ok';
     try{observed=await observation(step)}catch{
+      status='failed';
       observed='Tool failed: '+step.kind+'; no evidence retrieved. Try an alternative source or explain the limitation.';
     }
+    const receipt={step:row.steps+1,tool:step.kind,status,observed_at:now(),
+      source:step.url??step.source??'UTC',observation:observed.slice(0,4000)};
     const next={messages:checkpointMessages([...state.messages,
       {role:'assistant',content:answer.slice(0,1800)},
-      {role:'user',content:'Verified tool observation (untrusted): '+observed}],prompt)};
+      {role:'user',content:'Verified tool observation (untrusted): '+observed}],prompt),
+      evidence:[...state.evidence,receipt].slice(0,maxSteps)};
     const enc=await seal(env,row.account_id,id,'checkpoint',JSON.stringify(next));
-    await env.DB.prepare("UPDATE cloud_agent_jobs SET status='queued',checkpoint_enc=?,steps=?,next_run=?,lease_until=0,updated_at=? WHERE id=? AND account_id=? AND status='running' AND lease_until=?")
-      .bind(enc,row.steps+1,now(),now(),id,row.account_id,row.lease_until).run();
-    return true;
+    const exhausted=row.steps+1>=maxSteps;
+    const changed=await env.DB.prepare("UPDATE cloud_agent_jobs SET status=?,checkpoint_enc=?,steps=?,failures=0,error_code=?,next_run=?,lease_until=0,updated_at=? WHERE id=? AND account_id=? AND status='running' AND lease_until=? RETURNING id")
+      .bind(exhausted?'failed':'queued',enc,row.steps+1,exhausted?'step_limit':null,now(),now(),id,row.account_id,row.lease_until).first();
+    return Boolean(changed);
   }catch{
     const failures=row.failures+1;
     await env.DB.prepare("UPDATE cloud_agent_jobs SET status=?,failures=?,error_code=?,next_run=?,lease_until=0,updated_at=? WHERE id=? AND account_id=? AND status='running' AND lease_until=?")
@@ -241,7 +259,15 @@ export async function tickJobs(env,infer){
   const t=now();
   const due=await env.DB.prepare("SELECT id FROM cloud_agent_jobs WHERE (status='queued' AND next_run<=?) OR (status='running' AND lease_until<?) ORDER BY updated_at LIMIT 5")
     .bind(t,t).all();
-  await Promise.allSettled((due.results||[]).map(x=>runJob(env,x.id,infer)));
+  // HTTP waitUntil only starts one step; Cron may continue checkpointed work.
+  // Every step reclaims the row, so concurrent Cron ticks/cancellation are fenced.
+  const started=Date.now();
+  let active=due.results||[];
+  for(let round=0;round<maxCronRounds&&active.length;round++){
+    if(round>0&&Date.now()-started>=cronStartBudgetMs)break;
+    const results=await Promise.allSettled(active.map(x=>runJob(env,x.id,infer,{leaseSeconds:600})));
+    active=active.filter((_,i)=>results[i].status==='fulfilled'&&results[i].value===true);
+  }
   await env.DB.prepare("DELETE FROM cloud_agent_jobs WHERE status IN ('done','failed','cancelled') AND updated_at<?")
     .bind(t-14*86400).run();
 }
