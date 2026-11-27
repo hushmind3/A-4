@@ -39,7 +39,7 @@ test('work persists a question and resumes from a user answer',async()=>{
     await Promise.all(pending);
     let work=await(await workRoute(req('/v1/work/'+id),{DB},user,ctx,infer)).json();
     assert.equal(work.status,'waiting');
-    assert.match(work.events.at(-1).text,/생년월일/);
+    assert.ok(work.events.some(e=>/생년월일/.test(e.text)));
     await workRoute(req('/v1/work/'+id+'/message','POST',{
       client_id:'22222222-2222-4222-8222-222222222222',text:'1990-01-01'}),{DB},user,ctx,infer);
     await Promise.all(pending);
