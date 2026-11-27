@@ -85,6 +85,7 @@ class CloudAccountRepository(context: Context) {
     private val appContext = context.applicationContext
     private val store = EncryptedRecordStore(appContext, "dominion_cloud_session", CloudPairing::class.java)
     private val lock = Mutex()
+    val remote=CloudRemoteAccount(appContext)
     private val engineLinks=EncryptedRecordStore(appContext,"dominion_cloud_engine_links",CloudEngineLinks::class.java)
     private fun links()=engineLinks.load()?:CloudEngineLinks()
     private fun saveLinks(value:CloudEngineLinks)=engineLinks.save(value)
@@ -177,8 +178,7 @@ class CloudAccountRepository(context: Context) {
             val link=links().forAccount(account)?:return@withLock null
             if(automatic && !link.autoReconnect)return@withLock null
             val raw=link.connection
-            val connection=com.dominion.mobile.data.local.EngineConnection.parse(raw.origin,raw.ownerToken,
-                raw.accessClientId,raw.accessClientSecret)
+            val connection=raw.validated()
             val result=probeEngine(ApiFactory.create(connection))
             check(result.authenticated==ProbeState.OK && result.rooms==ProbeState.OK)
             check(approved().second.account_id==account)
@@ -226,6 +226,7 @@ class CloudAccountRepository(context: Context) {
     suspend fun disconnect(): CloudAccountSnapshot = withContext(Dispatchers.IO) {
         lock.withLock {
             val pair = loadPairing() ?: return@withLock CloudAccountSnapshot()
+            remote.disconnect()
             check(api.disconnect("Bearer ${pair.token}", emptyMap()).status == "revoked")
             store.clear()
             CloudAccountSnapshot()

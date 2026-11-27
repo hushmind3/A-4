@@ -14,7 +14,7 @@ class AppContainer(context: Context) {
     private val credentials = EncryptedRecordStore(app, "dominion_engine_connection", EngineConnection::class.java)
     val cloudAccount by lazy { com.dominion.mobile.data.remote.CloudAccountRepository(app) }
     @Volatile var engine: EngineConnection? = runCatching {
-        credentials.load()?.let { EngineConnection.parse(it.origin, it.ownerToken, it.accessClientId, it.accessClientSecret) }
+        credentials.load()?.validated()
     }.getOrNull()
         private set
     private val stores = mutableMapOf<String, LocalStore>()

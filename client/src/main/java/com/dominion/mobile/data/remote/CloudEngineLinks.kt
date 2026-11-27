@@ -11,7 +11,7 @@ internal data class CloudEngineLinks(val entries:List<CloudEngineLink> = emptyLi
     }
     fun bind(account:String,connection:EngineConnection):CloudEngineLinks {
         require(account.isNotBlank()&&account.length<=256)
-        val checked=EngineConnection.parse(connection.origin,connection.ownerToken,connection.accessClientId,connection.accessClientSecret)
+        val checked=connection.validated()
         return CloudEngineLinks((entries.filterNot{it.accountId==account}+CloudEngineLink(account,checked)).takeLast(8))
     }
     fun forget(account:String)=CloudEngineLinks(entries.filterNot{it.accountId==account})

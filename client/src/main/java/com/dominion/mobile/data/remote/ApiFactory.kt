@@ -12,6 +12,7 @@ import java.util.concurrent.TimeUnit
 object ApiFactory {
 
     fun create(connection: EngineConnection): DominionApi {
+        connection.validated()
         val gson = GsonBuilder().setLenient().create()
         val client = OkHttpClient.Builder()
             .connectTimeout(20, TimeUnit.SECONDS)
@@ -26,6 +27,7 @@ object ApiFactory {
                 check(actual.scheme == expected.scheme && actual.host == expected.host && actual.port == expected.port) {
                     "Engine credentials cannot leave configured origin"
                 }
+                if(connection.isRelay)return@addInterceptor NativeRelayTransport.execute(chain,connection)
                 val request = chain.request().newBuilder().apply {
                     if (chain.request().header("Accept") == null) header("Accept", "application/json")
                     header("X-Client-Version", BuildConfig.VERSION_NAME)

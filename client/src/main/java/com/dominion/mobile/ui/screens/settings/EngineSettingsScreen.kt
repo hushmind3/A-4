@@ -61,6 +61,7 @@ fun EngineSettingsScreen(onBack: () -> Unit) {
         }
     }
     fun candidate(): EngineConnection {
+        if(saved?.isRelay==true && origin==saved.origin && token.isBlank() && !useAccess)return saved.validated()
         val parsed = if (token.isBlank() && saved != null)
             EngineConnection.parse(origin, saved.ownerToken).also { require(it.origin == saved.origin) }
         else EngineConnection.parse(origin, token)
@@ -88,6 +89,7 @@ fun EngineSettingsScreen(onBack: () -> Unit) {
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(tr(lang, "DOMINION 실행 서버", "DOMINION engine"), style = MaterialTheme.typography.titleLarge)
+            if(saved?.isRelay==true)Text("Google 계정 WebSocket 연결 · PC 4317 · 직접 HTTPS 주소 입력 불필요")
             OutlinedButton(enabled = !busy, onClick = {
                 origin = "https://engine.dominionai.kr/"
                 token = ""; useAccess = false; accessId = ""; accessSecret = ""; diagnosis = null

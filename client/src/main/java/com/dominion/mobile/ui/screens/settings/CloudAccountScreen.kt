@@ -196,6 +196,11 @@ fun CloudAccountScreen(onBack: () -> Unit, onEngineSettings: () -> Unit) {
                         Text(tr(lang, "오늘 무료 모델 잔여 요청: ", "Free requests remaining today: ") +
                             "${it.free_daily_remaining} / ${it.free_daily_limit}")
                     }
+                    current.accountId?.let{account->
+                        CloudPcPanel(repo.remote,account,container.engine,
+                            onConnect={connection->(context as com.dominion.mobile.MainActivity).applyEngine(connection)},
+                            onDisconnect={if(container.engine?.isRelay==true)(context as com.dominion.mobile.MainActivity).applyEngine(null)})
+                    }
                     Text("Google 계정의 본체 연결",style=MaterialTheme.typography.titleMedium)
                     if(current.linkedEngineOrigin!=null){
                         Text("이 기기에 기억한 본체: "+current.linkedEngineOrigin)
@@ -259,7 +264,10 @@ fun CloudAccountScreen(onBack: () -> Unit, onEngineSettings: () -> Unit) {
                         if(container.engine==null)Text("본체가 연결되면 해당 모델을 기존 하네스에 등록할 수 있습니다.")
                         if(registered.isNotBlank())Text("본체 모델 등록 완료. 본체의 모델 선택에서 사용하세요. 등록 ID: "+registered)
                     }
-                    OutlinedButton(onClick = { runAction(repo::disconnect) }, enabled = !busy) {
+                    OutlinedButton(onClick = { runAction({
+                        if(container.engine?.isRelay==true)(context as com.dominion.mobile.MainActivity).applyEngine(null)
+                        repo.disconnect()
+                    }) }, enabled = !busy) {
                         Text(tr(lang, "클라우드 연결 해제", "Disconnect cloud account"))
                     }
                 }
