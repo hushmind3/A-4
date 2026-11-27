@@ -7,6 +7,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
+import kotlinx.coroutines.launch
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.dominion.mobile.data.PhoneNavigationPlan
@@ -14,11 +16,16 @@ import com.dominion.mobile.platform.automation.PhoneNavigationService
 
 @Composable
 fun PhoneNavigationDialog(plan: PhoneNavigationPlan, onDismiss: () -> Unit,
-    onResult: ((String) -> Unit)? = null) {
+    onResult: ((String) -> Unit)? = null,
+    onVisualResult: (suspend (PhoneNavigationService.VisualFrame) -> Unit)? = null) {
     val context = LocalContext.current
     val connected by PhoneNavigationService.connected.collectAsState()
     val status by PhoneNavigationService.status.collectAsState()
     val observed by PhoneNavigationService.observed.collectAsState()
+    val visual by PhoneNavigationService.visual.collectAsState()
+    val frame = visual?.takeIf { it.packageName == plan.app }
+    val scope = rememberCoroutineScope()
+    var sharing by remember { mutableStateOf(false) }
     val controls = observed?.takeIf { it.packageName == plan.app }?.labels.orEmpty()
     var selectedControls by remember(plan, controls) { mutableStateOf(setOf<String>()) }
     DisposableEffect(plan) {
@@ -53,6 +60,9 @@ fun PhoneNavigationDialog(plan: PhoneNavigationPlan, onDismiss: () -> Unit,
                         "scroll_forward" -> "화면 앞으로 스크롤: "
                         "scroll_backward" -> "화면 뒤로 스크롤: "
                         "inspect" -> "실제 조작 요소 관찰: "
+                        "visual_inspect" -> "대상 앱 화면 촬영: "
+                        "tap_point" -> "화면 좌표 터치: "
+                        "swipe_point" -> "화면 좌표 스와이프: "
                         else -> "화면 확인: "
                     } + step.label + (step.value?.let { " → " + it } ?: ""))
                 }
@@ -79,6 +89,25 @@ fun PhoneNavigationDialog(plan: PhoneNavigationPlan, onDismiss: () -> Unit,
                             PhoneNavigationService.clearObserved()
                         }) { Text("실행 기록과 선택한 관찰을 대화에 넣기") }
                     }
+                }
+                if (started && frame != null) {
+                    val preview = remember(frame.digest) {
+                        android.graphics.BitmapFactory.decodeByteArray(frame.png,0,frame.png.size)
+                    }
+                    DisposableEffect(preview) { onDispose { preview?.recycle() } }
+                    if (preview != null) androidx.compose.foundation.Image(
+                        bitmap = preview.asImageBitmap(), contentDescription = "대상 앱의 실제 화면",
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp))
+                    Text("대상 창 캡처 · " + frame.digest.take(12), style = MaterialTheme.typography.labelSmall)
+                    if (onVisualResult != null) TextButton(enabled = !sharing, onClick = {
+                        sharing = true
+                        scope.launch {
+                            try { onVisualResult(frame); PhoneNavigationService.clearObserved(); onDismiss() }
+                            catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                            catch (_: Exception) { error = "화면 첨부 실패 · 다시 확인하세요." }
+                            finally { sharing = false }
+                        }
+                    }) { Text("이 화면을 본체에 첨부하고 다음 계획 요청") }
                 }
                 if (started && controls.isNotEmpty()) {
                     HorizontalDivider()

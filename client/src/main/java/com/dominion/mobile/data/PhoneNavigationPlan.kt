@@ -52,13 +52,18 @@ data class PhoneNavigationPlan(val app: String, val steps: List<PhoneNavigationS
         fun valid(plan: PhoneNavigationPlan): Boolean =
             (plan.version == 1 && plan.app in apps || plan.version == 2 && eligiblePackage(plan.app)) &&
             plan.steps.size in 1..8 &&
-            (plan.steps.last().action == "expect" || plan.version == 2 && plan.steps.last().action == "inspect") &&
-            plan.steps.dropLast(1).none { it.action == "inspect" } &&
+            (plan.steps.last().action == "expect" || plan.version == 2 && plan.steps.last().action in setOf("inspect","visual_inspect")) &&
+            plan.steps.dropLast(1).none { it.action in setOf("inspect","visual_inspect") } &&
+            plan.steps.count { it.action in setOf("tap_point","swipe_point") } <= 1 &&
+            (plan.steps.none { it.action in setOf("tap_point","swipe_point") } ||
+                plan.steps.size == 2 && plan.steps.last().action == "visual_inspect") &&
             plan.steps.all { step ->
                 step.label.isNotBlank() && step.label.length <= 100 && step.label.none(Char::isISOControl) &&
                     when (step.action) {
                         "expect" -> step.value == null
-                        "inspect" -> plan.version == 2 && step.value == null && step.label in setOf("화면", "Screen")
+                        "inspect", "visual_inspect" -> plan.version == 2 && step.value == null && step.label in setOf("화면", "Screen")
+                        "tap_point", "swipe_point" -> plan.version == 2 &&
+                            VisualGesture.parse(step.action,step.value) != null
                         "click", "scroll_forward", "scroll_backward" ->
                             step.value == null && permittedLabel(plan, step.action, step.label)
                         "search_text" -> permittedLabel(plan, step.action, step.label) &&
@@ -109,11 +114,11 @@ data class PhoneNavigationPlan(val app: String, val steps: List<PhoneNavigationS
                         require(step.keySet() == setOf("action","label"))
                         PhoneNavigationStep(action,label)
                     }
-                    "search_text" -> {
+                    "search_text", "tap_point", "swipe_point" -> {
                         require(step.keySet() == setOf("action","label","value"))
                         PhoneNavigationStep(action,label,read(step,"value",250))
                     }
-                    "expect", "inspect" -> {
+                    "expect", "inspect", "visual_inspect" -> {
                         require(step.keySet() == setOf("action","label"))
                         PhoneNavigationStep(action,label)
                     }
@@ -133,6 +138,9 @@ data class PhoneNavigationPlan(val app: String, val steps: List<PhoneNavigationS
                 스크롤은 scroll_forward/scroll_backward와 label "화면"입니다.
                 실제 화면 문구가 불명확하면 마지막 단계 {"action":"inspect","label":"화면"}으로 관찰을 요청하세요.
                 사용자가 검토하여 전달한 실제 화면 조작 요소만 다음 계획의 근거로 사용하세요.
+                시각적 정보가 필요하면 마지막 단계 {"action":"visual_inspect","label":"화면"}을 사용하세요(Android 14 이상).
+                실제 첨부 이미지의 frame SHA256을 받은 경우에만 tap_point (value="SHA256:x:y") 또는 swipe_point (value="SHA256:x:y:x2:y2") 한 단계와 마지막 visual_inspect를 제안할 수 있습니다.
+                x/y는 해당 이미지 가로/세로의 0~1000 비율 좌표입니다. 새 화면이 달라지면 실행하지 않습니다. 좌표 조작도 직접 승인해야 합니다.
                 로그인·인증·결제·발송·삭제·제출은 사용자가 직접 처리합니다.
                 """.trimIndent()
         }

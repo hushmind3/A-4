@@ -2,7 +2,9 @@
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
-    android:accessibilityFlags="flagReportViewIds"
+    android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows"
+    android:canTakeScreenshot="true"
+    android:canPerformGestures="true"
     android:canRetrieveWindowContent="true"
     android:notificationTimeout="100"
     android:packageNames="com.nhn.android.nmap,net.daum.android.map,com.google.android.youtube,com.google.android.calendar,com.google.android.apps.nbu.files,com.sec.android.app.myfiles" />

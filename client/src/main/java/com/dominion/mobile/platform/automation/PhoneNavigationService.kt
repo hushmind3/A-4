@@ -1,6 +1,13 @@
 package com.dominion.mobile.platform.automation
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.GestureDescription
+import android.graphics.Bitmap
+import android.graphics.Path
+import android.graphics.Rect
+import android.os.Build
+import com.dominion.mobile.data.VisualGesture
+import kotlin.coroutines.resume
 import android.app.KeyguardManager
 import android.content.Intent
 import android.graphics.PixelFormat
@@ -118,6 +125,7 @@ class PhoneNavigationService : AccessibilityService() {
         configured.packageNames = arrayOf(plan.app)
         try { serviceInfo = configured } catch (_: Exception) { return false }
         _observed.value = null
+        _visual.value = null
         _status.value = "대상 앱 열기 요청"
         work = scope.launch {
             var completed = 0
@@ -147,6 +155,23 @@ class PhoneNavigationService : AccessibilityService() {
                             // Give the user an opportunity to stop before each operation.
                             delay(600)
                         } else approveStep(step,plan.app,completed+1,plan.steps.size)
+                        if (step.action in setOf("visual_inspect","tap_point","swipe_point")) {
+                            check(Build.VERSION.SDK_INT >= 34) { "Android 14 required" }
+                            val frame = captureWindow(plan.app)
+                            if (step.action == "visual_inspect") {
+                                _visual.value = frame
+                            } else {
+                                val gesture = requireNotNull(VisualGesture.parse(step.action,step.value))
+                                if (gesture.frame != frame.digest) {
+                                    _visual.value = frame
+                                    error("Screen changed; replan")
+                                }
+                                check(performVisualGesture(frame,gesture))
+                            }
+                            completed++
+                            delay(500)
+                            continue
+                        }
                         val deadline = android.os.SystemClock.elapsedRealtime() + 4000
                         var success = false
                         while (!success && android.os.SystemClock.elapsedRealtime() < deadline) {
@@ -164,7 +189,7 @@ class PhoneNavigationService : AccessibilityService() {
                     }
                 }
                 _status.value = "기기 실행 확인 " + completed + "/" + plan.steps.size +
-                    if (plan.steps.last().action == "inspect") " · 실제 화면 조작 요소 확인"
+                    if (plan.steps.last().action in setOf("inspect","visual_inspect")) " · 실제 화면 조작 요소 확인"
                     else " · 마지막 화면 문구 확인. 외부 거래·신청 완료 증명은 아닙니다."
             } catch (e: CancellationException) {
                 _status.value = "중단 · 확인된 단계 " + completed + "/" + plan.steps.size
@@ -181,6 +206,107 @@ class PhoneNavigationService : AccessibilityService() {
             }
         }
         return true
+    }
+
+    private fun checkedWindow(pkg: String): Pair<Int, Rect> {
+        check(unlocked())
+        val root = requireNotNull(rootInActiveWindow)
+        try {
+            check(root.packageName?.toString() == pkg)
+            val queue = java.util.ArrayDeque<AccessibilityNodeInfo>()
+            queue.add(AccessibilityNodeInfo.obtain(root))
+            var inspected = 0
+            try {
+                while (queue.isNotEmpty()) {
+                    val node = queue.removeFirst()
+                    try {
+                        check(++inspected <= 600 && !node.isPassword)
+                        if (node.packageName?.toString() == pkg) {
+                            check(node.childCount <= 80)
+                            for (i in 0 until node.childCount) node.getChild(i)?.let(queue::addLast)
+                        }
+                    } finally { node.recycle() }
+                }
+            } finally { while (queue.isNotEmpty()) queue.removeFirst().recycle() }
+            val win = requireNotNull(root.window)
+            try {
+                check(win.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION)
+                val bounds = Rect()
+                win.getBoundsInScreen(bounds)
+                check(bounds.width() > 0 && bounds.height() > 0)
+                return win.id to bounds
+            } finally { win.recycle() }
+        } finally { root.recycle() }
+    }
+
+    @androidx.annotation.RequiresApi(34)
+    private suspend fun captureWindow(pkg: String): VisualFrame {
+        val (id,bounds) = checkedWindow(pkg)
+        val bytes = withTimeout(4500L) {
+            suspendCancellableCoroutine<ByteArray> { continuation ->
+                takeScreenshotOfWindow(id, mainExecutor, object : TakeScreenshotCallback {
+                    override fun onSuccess(result: ScreenshotResult) {
+                        val hardware = result.hardwareBuffer
+                        val bitmap = try {
+                            if (continuation.isActive) Bitmap.wrapHardwareBuffer(hardware,result.colorSpace) else null
+                        } finally { hardware.close() }
+                        if (bitmap == null) {
+                            if (continuation.isActive) continuation.resumeWith(Result.failure(IllegalStateException("No frame")))
+                            return
+                        }
+                        try {
+                            val copy = requireNotNull(bitmap.copy(Bitmap.Config.ARGB_8888,false))
+                            try {
+                                require(copy.width == bounds.width() && copy.height == bounds.height())
+                                val output = java.io.ByteArrayOutputStream()
+                                check(copy.compress(Bitmap.CompressFormat.PNG,100,output))
+                                val image = output.toByteArray()
+                                require(image.size in 1..(5*1024*1024))
+                                if (continuation.isActive) continuation.resume(image)
+                            } finally { copy.recycle() }
+                        } catch (e: Exception) {
+                            if (continuation.isActive) continuation.resumeWith(Result.failure(e))
+                        } finally { bitmap.recycle() }
+                    }
+                    override fun onFailure(errorCode: Int) {
+                        if (continuation.isActive) continuation.resumeWith(Result.failure(IllegalStateException("Window capture failed: $errorCode")))
+                    }
+                })
+            }
+        }
+        check(checkedWindow(pkg) == (id to bounds))
+        return VisualFrame(pkg, id, bounds, bytes, VisualGesture.digest(bytes))
+    }
+
+    private suspend fun performVisualGesture(frame: VisualFrame, command: VisualGesture): Boolean {
+        check(checkedWindow(frame.packageName) == (frame.windowId to frame.bounds))
+        fun point(x: Int,y: Int) = (frame.bounds.left + frame.bounds.width()*x/1000f) to
+            (frame.bounds.top + frame.bounds.height()*y/1000f)
+        val (x,y) = point(command.x,command.y)
+        val (ex,ey) = point(command.endX ?: command.x,command.endY ?: command.y)
+        val overlay = Rect()
+        stopView?.getGlobalVisibleRect(overlay)
+        // Refuse paths intersecting the stop/approval panel.
+        for (i in 0..40) {
+            val t = i/40f
+            check(!overlay.contains((x+(ex-x)*t).toInt(),(y+(ey-y)*t).toInt()))
+        }
+        val path = Path().apply { moveTo(x,y); if (command.endX != null) lineTo(ex,ey) }
+        val gesture = GestureDescription.Builder().addStroke(
+            GestureDescription.StrokeDescription(path,0,if(command.endX == null) 80 else 450)).build()
+        return withTimeout(3000L) {
+            suspendCancellableCoroutine { continuation ->
+                val sent = dispatchGesture(gesture,object : GestureResultCallback() {
+                    override fun onCompleted(gestureDescription: GestureDescription?) {
+                        if (continuation.isActive) continuation.resume(true)
+                    }
+                    override fun onCancelled(gestureDescription: GestureDescription?) {
+                        if (continuation.isActive) continuation.resume(false)
+                    }
+                },null)
+                if (!sent && continuation.isActive) continuation.resume(false)
+            }
+        }
     }
 
     private fun apply(root: AccessibilityNodeInfo, pkg: String, step: PhoneNavigationStep): Boolean {
@@ -250,11 +376,16 @@ class PhoneNavigationService : AccessibilityService() {
     }
     data class ObservedControls(val packageName: String, val labels: List<String>)
 
+    data class VisualFrame(val packageName: String, val windowId: Int, val bounds: Rect,
+        val png: ByteArray, val digest: String)
+
     companion object {
+        private val _visual = MutableStateFlow<VisualFrame?>(null)
+        val visual = _visual.asStateFlow()
         private var instance: PhoneNavigationService? = null
         private val _observed = MutableStateFlow<ObservedControls?>(null)
         val observed = _observed.asStateFlow()
-        fun clearObserved() { _observed.value = null }
+        fun clearObserved() { _observed.value = null; _visual.value = null }
         private val _connected = MutableStateFlow(false)
         val connected = _connected.asStateFlow()
         private val _status = MutableStateFlow("")
