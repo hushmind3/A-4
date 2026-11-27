@@ -400,7 +400,7 @@ private fun TaskCard(
             style = MaterialTheme.typography.labelSmall, color = p.textTertiary)
         task.engineStatus?.let { status ->
             val label = when (status) {
-                "submitting" -> tr(lang, "접수 확인 필요", "Submission needs verification")
+                "submitting", "cloud_submitting" -> tr(lang, "접수 확인 필요", "Submission needs verification")
                 "queued" -> tr(lang, "작업 대기", "Queued")
                 "running" -> tr(lang, "실행 중", "Running")
                 "completed", "done" -> tr(lang, "AI 작업 완료", "AI completed")

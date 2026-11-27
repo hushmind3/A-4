@@ -58,8 +58,8 @@ class CloudJobWorker(context:Context,parameters:WorkerParameters):CoroutineWorke
             return Result.success()
         }
         val pending=repo.state.value.tasks.filter{
-            it.engineJobId?.startsWith("cloud:")==true &&
-                CloudJobMonitor.isActive(it.engineStatus)
+            com.dominion.mobile.data.remote.TaskDispatch.needsCloudRefresh(it,
+                repo.state.value.conversation(it.engineRoomId.orEmpty()))
         }.take(16)
         var transientFailure=false
         for(task in pending){

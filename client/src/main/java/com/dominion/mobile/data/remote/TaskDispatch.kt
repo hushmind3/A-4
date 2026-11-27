@@ -14,6 +14,21 @@ object TaskDispatch {
         task.steps.forEach { append("\n- ").append(it.text) }
     }.take(32000)
 
+    fun pendingCloudSubmission(task:TaskItem):Boolean =
+        task.engineStatus=="cloud_submitting" && task.engineJobId==null &&
+            task.engineRoomId==roomId(task.id) && !task.enginePrompt.isNullOrBlank()
+
+    fun needsCloudRefresh(task:TaskItem,room:com.dominion.mobile.data.model.Conversation?):Boolean {
+        if(pendingCloudSubmission(task))return true
+        val job=task.engineJobId?.takeIf{it.startsWith("cloud:")}?:return false
+        if(task.engineStatus in setOf("queued","running"))return true
+        // A duplicate submission response may say done without including output.
+        // Fetch the detail again only while the original room remains intact.
+        return task.engineStatus=="done" && room!=null && room.sessionId==task.engineSessionId &&
+            room.messages.none{it.jobId==job&&it.replyTo==task.engineMessageId&&
+                it.sender==com.dominion.mobile.data.model.MessageSender.ASSISTANT}
+    }
+
     /** Mirror only account-scoped server receipts into the task room, not model claims.
      * Stable message IDs make repeated polling and process restarts idempotent. */
     fun cloudRoom(task: TaskItem, job: EngineJob, existing: com.dominion.mobile.data.model.Conversation?): com.dominion.mobile.data.model.Conversation {

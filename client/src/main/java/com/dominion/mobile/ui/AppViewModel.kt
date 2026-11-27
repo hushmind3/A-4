@@ -596,7 +596,7 @@ class AppViewModel(
 
     fun deleteTask(taskId: String) {
         val task=state.value.tasks.firstOrNull{it.id==taskId}?:return
-        if(taskId in _taskBusy.value || task.engineStatus=="submitting" ||
+        if(taskId in _taskBusy.value || task.engineStatus in setOf("submitting","cloud_submitting") ||
             task.engineJobId?.startsWith("cloud:")==true&&task.engineStatus in setOf("queued","running")){
             _notice.value="실행 중인 작업은 먼저 상태를 확인하고 중단해 주세요."
             return

@@ -228,7 +228,7 @@ class RemoteBackedRepository(
                 val clientId=TaskDispatch.messageNonce(id)
                 if(task.engineJobId==null){
                     task=task.copy(enginePrompt=prompt,engineRoomId=TaskDispatch.roomId(id),
-                        engineStatus="submitting",engineLanguage=if(state.value.settings.lang==com.dominion.mobile.data.model.Lang.KO)"ko"else"default")
+                        engineStatus="cloud_submitting",engineLanguage=if(state.value.settings.lang==com.dominion.mobile.data.model.Lang.KO)"ko"else"default")
                     saveTaskLink(task)
                 }
                 val result=try {
@@ -249,6 +249,7 @@ class RemoteBackedRepository(
                         engineStatus=result.status
                     )
                     saveCloudReceipt(linked,cloudEngineJob(linked,result))
+                    if(result.status=="done"&&result.result==null)verifyTask(linked)
                     return@withLock
                 }
             }
@@ -349,7 +350,18 @@ class RemoteBackedRepository(
 
     override suspend fun refreshTask(id: String) = taskLock.withLock {
         val task = state.value.tasks.firstOrNull { it.id == id } ?: return@withLock
-        if (task.engineJobId != null) verifyTask(task)
+        if(task.engineJobId!=null)verifyTask(task)
+        else if(localExecution&&TaskDispatch.pendingCloudSubmission(task)){
+            // Reconcile a request persisted before a process/network failure. Only
+            // the same cloud request is replayed; never fall back to device tools.
+            val prompt=requireNotNull(task.enginePrompt)
+            val clientId=TaskDispatch.messageNonce(task.id)
+            val result=requireNotNull(mobileCloud).submitCloudTask(prompt,clientId)
+            val linked=task.copy(engineJobId="cloud:"+result.id,engineSessionId=clientId,engineMessageId=clientId,
+                engineStatus=result.status)
+            saveCloudReceipt(linked,cloudEngineJob(linked,result))
+            if(result.status=="done"&&result.result==null)verifyTask(linked)
+        }
     }
 
     private fun cloudEngineJob(task:com.dominion.mobile.data.model.TaskItem,result:CloudTask):EngineJob {
@@ -1260,8 +1272,7 @@ class RemoteBackedRepository(
                 if(connection.value!=ConnectionState.CONNECTED)return false
                 var ok=true
                 for(task in state.value.tasks.filter{
-                    it.engineJobId?.startsWith("cloud:")==true &&
-                        com.dominion.mobile.platform.background.CloudJobMonitor.isActive(it.engineStatus)
+                    TaskDispatch.needsCloudRefresh(it,state.value.conversation(it.engineRoomId.orEmpty()))
                 }.take(16)){
                     try{refreshTask(task.id)}
                     catch(e:CancellationException){throw e}
