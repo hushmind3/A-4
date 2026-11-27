@@ -27,41 +27,15 @@ internal data class PhoneBridgeReceipt(val id:String,val status:String,val answe
     val summary:String?=null,val evidence:String?=null,val reason:String?=null){
     val terminal get()=status in setOf("reported","ended","failed","cancelled","unknown","expired")
 }
-internal class PhoneBridge(private val context:Context,account:String){
-    private val accountKey=com.dominion.mobile.data.VisualGesture.digest(account.toByteArray(Charsets.UTF_8)).take(24)
-    private val store=EncryptedRecordStore(context,"dominion_phone_bridge_"+accountKey,PhoneBridgeState::class.java)
-    companion object{private val journalLock=Any()}
-    private fun journal(id:String):EncryptedRecordStore<PhoneBridgeState>{
-        require(java.util.UUID.fromString(id).toString()==id)
-        return EncryptedRecordStore(context,"dominion_phone_call_"+accountKey+"_"+id,PhoneBridgeState::class.java)
-    }
+internal class PhoneBridge(context:Context,account:String){
+    private val store=EncryptedRecordStore(context,"dominion_phone_bridge_"+com.dominion.mobile.data.VisualGesture.digest(
+        account.toByteArray(Charsets.UTF_8)).take(24),PhoneBridgeState::class.java)
     private val gson=Gson()
     private val http=OkHttpClient.Builder().followRedirects(false).followSslRedirects(false)
         .connectTimeout(8,TimeUnit.SECONDS).readTimeout(25,TimeUnit.SECONDS).callTimeout(30,TimeUnit.SECONDS)
         .retryOnConnectionFailure(false).build()
-    fun load()=synchronized(journalLock){store.load()}
-    fun saveConfig(config:PhoneBridgeConfig)=synchronized(journalLock){
-        require(store.load()?.pending==null){"기존 전화 업무를 먼저 확인하세요"}
-        store.save(PhoneBridgeState(config.checked()))
-    }
-    fun reserve(call:PhoneBridgeCall,config:PhoneBridgeConfig?=null):PhoneBridgeConfig=synchronized(journalLock){
-        val saved=store.load()
-        require(saved?.pending==null){"기존 전화 업무를 먼저 확인하세요"}
-        val cfg=(config?:requireNotNull(saved?.config){"전화 대행 서버를 먼저 설정하세요"}).checked()
-        require(journal(call.id).load()==null){"동일 전화 업무 재발신 금지"}
-        val entry=PhoneBridgeState(cfg,call)
-        journal(call.id).save(entry)
-        store.save(entry)
-        cfg
-    }
-    fun reserved(id:String):PhoneBridgeState?=synchronized(journalLock){
-        journal(id).load()?.also{check(it.pending?.id==id)}
-    }
-    fun clearPending(id:String)=synchronized(journalLock){
-        val current=requireNotNull(store.load())
-        check(current.pending?.id==id)
-        store.save(current.copy(pending=null))
-    }
+    fun load()=store.load()
+    fun save(value:PhoneBridgeState)=store.save(value.copy(config=value.config.checked()))
     suspend fun request(config:PhoneBridgeConfig,call:PhoneBridgeCall,method:String):PhoneBridgeReceipt?=withContext(Dispatchers.IO){
         val checked=config.checked()
         require(call.id.matches(Regex("[a-f0-9-]{36}"))&&call.number.matches(Regex("\\+82[1-9][0-9]{7,10}"))&&call.goal.length in 3..800)

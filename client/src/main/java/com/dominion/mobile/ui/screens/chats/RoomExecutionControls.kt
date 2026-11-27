@@ -220,7 +220,6 @@ fun RoomExecutionControls(vm: AppViewModel, roomId: String,
                 Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
                     Text(item.tool.orEmpty(), style = MaterialTheme.typography.titleMedium)
                     if (item.status == "interrupted") Text(tr(lang, "중단된 실행의 승인 기록입니다. 즉시 실행이 재개되지 않을 수 있습니다.", "Interrupted approval; execution may not resume immediately."))
-                    if(item.tool=="phone.inquire")Text("실제 업체 전화 발신입니다. 비용이 발생할 수 있으며 한 번만 발신합니다. 전화 서버는 탐색 메뉴에서 설정하세요.",color=MaterialTheme.colorScheme.error)
                     SelectionContainer { Text(item.args?.toString().orEmpty()) }
                 }
             },

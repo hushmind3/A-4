@@ -48,7 +48,7 @@ internal fun PhoneBridgeDialog(onDismiss:()->Unit){
                 if(method=="start"){
                     // Journal before POST. Unknown network results are queried,
                     // never silently redialed with a new identifier.
-                    bridge.reserve(call,cfg);pending=call;receipt=null;missing=false
+                    bridge.save(PhoneBridgeState(cfg,call));pending=call;receipt=null;missing=false
                 }
                 val result=bridge.request(cfg,call,method)
                 validAccount()
@@ -75,11 +75,6 @@ internal fun PhoneBridgeDialog(onDismiss:()->Unit){
             Text("자체 SIP 연결 어댑터가 필요한 실제 업체 전화 문의입니다. 발신 비용이 발생할 수 있습니다. 상대에게 AI임을 밝히고 동의 후 문의합니다.")
             OutlinedTextField(origin,{origin=it},enabled=pending==null&&!busy,label={Text("전화 어댑터 HTTPS 주소")},singleLine=true)
             OutlinedTextField(token,{token=it},enabled=pending==null&&!busy,label={Text("전화 어댑터 접속 토큰")},visualTransformation=PasswordVisualTransformation(),singleLine=true)
-            if(pending==null)TextButton(enabled=!busy&&runCatching{config();true}.getOrDefault(false),onClick={
-                runCatching{validAccount();bridge.saveConfig(config())}
-                    .onSuccess{error="전화 서버 설정 저장 완료 · 채팅에서도 전화 문의를 요청할 수 있습니다."}
-                    .onFailure{error="설정을 저장하지 못했습니다."}
-            }){Text("전화 서버 설정 저장")}
             OutlinedTextField(number,{number=it.take(14)},enabled=pending==null&&!busy,label={Text("승인된 업체 번호 (+82...)")},singleLine=true)
             OutlinedTextField(goal,{goal=it.take(800)},enabled=pending==null&&!busy,label={Text("전화 문의 목적")},maxLines=5)
             pending?.let{call->
@@ -96,7 +91,7 @@ internal fun PhoneBridgeDialog(onDismiss:()->Unit){
                 TextButton(enabled=!busy,onClick={action("status",call)}){Text("상태 다시 조회")}
                 if(receipt?.terminal!=true&&!missing)TextButton(enabled=!busy,onClick={action("cancel",call)}){Text("통화 중단 요청")}
                 if(receipt?.terminal==true||missing)TextButton(enabled=!busy,onClick={
-                    runCatching{validAccount();bridge.clearPending(call.id)}
+                    runCatching{validAccount();bridge.save(PhoneBridgeState(config(),null))}
                         .onSuccess{pending=null;receipt=null;missing=false}
                         .onFailure{error="기록 저장 실패"}
                 }){Text("확인 후 새 업무 준비")}

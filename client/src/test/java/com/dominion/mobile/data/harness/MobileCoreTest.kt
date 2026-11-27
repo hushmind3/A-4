@@ -50,12 +50,6 @@ class MobileCoreTest{
   assertTrue(runCatching{MobileCore.validate("shell",JsonObject())}.isFailure)
   assertTrue(runCatching{MobileCore.validate("schedule.create",JsonObject())}.isFailure)
  }
- @Test fun phoneInquiryRequiresNumberAndGoal(){
-  val args=JsonObject().apply{addProperty("number","+82212345678");addProperty("goal","영업시간 문의")}
-  assertEquals("+82212345678",MobileCore.validate("phone.inquire",args)["number"].asString)
-  args.addProperty("number","+15551234567")
-  assertTrue(runCatching{MobileCore.validate("phone.inquire",args)}.isFailure)
- }
  @Test fun workflowOfferAcceptsOnlyEmptyArguments(){
   assertTrue(MobileCore.validate("errand.plan",JsonObject()).entrySet().isEmpty())
   val forged=JsonObject().apply{addProperty("goal","untrusted model goal")}

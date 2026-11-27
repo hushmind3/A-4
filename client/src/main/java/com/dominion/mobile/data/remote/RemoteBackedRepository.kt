@@ -901,11 +901,8 @@ class RemoteBackedRepository(
         if(localExecution&&task.engineJobId?.startsWith("cloud:")==true){
             val raw=requireNotNull(task.engineJobId).removePrefix("cloud:")
             cloudEngineJob(task,requireNotNull(mobileCloud).cloudTask(raw))
-        }else if(localExecution){
-            val room=requireNotNull(task.engineRoomId)
-            mobile.refreshPhoneInquiry(room)
-            mobile.execution(room).jobs.orEmpty().single{it.id==task.engineJobId}
-        }
+        }else if(localExecution)mobile.execution(requireNotNull(task.engineRoomId)).jobs.orEmpty()
+            .single{it.id==task.engineJobId}
         else api.engineJob(requireNotNull(task.engineJobId))
 
     override suspend fun taskReceipt(id: String): TaskReceipt = taskLock.withLock {
@@ -1358,10 +1355,7 @@ class RemoteBackedRepository(
         if(localExecution){
             val task=state.value.tasks.firstOrNull{it.engineRoomId==roomId&&it.engineJobId?.startsWith("cloud:")==true &&
                 it.engineSessionId==state.value.conversation(roomId)?.sessionId}
-            if(task==null){
-                mobile.refreshPhoneInquiry(roomId)
-                return@coroutineScope mobile.execution(roomId)
-            }
+            if(task==null)return@coroutineScope mobile.execution(roomId)
             val job=taskLock.withLock {
                 val latest=state.value.tasks.single{it.id==task.id}
                 taskJob(latest).also{saveCloudReceipt(latest,it)}
