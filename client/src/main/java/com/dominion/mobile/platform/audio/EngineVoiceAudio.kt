@@ -126,7 +126,9 @@ object EngineVoiceAudio {
         }
     }
 
-    suspend fun play(context: Context, bytes: ByteArray, communication: Boolean = false) {
+    suspend fun play(context: Context, bytes: ByteArray, communication: Boolean = false,
+        existingCallFocus: Boolean = false) {
+        require(!existingCallFocus || communication)
         require(WaveAudio.isWave(bytes))
         val file = File.createTempFile("dominion-speech-", ".wav", context.cacheDir)
         try {
@@ -149,7 +151,10 @@ object EngineVoiceAudio {
                             // Cleanup is performed on the main dispatcher by the finally block.
                         }
                         try {
-                            check(manager.requestAudioFocus(focus) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
+                            if (!existingCallFocus) {
+                                check(manager.requestAudioFocus(focus) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
+                                focusLease = focus
+                            }
                             player.setAudioAttributes(attributes)
                             player.setDataSource(file.absolutePath)
                             player.setOnPreparedListener { if (continuation.isActive) it.start() }
@@ -159,10 +164,9 @@ object EngineVoiceAudio {
                                 true
                             }
                             player.prepareAsync()
-                            // Store the focus lease until playback ends.
-                            focusLease = focus
                         } catch (e: Exception) {
-                            manager.abandonAudioFocusRequest(focus)
+                            if (!existingCallFocus) manager.abandonAudioFocusRequest(focus)
+                            focusLease = null
                             if (continuation.isActive) continuation.resumeWithException(e)
                         }
                     }
