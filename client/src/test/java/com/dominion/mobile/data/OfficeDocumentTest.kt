@@ -34,6 +34,21 @@ class OfficeDocumentTest {
         assertEquals("=A1*2 → 31",edited.fields[1].text)
         assertTrue(runCatching { doc.export(mapOf(doc.fields[1].id to "0")) }.isFailure)
     }
+    @Test fun wordStyleChangesPreserveParagraphText() {
+        val bytes=zip("word/document.xml" to """<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:rPr><w:color w:val="FF0000"/></w:rPr><w:t>hello</w:t></w:r></w:p></w:body></w:document>""")
+        val doc=OfficeDocument.parse(OfficeFormat.WORD,bytes)
+        val id=doc.fields.single().id
+        val edited=doc.export(emptyMap(),mapOf(id to OfficeTextStyle(bold=true,italic=false)))
+        val xml=java.util.zip.ZipInputStream(edited.inputStream()).use{z->
+            var found=""
+            while(true){val e=z.nextEntry?:break;if(e.name=="word/document.xml")found=z.readBytes().decodeToString()}
+            found
+        }
+        assertTrue(xml.contains("w:b"))
+        assertTrue(xml.contains("w:i"))
+        assertTrue(xml.contains("FF0000"))
+        assertEquals("hello",OfficeDocument.parse(OfficeFormat.WORD,edited).fields.single().text)
+    }
     @Test fun rejectsExternalEntityAndTraversal() {
         val xml="""<!DOCTYPE a [<!ENTITY x SYSTEM "file:///etc/passwd">]><a>&x;</a>"""
         assertTrue(runCatching { OfficeDocument.parse(OfficeFormat.WORD,zip("word/document.xml" to xml)) }.isFailure)

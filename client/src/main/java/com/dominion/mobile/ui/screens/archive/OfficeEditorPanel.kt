@@ -21,6 +21,7 @@ fun OfficeEditorPanel(format:OfficeFormat,name:String,bytes:ByteArray,onPicker:(
     val scope=rememberCoroutineScope()
     var document by remember(bytes){mutableStateOf<OfficeDocument?>(null)}
     var changes by remember(bytes){mutableStateOf<Map<String,String>>(emptyMap())}
+    var styles by remember(bytes){mutableStateOf<Map<String,com.dominion.mobile.data.OfficeTextStyle>>(emptyMap())}
     var filter by remember(bytes){mutableStateOf("")}
     var error by remember(bytes){mutableStateOf("")}
     var busy by remember(bytes){mutableStateOf(false)}
@@ -75,17 +76,30 @@ fun OfficeEditorPanel(format:OfficeFormat,name:String,bytes:ByteArray,onPicker:(
                     keyboardOptions=androidx.compose.foundation.text.KeyboardOptions(keyboardType=
                         if(field.numeric)androidx.compose.ui.text.input.KeyboardType.Decimal else androidx.compose.ui.text.input.KeyboardType.Text))
                 else Text(field.text,style=MaterialTheme.typography.bodyMedium)
+                if(field.styleEditable) {
+                    val value=styles[field.id]?:com.dominion.mobile.data.OfficeTextStyle()
+                    fun cycle(previous:Boolean?):Boolean?=when(previous){null->true;true->false;false->null}
+                    Row {
+                        TextButton(enabled=!busy,onClick={
+                            styles=styles+(field.id to value.copy(bold=cycle(value.bold)))
+                        }){Text("굵게: "+when(value.bold){true->"적용";false->"해제";null->"유지"})}
+                        TextButton(enabled=!busy,onClick={
+                            styles=styles+(field.id to value.copy(italic=cycle(value.italic)))
+                        }){Text("기울임: "+when(value.italic){true->"적용";false->"해제";null->"유지"})}
+                    }
+                }
             }
         }
         if(error.isNotBlank())Text(error)
         if(busy)LinearProgressIndicator(Modifier.fillMaxWidth())
-        TextButton(enabled=!busy && changes.isNotEmpty(),onClick={
+        TextButton(enabled=!busy && (changes.isNotEmpty() || styles.values.any{it.bold!=null||it.italic!=null}),onClick={
             busy=true;error=""
             val snapshot=changes.toMap()
+            val styleSnapshot=styles.filterValues{it.bold!=null||it.italic!=null}
             scope.launch {
                 try {
                     // Each export starts from immutable source, not a previously mutated XML tree.
-                    exportBytes=withContext(Dispatchers.IO){OfficeDocument.parse(format,bytes).export(snapshot)}
+                    exportBytes=withContext(Dispatchers.IO){OfficeDocument.parse(format,bytes).export(snapshot,styleSnapshot)}
                     onPicker(true)
                     try { save.launch(name.substringBeforeLast('.').take(100)+"-edited."+format.extension) }
                     catch (e:Exception) { onPicker(false);throw e }

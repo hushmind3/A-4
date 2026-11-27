@@ -57,10 +57,8 @@ internal class SheetFormula(private val cells:Map<String,Cell>) {
                 if(eat('-'))return unary().negate(math)
                 var x=atom()
                 while(eat('%'))x=x.movePointLeft(2)
-                if(eat('^')){
-                    val exponent=unary().intValueExact();require(exponent in -20..20)
-                    x=bounded(x.pow(exponent,math))
-                }
+                // Exponent precedence and coercion differ from ordinary arithmetic;
+                // defer those formulas rather than emitting a possibly incorrect cache.
                 return x
             }finally{depth--}
         }
@@ -71,7 +69,7 @@ internal class SheetFormula(private val cells:Map<String,Cell>) {
             require(at>start)
             val token=source.substring(start,at).uppercase(java.util.Locale.ROOT)
             if(eat('(')){
-                require(token in setOf("SUM","AVERAGE","MIN","MAX","COUNT"))
+                require(token in setOf("SUM","AVERAGE","MIN","MAX"))
                 val values=mutableListOf<BigDecimal>()
                 if(!eat(')')){
                     do {
@@ -94,7 +92,7 @@ internal class SheetFormula(private val cells:Map<String,Cell>) {
                     "AVERAGE"->values.fold(BigDecimal.ZERO){a,b->bounded(a.add(b,math))}.divide(BigDecimal(values.size),math)
                     "MIN"->values.minOrNull()?:BigDecimal.ZERO
                     "MAX"->values.maxOrNull()?:BigDecimal.ZERO
-                    else->BigDecimal(values.size)
+                    else->error("Unsupported formula")
                 }
             }
             return token.toBigDecimalOrNull()?.let(::bounded) ?: run {

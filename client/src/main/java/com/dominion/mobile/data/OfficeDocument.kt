@@ -23,7 +23,8 @@ enum class OfficeFormat(val extension:String,val mime:String) {
     }
 }
 data class OfficeField(val id:String,val section:String,val label:String,val text:String,
-    val editable:Boolean,val numeric:Boolean=false)
+    val editable:Boolean,val numeric:Boolean=false,val styleEditable:Boolean=false)
+data class OfficeTextStyle(val bold:Boolean?=null,val italic:Boolean?=null)
 
 /** Bounded editing of existing Open XML parts. No macro execution, external network, or extraction
  * to disk. Complex runs, formulas, charts, embedded files and package relationships remain intact. */
@@ -31,8 +32,9 @@ class OfficeDocument private constructor(val format:OfficeFormat,
     private val files:LinkedHashMap<String,ByteArray>, private val edits:Map<String,Target>,
     val fields:List<OfficeField>, val truncated:Boolean) {
     private data class Target(val part:String,val node:Element,val type:String,val textNodes:List<Element>)
-    fun export(changes:Map<String,String>):ByteArray {
+    fun export(changes:Map<String,String>,styles:Map<String,OfficeTextStyle> = emptyMap()):ByteArray {
         require(changes.size<=fields.size && changes.keys.all { it in edits })
+        require(styles.size<=fields.size && styles.keys.all { id -> fields.any { it.id==id && it.styleEditable } })
         val dirty=linkedSetOf<String>()
         for ((id,value) in changes) {
             val target=edits.getValue(id)
@@ -66,6 +68,40 @@ class OfficeDocument private constructor(val format:OfficeFormat,
                         node.textContent=remaining.substring(0,safe)
                         node.setAttributeNS(XML,"xml:space","preserve")
                         remaining=remaining.substring(safe)
+                    }
+                }
+            }
+            dirty.add(target.part)
+        }
+        for((id,style) in styles) {
+            val target=edits.getValue(id)
+            val paragraph=target.node
+            val ns=paragraph.namespaceURI
+            require(ns==W || ns==A)
+            val prefix=paragraph.prefix?.let{"$it:"}.orEmpty()
+            for(run in children(paragraph).filter{it.namespaceURI==ns && it.localName=="r"}) {
+                if(children(run).none{it.namespaceURI==ns && it.localName=="t"})continue
+                val doc=run.ownerDocument
+                val properties=children(run).firstOrNull{it.namespaceURI==ns && it.localName=="rPr"}
+                    ?:doc.createElementNS(ns,prefix+"rPr").also{run.insertBefore(it,run.firstChild)}
+                for((key,value) in listOf("b" to style.bold,"i" to style.italic)) {
+                    if(value==null)continue
+                    if(ns==A)properties.setAttribute(key,if(value)"1" else "0")
+                    else{
+                        children(properties).filter{it.namespaceURI==W && it.localName==key}.forEach{properties.removeChild(it)}
+                        val flag=doc.createElementNS(W,prefix+key)
+                        val attrPrefix=paragraph.lookupPrefix(W)?.takeIf{it.isNotEmpty()}?:"w"
+                        flag.setAttributeNS(W,attrPrefix+":val",if(value)"1" else "0")
+                        // The order of Word rPr properties is significant: keep b/i before
+                        // color/size/underline, and after style/font properties.
+                        val order=listOf("rStyle","rFonts","b","bCs","i","iCs","caps","smallCaps","strike",
+                            "dstrike","outline","shadow","emboss","imprint","noProof","snapToGrid","vanish",
+                            "webHidden","color","spacing","w","kern","position","sz","szCs","highlight","u",
+                            "effect","bdr","shd","fitText","vertAlign","rtl","cs","em","lang","eastAsianLayout",
+                            "specVanish","oMath","rPrChange")
+                        val index=order.indexOf(key)
+                        val after=children(properties).firstOrNull{it.namespaceURI==W && order.indexOf(it.localName)>index}
+                        properties.insertBefore(flag,after)
                     }
                 }
             }
@@ -190,7 +226,7 @@ class OfficeDocument private constructor(val format:OfficeFormat,
                 if(fields.size>=500){truncated=true;return}
                 val id="field-"+fields.size
                 val allow=editable && text.length<=8000
-                fields.add(OfficeField(id,part,label,text.take(8000),allow,type=="number"))
+                fields.add(OfficeField(id,part,label,text.take(8000),allow,type=="number",allow && type=="paragraph"))
                 if(allow)targets[id]=Target(part,node,type,nodes)
             }
             when(format) {
