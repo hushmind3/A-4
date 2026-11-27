@@ -36,6 +36,7 @@ fun DeviceActionsScreen(state: AppState, roomId: String? = null, onBack: () -> U
     var error by remember { mutableStateOf("") }
     var choosingEmail by remember { mutableStateOf(false) }
     var confirm by remember { mutableStateOf<String?>(null) }
+    var navigationPlan by remember { mutableStateOf<com.dominion.mobile.data.PhoneNavigationPlan?>(null) }
     val latest = roomId?.let { state.conversation(it) }?.messages?.lastOrNull {
         it.sender == MessageSender.ASSISTANT && it.status == MessageStatus.SENT && it.text.isNotBlank()
     }
@@ -96,6 +97,18 @@ fun DeviceActionsScreen(state: AppState, roomId: String? = null, onBack: () -> U
             if (latest != null) OutlinedButton(onClick = { body = latest.text.take(10000) }) { Text("현재 대화의 마지막 AI 답변 가져오기") }
             HorizontalDivider()
             Text("길찾기", style = MaterialTheme.typography.titleMedium)
+            val plan = remember(latest?.text) {
+                latest?.text?.let(com.dominion.mobile.data.PhoneNavigationPlan::fromMessage)
+            }
+            if (plan != null) OutlinedButton(onClick = { navigationPlan = plan }) {
+                Text("현재 AI 답변의 지도 조작 실행")
+            }
+            TextButton(onClick = {
+                runCatching { context.startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+                    .onFailure { error = "접근성 설정을 열 수 없습니다." }
+            }) { Text("지도 조작 권한 설정") }
+            val navigationStatus by com.dominion.mobile.platform.automation.PhoneNavigationService.status.collectAsState()
+            if (navigationStatus.isNotBlank()) Text("최근 기기 실행: " + navigationStatus, style = MaterialTheme.typography.labelSmall)
             AppTextField(location, { location = it.take(250) }, placeholder = "장소·주소")
             OutlinedButton(enabled = location.isNotBlank(), onClick = { perform("지도") }) { Text("지도 앱에서 검색") }
             HorizontalDivider()
@@ -109,6 +122,9 @@ fun DeviceActionsScreen(state: AppState, roomId: String? = null, onBack: () -> U
             }
             if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
         }
+    }
+    navigationPlan?.let { plan ->
+        PhoneNavigationDialog(plan, onDismiss = { navigationPlan = null })
     }
     confirm?.let { action ->
         AlertDialog(onDismissRequest = { confirm = null }, title = { Text("$action 앱으로 이동") },

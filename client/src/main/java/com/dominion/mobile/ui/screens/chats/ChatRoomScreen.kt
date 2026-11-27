@@ -149,6 +149,8 @@ fun ChatRoomScreen(
     var messageMenu by remember { mutableStateOf<Message?>(null) }
     var miniAppMessage by remember(conversationId, conversation.sessionId) { mutableStateOf<Message?>(null) }
     var createMiniApp by remember(conversationId, conversation.sessionId) { mutableStateOf(false) }
+    var createPhonePlan by remember(conversationId, conversation.sessionId) { mutableStateOf(false) }
+    var phonePlanMessage by remember(conversationId, conversation.sessionId) { mutableStateOf<Message?>(null) }
     var attachmentViewer by remember(conversationId, conversation.sessionId) {
         mutableStateOf<com.dominion.mobile.data.model.ArchiveItem?>(null)
     }
@@ -645,6 +647,9 @@ fun ChatRoomScreen(
             }
             SheetRow(tr(lang, "할 일", "Task"), Glyph.TASK) { showAttach = false; onNavigate(com.dominion.mobile.ui.nav.Routes.TASKS) }
             SheetRow(tr(lang, "일정", "Schedule"), Glyph.CALENDAR) { showAttach = false; onNavigate(com.dominion.mobile.ui.nav.Routes.SCHEDULES) }
+            SheetRow("휴대폰 지도 조작 계획", Glyph.PLUG) {
+                showAttach = false; createPhonePlan = true
+            }
             SheetRow(tr(lang, "휴대폰 기능", "Phone actions"), Glyph.PLUG) {
                 showAttach = false; onNavigate(com.dominion.mobile.ui.nav.Routes.deviceActions(conversationId))
             }
@@ -674,6 +679,25 @@ fun ChatRoomScreen(
         }
     }
 
+    if (createPhonePlan) com.dominion.mobile.ui.components.TextPromptDialog(
+        title = "휴대폰 지도 조작 계획", label = "네이버 지도·카카오맵에서 검색하거나 길찾기할 내용을 요청하세요.",
+        confirmLabel = "요청 작성", singleLine = false, onConfirm = { text ->
+            if (text.isNotBlank()) {
+                draft = listOf(draft, com.dominion.mobile.data.PhoneNavigationPlan.prompt(text)).filter { it.isNotBlank() }.joinToString("\n")
+                vm.setDraft(conversationId, draft)
+                createPhonePlan = false
+            }
+        }, onDismiss = { createPhonePlan = false })
+    phonePlanMessage?.let { message ->
+        val plan = remember(message.id, message.text) { com.dominion.mobile.data.PhoneNavigationPlan.fromMessage(message.text) }
+        if (plan != null) com.dominion.mobile.ui.components.PhoneNavigationDialog(plan,
+            onDismiss = { phonePlanMessage = null },
+            onResult = { result ->
+                draft = listOf(draft, result).filter { it.isNotBlank() }.joinToString("\n")
+                vm.setDraft(conversationId, draft)
+                phonePlanMessage = null
+            })
+    }
     if (createMiniApp) com.dominion.mobile.ui.components.TextPromptDialog(
         title = "미니앱 제작", label = "필요한 체크리스트·표·예산 계산기·입력 양식을 설명하세요.",
         confirmLabel = "요청 작성", singleLine = false, onConfirm = { text ->
@@ -706,6 +730,12 @@ fun ChatRoomScreen(
     messageMenu?.let { message ->
         AppBottomSheet(onDismiss = { messageMenu = null }) {
             SheetTitle(tr(lang, "메시지", "Message"))
+            if (message.sender == MessageSender.ASSISTANT && message.status == MessageStatus.SENT &&
+                com.dominion.mobile.data.PhoneNavigationPlan.fromMessage(message.text) != null) {
+                SheetRow("지도 앱 조작 검토·실행", Glyph.PLUG) {
+                    phonePlanMessage = message; messageMenu = null
+                }
+            }
             if (message.sender == MessageSender.ASSISTANT && message.status == MessageStatus.SENT &&
                 conversation.sessionId != null &&
                 com.dominion.mobile.data.MiniAppDocument.fromMessage(message.text) != null) {

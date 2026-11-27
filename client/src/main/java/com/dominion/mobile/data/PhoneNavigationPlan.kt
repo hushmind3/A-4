@@ -1,0 +1,70 @@
+package com.dominion.mobile.data
+
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
+
+data class PhoneNavigationStep(val action: String, val label: String, val value: String? = null)
+data class PhoneNavigationPlan(val app: String, val steps: List<PhoneNavigationStep>) {
+    companion object {
+        val apps = mapOf("com.nhn.android.nmap" to "네이버 지도", "net.daum.android.map" to "카카오맵")
+        private val navigationLabels = setOf("검색","장소 검색","통합 검색","장소, 주소 검색","검색어 입력",
+            "길찾기","도보","자동차","대중교통","Search","Directions","지도","출발지","도착지")
+        private val searchLabels = setOf("검색","장소 검색","통합 검색","장소, 주소 검색","검색어 입력","Search","출발지","도착지")
+        fun fromMessage(text: String): PhoneNavigationPlan? = runCatching {
+            require(text.length <= 16000)
+            val fence = 96.toChar().toString().repeat(3)
+            val matches = Regex("(?s)" + fence + "dominion-phone-plan[ \\t]*\\r?\\n(.*?)\\r?\\n" + fence)
+                .findAll(text).take(2).toList()
+            val json = if (matches.size == 1) matches.single().groupValues[1]
+                else if (matches.isEmpty()) text.trim() else error("Multiple plans")
+            parse(json)
+        }.getOrNull()
+
+        fun parse(json: String): PhoneNavigationPlan {
+            require(json.length in 1..12000)
+            val row = JsonParser.parseString(json).asJsonObject
+            require(row.keySet() == setOf("schema","app","steps"))
+            fun read(o: JsonObject, name: String, max: Int): String {
+                val v = requireNotNull(o.get(name))
+                require(v.isJsonPrimitive && v.asJsonPrimitive.isString)
+                return v.asString.also { require(it.isNotBlank() && it.length <= max && it.none(Char::isISOControl)) }
+            }
+            require(read(row,"schema",40) == "dominion-phone-plan/v1")
+            val app = read(row,"app",100)
+            require(app in apps)
+            val items = row.getAsJsonArray("steps")
+            require(items.size() in 1..8)
+            val steps = items.map {
+                val step = it.asJsonObject
+                val action = read(step,"action",20)
+                val label = read(step,"label",100)
+                when (action) {
+                    "click" -> {
+                        require(step.keySet() == setOf("action","label") && label in navigationLabels)
+                        PhoneNavigationStep(action,label)
+                    }
+                    "search_text" -> {
+                        require(step.keySet() == setOf("action","label","value") && label in searchLabels)
+                        PhoneNavigationStep(action,label,read(step,"value",250))
+                    }
+                    "expect" -> {
+                        require(step.keySet() == setOf("action","label"))
+                        PhoneNavigationStep(action,label)
+                    }
+                    else -> error("Unsupported device operation")
+                }
+            }
+            require(steps.last().action == "expect")
+            return PhoneNavigationPlan(app,steps)
+        }
+        fun prompt(request: String): String = "사용자 요청: " + request.take(2000) + "\n" + """
+            A-4의 실제 지도 앱 조작 계획을 작성하세요. 도구 실행이나 원격 코드가 아닙니다.
+            dominion-phone-plan 코드 펜스 하나로 아래 형식의 JSON을 반환하세요.
+            {"schema":"dominion-phone-plan/v1","app":"com.nhn.android.nmap","steps":[{"action":"click","label":"검색"},{"action":"search_text","label":"검색어 입력","value":"사용자가 요청한 장소"},{"action":"expect","label":"실제 확인할 화면 문구"}]}
+            앱은 com.nhn.android.nmap 또는 net.daum.android.map만 지원합니다. 최대 8단계, 마지막은 expect.
+            클릭 허용 문구: 검색, 장소 검색, 통합 검색, 장소, 주소 검색, 검색어 입력, 길찾기, 도보, 자동차, 대중교통, Search, Directions, 지도, 출발지, 도착지.
+            search_text는 실제 검색·출발지·도착지 입력란에만 사용합니다. 클릭·입력·정확한 문구 확인만 지원합니다.
+            화면 문구를 모르면 사용자에게 물어보세요. 로그인, 결제, 공유, 제출, 문자 발송, 계정 변경은 계획에 넣지 마세요.
+        """.trimIndent()
+    }
+}
