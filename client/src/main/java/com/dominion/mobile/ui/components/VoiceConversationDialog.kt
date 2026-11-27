@@ -31,6 +31,10 @@ fun VoiceConversationDialog(vm: AppViewModel, roomId: String, onDismiss: () -> U
     var failure by remember { mutableStateOf<String?>(null) }
     var active by remember { mutableStateOf(false) }
     var autoContinue by remember { mutableStateOf(true) }
+    var automaticBargeIn by remember { mutableStateOf(false) }
+    val bargeAvailable = remember { EngineVoiceAudio.supportsBargeIn() }
+    var interruptReview by remember { mutableStateOf<CompletableDeferred<String?>?>(null) }
+    var interruptText by remember { mutableStateOf("") }
     var job by remember { mutableStateOf<Job?>(null) }
     var pendingNonce by remember { mutableStateOf<String?>(null) }
     var capturedNonces by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -78,16 +82,32 @@ fun VoiceConversationDialog(vm: AppViewModel, roomId: String, onDismiss: () -> U
                     val room = requireNotNull(vm.state.value.conversation(roomId))
                     check(room.sessionId == session) { "Room session changed" }
                 }
+                var interruptedWave: ByteArray? = null
                 do {
                     ensureRoom()
                     if (pendingNonce == null) {
                         finishRecording.set(false)
                         phase = "듣는 중"
-                        val wav = EngineVoiceAudio.record(context, finishRecording, autoEndpoint = true)
+                        val interrupted = interruptedWave
+                        interruptedWave = null
+                        val wav = interrupted ?: EngineVoiceAudio.record(context, finishRecording, autoEndpoint = true)
                         ensureRoom()
                         phase = "본체에서 음성 인식 중"
                         transcript = vm.transcribeVoice(wav)
                         ensureRoom()
+                        if (interrupted != null) {
+                            // Echo/noise can resemble speech. Do not send a false turn automatically.
+                            phase = "끼어들기 발화 확인"
+                            interruptText = transcript
+                            val review = CompletableDeferred<String?>()
+                            interruptReview = review
+                            val confirmed = try { review.await() } finally { interruptReview = null }
+                            if (confirmed.isNullOrBlank()) {
+                                if (!autoContinue) break
+                                continue
+                            }
+                            transcript = confirmed
+                        }
                         phase = "본체에 요청 전송 중"
                         val nonce = requireNotNull(vm.sendMessage(roomId, transcript))
                         pendingNonce = nonce
@@ -128,15 +148,19 @@ fun VoiceConversationDialog(vm: AppViewModel, roomId: String, onDismiss: () -> U
                                 answer = replies.joinToString("\n") { it.text }
                                 phase = "본체 음성으로 응답 중"
                                 // Split very long multi-agent replies independently.
-                                for (reply in replies) {
+                                playback@ for (reply in replies) {
                                     val chunks = WaveAudio.speechChunks(reply.text)
                                     for (chunk in chunks) {
                                         ensureRoom()
-                                        EngineVoiceAudio.play(context, vm.synthesizeVoice(chunk))
+                                        val speech = vm.synthesizeVoice(chunk)
+                                        if (automaticBargeIn && bargeAvailable) {
+                                            interruptedWave = EngineVoiceAudio.playListening(context, speech)
+                                            if (interruptedWave != null) break@playback
+                                        } else EngineVoiceAudio.play(context, speech)
                                     }
                                 }
                                 pendingNonce = null
-                                phase = "응답 재생 완료"
+                                phase = if (interruptedWave != null) "발화 감지 · 응답 중단" else "응답 재생 완료"
                                 break
                             }
                             // A completed job without a matching visible message is not
@@ -145,7 +169,7 @@ fun VoiceConversationDialog(vm: AppViewModel, roomId: String, onDismiss: () -> U
                         }
                         delay(1500)
                     }
-                } while (autoContinue)
+                } while (autoContinue || interruptedWave != null)
             } catch (e: CancellationException) { throw e }
             catch (_: NoSpeechDetected) { phase = "음성이 감지되지 않아 일시정지" }
             catch (_: Exception) {
@@ -190,6 +214,21 @@ fun VoiceConversationDialog(vm: AppViewModel, roomId: String, onDismiss: () -> U
                 Row {
                     Checkbox(checked = autoContinue, onCheckedChange = { autoContinue = it })
                     Text("응답 후 자동으로 다음 발화 듣기", modifier = Modifier.padding(top = 12.dp))
+                }
+                Row {
+                    Checkbox(checked = automaticBargeIn, enabled = bargeAvailable && !active,
+                        onCheckedChange = { automaticBargeIn = it })
+                    Text(if (bargeAvailable) "자동 끼어들기 (반향 제거 · 발화 확인)"
+                        else "자동 끼어들기 · 기기 반향 제거 미지원",
+                        modifier = Modifier.padding(top = 12.dp))
+                }
+                interruptReview?.let { review ->
+                    OutlinedTextField(interruptText, { interruptText = it.take(32000) },
+                        label = { Text("새 발화 확인·편집") }, maxLines = 3)
+                    Row {
+                        TextButton(enabled = interruptText.isNotBlank(), onClick = { review.complete(interruptText.trim()) }) { Text("전송") }
+                        TextButton(onClick = { review.complete(null) }) { Text("취소") }
+                    }
                 }
                 if (active && phase == "듣는 중") OutlinedButton(onClick = { finishRecording.set(true) }) { Text("말하기 끝내기") }
                 if (active && pendingNonce != null && phase == "본체 음성으로 응답 중") {
