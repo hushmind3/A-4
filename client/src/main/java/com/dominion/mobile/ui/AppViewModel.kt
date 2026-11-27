@@ -565,6 +565,9 @@ class AppViewModel(
     }
     suspend fun draftErrandReply(id:String,observedAt:Long,goal:String):String =
         repo.draftMessageReply(id,observedAt,goal)
+    suspend fun suggestReplyAppointment(id:String,observedAt:Long)=repo.suggestReplyAppointment(id,observedAt)
+    suspend fun saveReplyAppointment(id:String,observedAt:Long,draft:com.dominion.mobile.data.ReplyAppointment)=
+        repo.saveReplyAppointment(id,observedAt,draft)
 
     suspend fun planErrandWorkflow(goal:String)=repo.planErrandWorkflow(goal)
     fun acceptErrandWorkflow(draft:com.dominion.mobile.data.ErrandWorkflowDraft){

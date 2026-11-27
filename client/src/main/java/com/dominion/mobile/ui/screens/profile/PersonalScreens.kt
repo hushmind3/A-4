@@ -438,6 +438,8 @@ private fun ErrandFollowupDialog(task:TaskItem,vm:AppViewModel,onDismiss:()->Uni
     var draft by remember{mutableStateOf("")}
     var busy by remember{mutableStateOf(false)}
     var error by remember{mutableStateOf("")}
+    var appointment by remember{mutableStateOf<com.dominion.mobile.data.ReplyAppointment?>(null)}
+    var appointmentSaved by remember{mutableStateOf(false)}
     AlertDialog(onDismissRequest={if(!busy)onDismiss()},title={Text("답변 확인 및 후속 업무")},
         text={
             Column{
@@ -468,6 +470,30 @@ private fun ErrandFollowupDialog(task:TaskItem,vm:AppViewModel,onDismiss:()->Uni
                     }){Text("선택한 메시지를 AI에 보내 답장 초안 생성")}
                     AppTextField(draft,{draft=it.take(500)},label="실제 보낼 답장",singleLine=false,maxLines=5)
                     Text("발송 업무 등록 후 기존 화면·대상 검증과 최종 승인을 다시 진행합니다.")
+                    TextButton(enabled=!busy&&!appointmentSaved,onClick={
+                        scope.launch{
+                            busy=true;error=""
+                            try{
+                                appointment=vm.suggestReplyAppointment(task.id,observedAt)
+                                if(appointment==null)error="답변에서 명확한 약속 날짜·시간을 찾지 못했습니다."
+                            }catch(e:kotlinx.coroutines.CancellationException){throw e}
+                            catch(_:Exception){error="약속 추출 실패"}
+                            finally{busy=false}
+                        }
+                    }){Text("확인한 대화에서 약속 일정 추출")}
+                    appointment?.let{candidate->
+                        Text("약속 후보 · "+candidate.title+" · "+candidate.at)
+                        Text("근거: "+candidate.evidence,style=MaterialTheme.typography.bodySmall)
+                        TextButton(enabled=!busy&&!appointmentSaved,onClick={
+                            scope.launch{
+                                busy=true
+                                try{vm.saveReplyAppointment(task.id,observedAt,candidate);appointmentSaved=true;error=""}
+                                catch(e:kotlinx.coroutines.CancellationException){throw e}
+                                catch(_:Exception){error="일정을 저장하지 못했습니다."}
+                                finally{busy=false}
+                            }
+                        }){Text(if(appointmentSaved)"기기 일정 저장 완료" else "확인한 날짜·시간으로 일정 등록")}
+                    }
                 }
                 if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
             }
