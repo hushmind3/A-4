@@ -11,7 +11,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node --test cloud-relay/native_relay_policy.test.js
+      - run: npm --prefix cloud-relay test
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
