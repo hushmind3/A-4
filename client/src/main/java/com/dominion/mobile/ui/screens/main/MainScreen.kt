@@ -350,7 +350,7 @@ private fun DrawerContent(
             AssistantAvatar(
                 Color(own?.color ?: 0xFF4797EF),
                 own?.shape ?: com.dominion.mobile.data.model.CharacterShape.BLOB,
-                size = 48.dp
+                size = 48.dp, photo = own?.avatarPhoto
             )
             Spacer(Modifier.width(11.dp))
             Column(Modifier.weight(1f)) {
@@ -550,7 +550,7 @@ private fun MinimizedCallBar(
             .padding(horizontal = 14.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        AssistantAvatar(Color(character.color), character.shape, size = 30.dp)
+        AssistantAvatar(Color(character.color), character.shape, size = 30.dp, photo = character.avatarPhoto)
         Spacer(Modifier.width(9.dp))
         Column(Modifier.weight(1f)) {
             Text(

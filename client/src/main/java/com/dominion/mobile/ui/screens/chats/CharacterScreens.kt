@@ -1,6 +1,7 @@
 package com.dominion.mobile.ui.screens.chats
 
 import androidx.compose.foundation.background
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -124,7 +125,7 @@ fun CharacterScreen(
                     .padding(bottom = 22.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                AssistantAvatar(Color(character.color), character.shape, size = 104.dp, level = character.level, breathing = true)
+                AssistantAvatar(Color(character.color), character.shape, size = 104.dp, level = character.level, breathing = true, photo = character.avatarPhoto)
                 Spacer(Modifier.height(12.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(character.name, style = MaterialTheme.typography.headlineMedium, color = p.textPrimary)
@@ -347,6 +348,21 @@ fun CustomizeScreen(
     var bio by remember(character.id) { mutableStateOf(character.bio) }
     val context = LocalContext.current
     val previewVoice = com.dominion.mobile.platform.audio.rememberVoicePreview(lang)
+    var photo by remember(character.id) { mutableStateOf(character.avatarPhoto) }
+    var photoBusy by remember { mutableStateOf(false) }
+    val photoScope = androidx.compose.runtime.rememberCoroutineScope()
+    val picker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            photoBusy = true
+            photoScope.launch {
+                try { photo = com.dominion.mobile.platform.attachments.AvatarPhoto.read(context, uri) }
+                catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                catch (_: Exception) { context.toast("사진 읽기 실패") }
+                finally { photoBusy = false }
+            }
+        }
+    }
 
     Column(
         Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().background(p.screen).imePadding()
@@ -356,8 +372,15 @@ fun CustomizeScreen(
             Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)
         ) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                AssistantAvatar(Color(color), shape, size = 124.dp, breathing = true)
+                AssistantAvatar(Color(color), shape, size = 124.dp, breathing = true, photo = photo)
             }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                androidx.compose.material3.TextButton(enabled = !photoBusy, onClick = { picker.launch("image/*") }) { Text("캐릭터 사진 선택") }
+                androidx.compose.material3.TextButton(enabled = !photoBusy && photo != null, onClick = { photo = null }) { Text("기본 모양 복원") }
+            }
+            Text("사진은 기기에 저장되며 다른 기기와 자동 공유되지 않습니다.", color = p.textTertiary,
+                style = MaterialTheme.typography.labelSmall)
+            if (photoBusy) androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
             Spacer(Modifier.height(20.dp))
             Text(tr(lang, "개인화 프리셋", "Personalization presets"), style = MaterialTheme.typography.labelMedium, color = p.textTertiary)
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -436,9 +459,19 @@ fun CustomizeScreen(
             PrimaryButton(
                 text = tr(lang, "저장", "Save"),
                 onClick = {
-                    vm.updateCharacter(character.id, name = name.ifBlank { character.name }, color = color, shape = shape, voice = voice, bio = bio)
-                    context.toast(tr(lang, "저장했어요", "Saved"))
-                    onBack()
+                    if (!photoBusy) {
+                        photoBusy = true
+                        photoScope.launch {
+                            try {
+                                vm.updateCharacter(character.id, name = name.ifBlank { character.name }, color = color, shape = shape, voice = voice, bio = bio)
+                                vm.saveCharacterPhoto(character.id, photo)
+                                context.toast(tr(lang, "저장했어요", "Saved"))
+                                onBack()
+                            } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                            catch (_: Exception) { context.toast("사진 저장 실패 · 다시 확인하세요.") }
+                            finally { photoBusy = false }
+                        }
+                    }
                 }
             )
             Spacer(Modifier.height(14.dp))
@@ -487,7 +520,7 @@ fun RoomInfoScreen(
                 Modifier.fillMaxWidth().padding(vertical = 14.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                AssistantAvatar(Color(character.color), character.shape, size = 84.dp, level = character.level)
+                AssistantAvatar(Color(character.color), character.shape, size = 84.dp, level = character.level, photo = character.avatarPhoto)
                 Spacer(Modifier.height(10.dp))
                 Text(conversation.title(state.characters), style = MaterialTheme.typography.headlineSmall, color = p.textPrimary)
                 Text(character.tagline, style = MaterialTheme.typography.bodySmall, color = p.textTertiary)

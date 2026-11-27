@@ -116,7 +116,7 @@ fun FriendsScreen(
                 AssistantAvatar(
                     Color(own?.color ?: 0xFF4797EF),
                     own?.shape ?: com.dominion.mobile.data.model.CharacterShape.BLOB,
-                    size = 48.dp
+                    size = 48.dp, photo = own?.avatarPhoto
                 )
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {

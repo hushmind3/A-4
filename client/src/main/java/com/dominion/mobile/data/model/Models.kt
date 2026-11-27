@@ -56,17 +56,19 @@ data class Character(
     val mine: Boolean = false,
     val online: Boolean = false,
     val voice: VoiceTone = VoiceTone.SOFT,
-    val relation: String? = null
+    val relation: String? = null,
+    val avatarPhoto: String? = null
 )
 
 data class CharacterPreference(
     val name: String? = null, val color: Long? = null,
-    val shape: CharacterShape? = null, val voice: VoiceTone? = null, val bio: String? = null
+    val shape: CharacterShape? = null, val voice: VoiceTone? = null, val bio: String? = null,
+    val avatarPhoto: String? = null
 ) {
     fun applyTo(character: Character) = character.copy(
         name = name ?: character.name, color = color ?: character.color,
         shape = shape ?: character.shape, voice = voice ?: character.voice,
-        bio = bio ?: character.bio
+        bio = bio ?: character.bio, avatarPhoto = avatarPhoto?.takeIf { it.isNotBlank() }
     )
 }
 

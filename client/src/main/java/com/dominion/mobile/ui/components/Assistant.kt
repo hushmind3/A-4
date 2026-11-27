@@ -22,6 +22,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -58,7 +59,8 @@ fun AssistantAvatar(
     size: Dp = 52.dp,
     selected: Boolean = false,
     level: Int? = null,
-    breathing: Boolean = false
+    breathing: Boolean = false,
+    photo: String? = null
 ) {
     val p = LocalDominionPalette.current
     val infinite = rememberInfiniteTransition(label = "assistant-avatar")
@@ -85,7 +87,13 @@ fun AssistantAvatar(
                 .then(if (selected) Modifier.border(1.5.dp, ringColor, CircleShape) else Modifier),
             contentAlignment = Alignment.Center
         ) {
-            Canvas(modifier = Modifier.size(size)) {
+            val decoded = androidx.compose.runtime.remember(photo) {
+                photo?.let { com.dominion.mobile.platform.attachments.AvatarPhoto.decode(it) }
+            }
+            if (decoded != null) {
+                androidx.compose.foundation.Image(bitmap = decoded.asImageBitmap(), contentDescription = "캐릭터 사진",
+                    modifier = Modifier.size(size), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+            } else Canvas(modifier = Modifier.size(size)) {
                 val pad = this.size.minDimension * 0.06f
                 val w = this.size.width
                 val h = this.size.height

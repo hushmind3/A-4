@@ -110,7 +110,7 @@ fun ProfileScreen(
                             Color(own?.color ?: 0xFF4797EF),
                             own?.shape ?: com.dominion.mobile.data.model.CharacterShape.BLOB,
                             size = 64.dp,
-                            level = own?.level
+                            level = own?.level, photo = own?.avatarPhoto
                         )
                         Spacer(Modifier.width(14.dp))
                         Column(Modifier.weight(1f)) {
@@ -208,7 +208,7 @@ fun ProfileScreen(
                             .padding(10.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        AssistantAvatar(Color(character.color), character.shape, size = 52.dp)
+                        AssistantAvatar(Color(character.color), character.shape, size = 52.dp, photo = character.avatarPhoto)
                         Spacer(Modifier.height(7.dp))
                         Text(
                             character.name,

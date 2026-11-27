@@ -204,7 +204,7 @@ fun CallScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    AssistantAvatar(accent, character.shape, size = 150.dp, breathing = true)
+                    AssistantAvatar(accent, character.shape, size = 150.dp, breathing = true, photo = character.avatarPhoto)
                     Spacer(Modifier.height(18.dp))
                     Text(
                         character.name,
@@ -502,7 +502,7 @@ private fun CallAvatar(accent: Color, character: com.dominion.mobile.data.model.
                 .background(Color.White.copy(alpha = 0.06f)),
             contentAlignment = Alignment.Center
         ) {
-            AssistantAvatar(accent, character.shape, size = 160.dp, breathing = true)
+            AssistantAvatar(accent, character.shape, size = 160.dp, breathing = true, photo = character.avatarPhoto)
         }
     }
 }

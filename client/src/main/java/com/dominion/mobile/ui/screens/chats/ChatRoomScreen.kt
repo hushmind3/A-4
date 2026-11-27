@@ -328,7 +328,7 @@ fun ChatRoomScreen(
                     .padding(vertical = 2.dp, horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                AssistantAvatar(Color(character.color), character.shape, size = 34.dp)
+                AssistantAvatar(Color(character.color), character.shape, size = 34.dp, photo = character.avatarPhoto)
                 Spacer(Modifier.width(9.dp))
                 Column {
                     Text(

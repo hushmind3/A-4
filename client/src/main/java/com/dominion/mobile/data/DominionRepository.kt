@@ -90,6 +90,8 @@ interface DominionRepository {
     suspend fun saveMiniAppState(roomId: String, session: String, messageId: String,
         documentKey: String, values: Map<String, String>): Unit = error("Mini app storage unavailable")
 
+    suspend fun saveCharacterPhoto(id: String, photo: String?): Unit = error("Photo storage unavailable")
+
     fun update(transform: (AppState) -> AppState)
     suspend fun refresh() = Unit
     fun reset()

@@ -272,7 +272,7 @@ fun ExploreScreen(
                                 .padding(horizontal = 10.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            AssistantAvatar(Color(character.color), character.shape, size = 22.dp)
+                            AssistantAvatar(Color(character.color), character.shape, size = 22.dp, photo = character.avatarPhoto)
                             Spacer(Modifier.width(6.dp))
                             Text(
                                 character.name,

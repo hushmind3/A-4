@@ -633,6 +633,20 @@ class RemoteBackedRepository(
         store.saveStateNow(state.value)
     }
 
+    override suspend fun saveCharacterPhoto(id: String, photo: String?) = refreshLock.withLock {
+        require(photo == null || com.dominion.mobile.platform.attachments.AvatarPhoto.valid(photo))
+        update { current ->
+            check(current.character(id) != null)
+            val previous = current.characterPreferences.orEmpty()[id] ?: com.dominion.mobile.data.model.CharacterPreference()
+            val preferences = previous.copy(avatarPhoto = photo)
+            val next = current.characterPreferences.orEmpty() + (id to preferences)
+            require(next.values.sumOf { it.avatarPhoto?.length ?: 0 } <= 2 * 1024 * 1024)
+            current.copy(characterPreferences = next,
+                characters = current.characters.map { if (it.id == id) preferences.applyTo(it) else it })
+        }
+        store.saveStateNow(state.value)
+    }
+
     override fun update(transform: (AppState) -> AppState) {
         _state.update(transform)
         store.saveState(_state.value)

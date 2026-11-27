@@ -100,6 +100,8 @@ class AppViewModel(
         }
     }
 
+    suspend fun saveCharacterPhoto(id: String, photo: String?) = repo.saveCharacterPhoto(id, photo)
+
     fun updateCharacter(
         characterId: String,
         name: String? = null,
