@@ -572,12 +572,16 @@ class AppViewModel(
         repo.saveReplyAppointment(id,observedAt,draft)
 
     suspend fun planErrandWorkflow(goal:String)=repo.planErrandWorkflow(goal)
-    fun acceptErrandWorkflow(draft:com.dominion.mobile.data.ErrandWorkflowDraft,finalTaskIds:List<String> = emptyList(),
+    /** Await durable registration before the review dialog closes. Background
+     * advancement is separate, so an unavailable service cannot undo acceptance. */
+    suspend fun acceptErrandWorkflow(draft:com.dominion.mobile.data.ErrandWorkflowDraft,finalTaskIds:List<String> = emptyList(),
         approvedExternal:Set<Int> = emptySet()){
+        repo.acceptErrandWorkflow(draft,finalTaskIds,approvedExternal)
+        _notice.value="업무 분해·비서 배정 완료"
         viewModelScope.launch{
-            try{repo.acceptErrandWorkflow(draft,finalTaskIds,approvedExternal);_notice.value="업무 분해·비서 배정 완료";repo.advanceTaskWorkflows()}
+            try{repo.advanceTaskWorkflows()}
             catch(e:CancellationException){throw e}
-            catch(_:Exception){_notice.value="연계 업무 접수 상태를 확인하세요."}
+            catch(_:Exception){_notice.value="접수된 업무의 진행 상태를 확인하세요."}
         }
     }
     fun pauseTaskWorkflow(id:String,paused:Boolean){

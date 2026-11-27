@@ -414,7 +414,11 @@ class RemoteBackedRepository(
                     if(current.engineStatus=="completed"&&current.kakaoMessage?.negotiationGoal!=null&&
                         current.negotiationResolution==null&&(current.replyCandidate!=null||
                             (current.replyWatchUntil?:0)>System.currentTimeMillis()))continue
-                    val receipt=taskReceipt(current.id)
+                    // One unavailable remote receipt must not starve unrelated
+                    // workflows. Keep this stage unchanged for the next refresh.
+                    val receipt=try{taskReceipt(current.id)}
+                    catch(e:CancellationException){throw e}
+                    catch(_:Exception){continue}
                     if(retryWorkflowRead(current,receipt))continue
                     val record=state.value.mobileActions.orEmpty().singleOrNull{
                         it.id=="phone-errand-execution:"+current.engineMessageId&&it.roomId==current.engineRoomId&&

@@ -37,12 +37,18 @@ fun ErrandWorkflowDialog(vm:AppViewModel,state:AppState,initialGoal:String="",on
         var error by remember{mutableStateOf("")}
         AlertDialog(onDismissRequest={if(!busy)onDismiss()},title={Text("복합 업무 자동 분해")},
             text={Column{
-                AppTextField(goal,{goal=it.take(1500);preview=null;finalIds=emptyList();approvedExternal=emptySet()},label="전체 업무 목표",singleLine=false,maxLines=4)
+                AppTextField(goal,{if(!busy){goal=it.take(1500);preview=null;finalIds=emptyList();approvedExternal=emptySet()}},label="전체 업무 목표",singleLine=false,maxLines=4)
                 Text("AI가 조사부터 주문·예약·발송까지 필요한 업무를 제안합니다. 공개 조사 실패는 다른 방법으로 최대 1회 자동 재시도합니다. 외부 업무는 자동 재실행하지 않으며 실제 실행 직전 별도 승인합니다.")
                 TextButton(enabled=!busy&&goal.trim().length>=3,onClick={
+                    if(busy)return@TextButton
+                    val requested=goal.trim()
+                    busy=true;error=""
                     scope.launch{
-                        busy=true;error=""
-                        try{preview=vm.planErrandWorkflow(goal);finalIds=emptyList();approvedExternal=emptySet()}
+                        try{
+                            val draft=vm.planErrandWorkflow(requested)
+                            check(goal.trim()==requested&&draft.goal==requested)
+                            preview=draft;finalIds=emptyList();approvedExternal=emptySet()
+                        }
                         catch(e:kotlinx.coroutines.CancellationException){throw e}
                         catch(_:Exception){error="계획을 만들지 못했습니다. 요청 또는 연결을 확인하세요."}
                         finally{busy=false}
@@ -92,7 +98,20 @@ fun ErrandWorkflowDialog(vm:AppViewModel,state:AppState,initialGoal:String="",on
             confirmButton={TextButton(enabled=!busy&&preview?.let{draft->
                 approvedExternal==draft.stages.indices.filter{draft.stages[it].external}.toSet()
             }==true,onClick={
-                vm.acceptErrandWorkflow(requireNotNull(preview),finalIds,approvedExternal);onDismiss()
+                if(busy)return@TextButton
+                val accepted=requireNotNull(preview)
+                val selectedIds=finalIds.toList()
+                val approvals=approvedExternal.toSet()
+                busy=true;error=""
+                scope.launch{
+                    try{
+                        check(accepted.goal==goal.trim())
+                        vm.acceptErrandWorkflow(accepted,selectedIds,approvals)
+                        onDismiss()
+                    }catch(e:kotlinx.coroutines.CancellationException){throw e}
+                    catch(_:Exception){error="업무 접수 확인 실패 · 같은 계획으로 다시 시도할 수 있습니다."}
+                    finally{busy=false}
+                }
             }){Text("검토한 단계 실행 등록")}},
             dismissButton={TextButton(enabled=!busy,onClick={onDismiss()}){Text("닫기")}})
 }
