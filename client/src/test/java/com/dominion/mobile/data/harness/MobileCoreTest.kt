@@ -24,6 +24,15 @@ class MobileCoreTest{
   CloudCompletionRequest("dominion/free-auto",bounded).validated()
   assertEquals(3,MobileCore.MAX_READ_STEPS)
  }
+ @Test fun originalRequestSurvivesToolContextCompaction(){
+  val request=CloudChatMessage("user","Find and verify the requested information")
+  val messages=listOf(CloudChatMessage("system","Rules"),request)+
+   (1..12).flatMap{listOf(CloudChatMessage("assistant","tool $it"),CloudChatMessage("user","observation $it"))}
+  val result=MobileCore.compact(messages,request)
+  assertTrue(result.any{it===request})
+  assertEquals("observation 12",result.last().content)
+  CloudCompletionRequest("dominion/free-auto",result).validated()
+ }
  @Test fun validatesNewNativeToolContracts(){
   assertEquals(0,MobileCore.validate("battery.status",JsonObject()).size())
   val mail=JsonObject().apply{
