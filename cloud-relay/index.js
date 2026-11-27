@@ -1,5 +1,6 @@
 import {emailLoginReady, startEmailLogin, verifyEmailLogin, pollEmailLogin} from './email_auth.js';
 import {voiceRoute} from './voice.js';
+import {jobRoute,tickJobs} from './agent_jobs.js';
 import {b64url, hash, randomToken} from './token_crypto.js';
 import {assistantRoute,cleanupAssistant,ready as assistantReady,revokeAppSocket} from './assistant_link.js';
 export {AssistantSocket} from './assistant_socket.js';
@@ -505,12 +506,26 @@ async function routeCompletion(request, env, user) {
   if(user.scope==='app')return err('External app credentials permit free models only',403);
   return proxy(request, env, user);
 }
+async function inferCloudJob(env,messages,user){
+  const request=new Request('https://internal/v1/chat/completions',{
+    method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify({model:'dominion/free-auto',messages,max_tokens:700})
+  });
+  const response=await routeCompletion(request,env,user);
+  if(!response.ok)throw Error('Model unavailable');
+  const data=await response.json();
+  const content=data?.choices?.[0]?.message?.content;
+  if(typeof content!=='string'||!content.trim())throw Error('Empty model output');
+  return content;
+}
 export default {
   async scheduled(_event, env, ctx) {
     ctx.waitUntil(availableModels(env, true));
     ctx.waitUntil(cleanupAssistant(env));
+    if(env.AGENT_ENCRYPTION_KEY)ctx.waitUntil(tickJobs(env,(messages,user)=>inferCloudJob(env,messages,user)));
+
   },
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const origin = request.headers.get('origin');
     const path = new URL(request.url).pathname;
     const headers = cors(origin, env);
@@ -548,8 +563,9 @@ export default {
       let response;
       // App sessions may never enter owner, billing or identity endpoints.
       const appAllowed=['/v1/me','/v1/models','/v1/billing','/v1/chat/completions','/v1/apps/status','/v1/apps/disconnect','/v1/voice/capabilities','/v1/voice/transcriptions','/v1/voice/speech'];
-      if(isAppRequest(request)&&!appAllowed.includes(path)&&!path.startsWith('/v1/assistant/'))return json({error:'Owner login required'},403,headers);
-      if(path.startsWith('/v1/voice/')){const user=await account(request,env);response=await voiceRoute(request,env,user,path);}
+      if(isAppRequest(request)&&!appAllowed.includes(path)&&!path.startsWith('/v1/assistant/')&&!path.startsWith('/v1/agent/jobs'))return json({error:'Owner login required'},403,headers);
+      if(path.startsWith('/v1/agent/jobs')){const user=await account(request,env);response=await jobRoute(request,env,user,ctx,(messages,u)=>inferCloudJob(env,messages,u));}
+       else if(path.startsWith('/v1/voice/')){const user=await account(request,env);response=await voiceRoute(request,env,user,path);}
        else if(path.startsWith('/v1/assistant/'))response=await assistantRoute(request,env,{account});
       else if(path==='/connect'&&request.method==='GET')response=await connectPage(request,env);
       else if(path==='/v1/apps/google/approve'&&request.method==='POST'){
