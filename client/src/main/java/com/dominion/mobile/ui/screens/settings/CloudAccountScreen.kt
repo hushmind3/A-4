@@ -50,22 +50,6 @@ fun CloudAccountScreen(onBack: () -> Unit, onEngineSettings: () -> Unit) {
     var registerReview by remember { mutableStateOf(false) }
     var registered by remember { mutableStateOf("") }
     var engineReview by remember{mutableStateOf(false)}
-    var restoredAccount by remember{mutableStateOf<String?>(null)}
-    LaunchedEffect(snapshot?.accountId,snapshot?.autoReconnect,snapshot?.status) {
-        val current=snapshot ?: return@LaunchedEffect
-        if(current.status!="approved" || !current.autoReconnect || current.accountId==null ||
-            container.engine!=null || restoredAccount==current.accountId)return@LaunchedEffect
-        restoredAccount=current.accountId
-        busy=true
-        try {
-            val candidate=repo.restoreLinkedEngine()
-            if(candidate!=null && container.engine==null && container.repository.state.value.call==null) {
-                (context as com.dominion.mobile.MainActivity).applyEngine(candidate)
-            }
-        }catch(e:CancellationException){throw e}
-        catch(_:Exception){error=true}
-        finally{busy=false}
-    }
     LaunchedEffect(snapshot?.accountId,snapshot?.pairingId) {
         history=emptyList();resultInfo="";registered="";ask=""
     }
@@ -158,7 +142,14 @@ fun CloudAccountScreen(onBack: () -> Unit, onEngineSettings: () -> Unit) {
                 "Connect your existing DOMINION Cloud Google account. Local server use does not require cloud sign-in."))
             Text(tr(lang, "실행 서버: ", "Execution server: ") +
                 ((context.applicationContext as DominionApplication).container.engine?.origin ?: tr(lang, "미설정", "Not configured")))
-            Text(tr(lang, "클라우드 계정 연결은 실행 서버 접근 권한과 별개입니다.", "Cloud account authorization does not grant execution server access."))
+            Text("모바일 독립 하네스는 Google 계정으로 직접 모델을 사용합니다. PC는 원격 업무용 선택 기능입니다.")
+            if(container.engine!=null)OutlinedButton(enabled=!busy,onClick={runAction({
+                val active=requireNotNull(container.engine)
+                repo.bindEngine(active){container.engine===active}
+                repo.pauseEngineReconnect(active)
+                (context as com.dominion.mobile.MainActivity).applyEngine(null)
+                repo.refresh()
+            })}){Text("PC 연결 기억 후 모바일 독립 모드")}
             OutlinedButton(onClick = onEngineSettings) { Text(tr(lang, "실행 서버 연결 및 진단", "Connect and diagnose engine")) }
             if (error) Text(tr(lang, "클라우드 연결 또는 확인에 실패했습니다. 다시 확인하세요.",
                 "Cloud request or verification failed. Retry."), color = MaterialTheme.colorScheme.error)

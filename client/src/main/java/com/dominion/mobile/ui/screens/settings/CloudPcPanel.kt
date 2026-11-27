@@ -38,10 +38,7 @@ internal fun CloudPcPanel(repo:CloudRemoteAccount,account:String,engine:EngineCo
             if(!busy)try{
                 state=repo.refresh(account)
                 val online=state.devices.filter{it.online}
-                if(auto&&!attempted&&engine==null&&state.status=="approved"&&online.size==1){
-                    attempted=true
-                    onConnect(repo.connection(account,online.single().id))
-                }
+                // Discovery is automatic; switching the execution target is explicit.
             }catch(e:CancellationException){throw e}
             catch(_:Exception){error="클라우드 중계 상태 조회 실패"}
             delay(if(state.status=="pending")3000 else 15000)

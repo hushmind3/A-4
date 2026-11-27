@@ -56,6 +56,11 @@ class AppViewModel(
     val state: StateFlow<AppState> = repo.state
 
     val connection = repo.connection
+    val localExecution get()=repo.localExecution
+    fun selectMobileModel(model:String){
+        require(localExecution&&model.matches(Regex("[A-Za-z0-9@._:/-]{1,160}")))
+        mutate{it.copy(settings=it.settings.copy(mobileModel=model))}
+    }
 
     private val _quickEntry = MutableStateFlow<Boolean?>(null)
     val quickEntry = _quickEntry.asStateFlow()
@@ -285,7 +290,7 @@ class AppViewModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
-                _notice.value = "본체 연결, 모델 및 도구 설정을 확인하세요."
+                _notice.value = if(localExecution)"Google 계정 연결·모델 응답·무료 이용 한도를 확인하세요." else "본체 연결, 모델 및 도구 설정을 확인하세요."
                 mutate { s ->
                     s.withConversation(conversationId) { conv ->
                         conv.copy(messages = conv.messages.map {
@@ -662,7 +667,7 @@ class AppViewModel(
         viewModelScope.launch {
             try {
                 repo.syncMemory(id)
-                _notice.value = "본체 기억 저장 및 조회 확인 완료"
+                _notice.value = if(localExecution)"기기 기억 저장 완료" else "본체 기억 저장 및 조회 확인 완료"
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { _notice.value = "기기에 기억을 보관했습니다. 기억 메뉴에서 본체 동기화를 다시 시도하세요." }
         }

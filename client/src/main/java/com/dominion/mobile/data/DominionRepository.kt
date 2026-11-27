@@ -10,6 +10,7 @@ enum class ConnectionState { CONNECTING, CONNECTED, OFFLINE, AUTH_REQUIRED, UNAV
 interface DominionRepository {
     val state: StateFlow<AppState>
     val connection: StateFlow<ConnectionState>
+    val localExecution:Boolean get()=false
 
     /** Acknowledge one outbound message; only the remote implementation performs HTTP. */
     suspend fun deliverMessage(conversationId: String, message: Message): Message = error("Execution server not connected")

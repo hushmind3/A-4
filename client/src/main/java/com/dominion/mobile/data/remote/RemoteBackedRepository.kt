@@ -28,10 +28,14 @@ class RemoteBackedRepository(
     private val endpoint: DominionApi?,
     private val store: LocalStore,
     private val onRemindersChanged: (List<com.dominion.mobile.data.model.ScheduleItem>) -> Unit = {},
+    private val mobileCloud:CloudAccountRepository?=null,
     private val onJobAccepted: (String, String) -> Unit = { _, _ -> }
 ) : DominionRepository {
 
     private val api: DominionApi get() = requireNotNull(endpoint) { "Connect DOMINION first" }
+    override val localExecution:Boolean get()=endpoint==null && mobileCloud!=null
+    private val mobile by lazy { com.dominion.mobile.data.harness.MobileHarness(
+        requireNotNull(mobileCloud),{state.value},::update,{store.saveStateNow(state.value)},onRemindersChanged) }
 
     private val mobileExtension by lazy {
         MobileExtensionRepository(api, store::loadMobileJournal, store::saveMobileJournal)
@@ -58,7 +62,9 @@ class RemoteBackedRepository(
 
     private fun emptyRemoteState() = AppState(
         onboarded = true,
-        characters = emptyList(),
+        characters = if(localExecution)AssistantCatalog.assistantPresets().mapIndexed{i,c->c.copy(mine=i==0,online=false)} else emptyList(),
+        conversations=if(localExecution)listOf(com.dominion.mobile.data.model.Conversation(
+            "mobile-assistant","preset_my_id",sessionId=java.util.UUID.randomUUID().toString()))else emptyList(),
         explore = AssistantCatalog.explore(),
         connections = AssistantCatalog.connections(),
         account = Account(
@@ -69,13 +75,26 @@ class RemoteBackedRepository(
     )
 
     private val _state = MutableStateFlow((store.loadState() ?: emptyRemoteState()).let { cached ->
-        cached.copy(onboarded = true,
+        val local=if(localExecution) {
+            val characters=(cached.characters+AssistantCatalog.assistantPresets()).distinctBy{it.id}.map{c->
+                val chosen=cached.characterPreferences.orEmpty()[c.id]?.applyTo(c)?:c
+                chosen.copy(mine=chosen.id=="preset_my_id",online=false)
+            }
+            val rooms=if(cached.conversations.isEmpty() && "mobile-assistant" !in cached.hiddenRooms.orEmpty())
+                listOf(com.dominion.mobile.data.model.Conversation("mobile-assistant","preset_my_id",sessionId=java.util.UUID.randomUUID().toString()))
+                else cached.conversations
+            cached.copy(characters=characters,conversations=rooms.map{c->c.copy(
+                sessionId=c.sessionId?:java.util.UUID.randomUUID().toString(),
+                messages=c.messages.map{m->if(m.jobStatus in setOf("running","queued"))
+                    m.copy(jobStatus="interrupted",status=com.dominion.mobile.data.model.MessageStatus.FAILED) else m})})
+        }else cached
+        local.copy(onboarded = true,
             explore = (AssistantCatalog.explore() + cached.explore).distinctBy { it.id },
             connections = (AssistantCatalog.connections() + cached.connections).distinctBy { it.id }
                 .map { it.copy(connected = false, lastUsed = null) })
     })
     override val state: StateFlow<AppState> = _state.asStateFlow()
-    private val _connection = MutableStateFlow(if (endpoint == null) ConnectionState.AUTH_REQUIRED else ConnectionState.CONNECTING)
+    private val _connection = MutableStateFlow(if (localExecution) ConnectionState.CONNECTED else if (endpoint == null) ConnectionState.AUTH_REQUIRED else ConnectionState.CONNECTING)
     override val connection = _connection.asStateFlow()
     private val refreshLock = Mutex()
 
@@ -251,12 +270,19 @@ class RemoteBackedRepository(
     private val renameLock = Mutex()
 
     override suspend fun refreshMemories() = memoryLock.withLock {
+        if(localExecution)return@withLock
         val rows = api.engineMemories().mapNotNull(EngineMemory::toDomain)
         update { current -> current.copy(memories = mergeMemories(current.memories, rows)) }
     }
 
     override suspend fun syncMemory(id: String) = memoryLock.withLock {
         val item = state.value.memories.firstOrNull { it.id == id } ?: error("Memory not found")
+        if(localExecution){
+            require(state.value.character(item.characterId)!=null)
+            update{current->current.copy(memories=current.memories.map{if(it.id==id)it.copy(serverBacked=false,retrievalEligible=true)else it})}
+            store.saveStateNow(state.value)
+            return@withLock
+        }
         if (item.serverBacked == true) return@withLock
         require(state.value.character(item.characterId) != null)
         val request = MemoryWrite.from(item)
@@ -273,7 +299,7 @@ class RemoteBackedRepository(
 
     override suspend fun deleteMemory(id: String) = memoryLock.withLock {
         val item = state.value.memories.firstOrNull { it.id == id } ?: return@withLock
-        if (item.serverBacked == true) {
+        if (item.serverBacked == true && endpoint!=null) {
             check(api.deleteEngineMemory(id).get("ok")?.asBoolean == true)
             check(api.engineMemories().none { it.id == id })
         } else if (endpoint != null) {
@@ -291,6 +317,11 @@ class RemoteBackedRepository(
     override suspend fun renameRoom(id: String, title: String) = renameLock.withLock {
         val clean = title.trim()
         require(clean.isNotBlank() && clean.codePointCount(0, clean.length) <= 160)
+        if(localExecution){
+            check(state.value.conversation(id)!=null)
+            update{current->current.copy(conversations=current.conversations.map{if(it.id==id)it.copy(titleOverride=clean)else it})}
+            store.saveStateNow(state.value);return@withLock
+        }
         val result = api.renameEngineRoom(id, RoomNameUpdate(clean))
         check(result.id == id && result.name == clean)
         val confirmed = api.engineRoom(id)
@@ -315,10 +346,11 @@ class RemoteBackedRepository(
         }
         update { it.copy(account = it.account.copy(name = clean, birthday = birthday)) }
         store.saveStateNow(state.value)
-        endpoint != null
+        endpoint != null || localExecution
     }
 
     override suspend fun deliverMessage(conversationId: String, message: Message): Message {
+        if(localExecution)return mobile.deliver(conversationId,message)
         // Use the native room endpoint, which persists a job and deduplicates retries.
         var room = api.engineRoom(conversationId)
         // Only the dedicated mobile assistant is initialized automatically. Other
@@ -540,9 +572,10 @@ class RemoteBackedRepository(
         if (endpoint == null) kotlinx.coroutines.flow.emptyFlow()
         else roomEventSignals(api, roomId, sessionId, roomEventCursor)
 
-    override suspend fun engineTools(): List<EngineTool> = api.engineTools()
+    override suspend fun engineTools(): List<EngineTool> = if(localExecution)mobile.tools else api.engineTools()
 
     override suspend fun roomExecution(roomId: String): RoomExecution = coroutineScope {
+        if(localExecution)return@coroutineScope mobile.execution(roomId)
         val snapshot = api.roomExecution(roomId)
         require(snapshot.room?.id == roomId)
         val session = requireNotNull(snapshot.sessionId).also { require(it.isNotBlank()) }
@@ -562,6 +595,7 @@ class RemoteBackedRepository(
 
     override suspend fun decideApproval(roomId: String, approval: EngineApproval,
         allow: Boolean): ApprovalResult {
+        if(localExecution)return mobile.decide(roomId,approval,allow)
         val current = roomExecution(roomId)
         val session = requireNotNull(current.sessionId)
         require(approval.actionableIn(session))
@@ -575,6 +609,7 @@ class RemoteBackedRepository(
     }
 
     override suspend fun cancelJob(roomId: String, jobId: String): EngineJob {
+        if(localExecution)return mobile.cancel(roomId,jobId)
         val current = roomExecution(roomId)
         val job = current.jobs.orEmpty().firstOrNull { it.id == jobId }
             ?: error("Job does not belong to this room")
@@ -719,6 +754,12 @@ class RemoteBackedRepository(
     override suspend fun createConversation(title: String, characterId: String): String {
         require(state.value.character(characterId) != null)
         val id = java.util.UUID.randomUUID().toString()
+        if(localExecution){
+            update{it.copy(conversations=listOf(com.dominion.mobile.data.model.Conversation(id,characterId,
+                titleOverride=title.ifBlank{"새 대화"}.take(160),sessionId=java.util.UUID.randomUUID().toString()))+it.conversations)}
+            store.saveStateNow(state.value)
+            return id
+        }
         // Use the owner's existing assistant model pool if configured.
         val existing = api.engineRooms().firstOrNull { it.id == "assistant" }
         val room = api.createRoom(RoomCreate(id, title.ifBlank { "새 대화" }.take(160),
@@ -788,6 +829,7 @@ class RemoteBackedRepository(
     private val roomMutationLock = Mutex()
 
     override suspend fun refreshRoomHistory(id: String) = roomMutationLock.withLock {
+        if(localExecution){check(state.value.conversation(id)!=null);return@withLock}
         val before = api.roomExecution(id)
         val session = requireNotNull(before.sessionId).also { require(it.isNotBlank()) }
         check(before.room?.id == id)
@@ -817,6 +859,15 @@ class RemoteBackedRepository(
             check(local.messages.none { it.status != com.dominion.mobile.data.model.MessageStatus.SENT }) {
                 "Resolve pending messages before reset"
             }
+            if(localExecution){
+                check(state.value.mobileActions.orEmpty().none{it.roomId==id&&it.status=="pending"})
+                val draft=if(restoreLastRequest)local.messages.lastOrNull{it.sender==MessageSender.USER}?.text?:error("No previous request")else ""
+                update{current->current.copy(conversations=current.conversations.map{if(it.id==id)it.copy(messages=emptyList(),
+                    sessionId=java.util.UUID.randomUUID().toString(),draft=draft)else it},
+                    mobileActions=current.mobileActions.orEmpty().filterNot{it.roomId==id})}
+                store.saveStateNow(state.value)
+                return@withLock
+            }
             val before = api.roomExecution(id)
             check(before.room?.id == id)
             val previous = requireNotNull(before.sessionId).also { require(it.isNotBlank()) }
@@ -844,6 +895,12 @@ class RemoteBackedRepository(
             check(local.messages.none { it.status != com.dominion.mobile.data.model.MessageStatus.SENT })
             // The legacy mobile list automatically recreates its assistant room.
             // Leaving that default room is a local hide; do not delete it remotely.
+            if(localExecution){
+                check(state.value.mobileActions.orEmpty().none{it.roomId==id&&it.status=="pending"})
+                update{current->current.copy(hiddenRooms=current.hiddenRooms.orEmpty()+id,conversations=current.conversations.filterNot{it.id==id},
+                    mobileActions=current.mobileActions.orEmpty().filterNot{it.roomId==id})}
+                store.saveStateNow(state.value);return@withLock
+            }
             if (id != "assistant") {
                 check(api.removeEngineRoom(id).get("ok")?.asBoolean == true)
                 check(api.engineRooms().none { it.id == id })
@@ -855,7 +912,8 @@ class RemoteBackedRepository(
     }
 
     override suspend fun loadMessages(conversationId: String): List<Message> =
-        api.nativeRoomMessages(conversationId).mapNotNull { it.toDomain(conversationId) }
+        if(localExecution)requireNotNull(state.value.conversation(conversationId)).messages
+        else api.nativeRoomMessages(conversationId).mapNotNull { it.toDomain(conversationId) }
 
     override suspend fun pollForReply(conversationId: String, knownIds: Set<String>): List<Message> {
         // Progressive polling: roughly one minute in total, no duplicate POST.
@@ -975,7 +1033,7 @@ class RemoteBackedRepository(
     }
 
     override suspend fun refresh() {
-        if (endpoint == null) { _connection.value = ConnectionState.AUTH_REQUIRED; return }
+        if (endpoint == null) { _connection.value = if(localExecution)ConnectionState.CONNECTED else ConnectionState.AUTH_REQUIRED; return }
         if (!refreshLock.tryLock()) return
         try {
             if (_connection.value != ConnectionState.CONNECTED) {
@@ -1040,7 +1098,7 @@ class RemoteBackedRepository(
     }
 
     override fun reset() {
-        _connection.value = ConnectionState.CONNECTING
+        _connection.value = if(localExecution)ConnectionState.CONNECTED else ConnectionState.CONNECTING
         store.clearState()
         _state.value = emptyRemoteState()
     }

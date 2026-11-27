@@ -9,7 +9,8 @@ data class CloudCompletionRequest(val model:String,val messages:List<CloudChatMe
     fun validated():CloudCompletionRequest {
         require(model.matches(Regex("[A-Za-z0-9@._:/-]{1,160}")) && max_tokens in 1..1024 && !stream)
         require(messages.size in 1..12 && messages.last().role=="user" &&
-            messages.all{it.role in setOf("user","assistant") && it.content.isNotBlank() && it.content.length<=16000} &&
+            messages.withIndex().all{(i,m)->(m.role in setOf("user","assistant") || i==0 && m.role=="system") &&
+                m.content.isNotBlank() && m.content.length<=16000} &&
             messages.sumOf{it.content.toByteArray(Charsets.UTF_8).size}<=24000)
         return this
     }

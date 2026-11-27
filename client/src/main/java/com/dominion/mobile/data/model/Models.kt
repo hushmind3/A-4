@@ -364,7 +364,8 @@ data class SettingsState(
     val guideDismissed: Boolean = false,
     val tabOrder: List<TabId> = listOf(TabId.CHATS, TabId.EXPLORE, TabId.FRIENDS, TabId.ARCHIVE, TabId.PROFILE),
     val blockedUserIds: List<String> = emptyList(),
-    val legalVersion: String = "2026.11"
+    val legalVersion: String = "2026.11",
+    val mobileModel:String?=null
 )
 
 enum class CallPhase { PERMISSION, CONNECTING, WAITING_PEER, PEER_PRESENT, RECONNECTING, FAILED }
@@ -412,7 +413,8 @@ data class AppState(
     val vaultUnlocked: Boolean = false,
     val characterPreferences: Map<Id, CharacterPreference>? = emptyMap(),
     val hiddenRooms: Set<Id>? = emptySet(),
-    val miniAppStates: Map<String, Map<String, String>>? = emptyMap()
+    val miniAppStates: Map<String, Map<String, String>>? = emptyMap(),
+    val mobileActions:List<com.dominion.mobile.data.harness.MobileActionRecord>?=emptyList()
 ) {
     fun character(id: Id): Character? = characters.firstOrNull { it.id == id }
     fun myCharacter(): Character? = characters.firstOrNull { it.mine }

@@ -687,8 +687,11 @@ fun ChatRoomScreen(
 
     if(backgroundVoice) com.dominion.mobile.ui.components.AssistantVoiceDialog(vm,conversationId,
         onDismiss={backgroundVoice=false})
-    if(showModels) com.dominion.mobile.ui.components.RoomModelPicker(conversationId,conversation.sessionId,
-        onDismiss={showModels=false})
+    if(showModels) {
+        if(vm.localExecution)com.dominion.mobile.ui.components.MobileModelPicker(vm,onDismiss={showModels=false})
+        else com.dominion.mobile.ui.components.RoomModelPicker(conversationId,conversation.sessionId,
+            onDismiss={showModels=false})
+    }
     if (realtimeChoice) com.dominion.mobile.ui.components.RealtimeCallDialog(vm,
         onStart = { video ->
             realtimeChoice = false
