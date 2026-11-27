@@ -76,6 +76,9 @@ class NativeMediaDeviceTest {
                 var validSurfaces=0
                 var copiedFrames=0
                 var lastPixelCopyStatus=-1
+                var maxGreenSeen=0
+                var maxGreenDominance=Int.MIN_VALUE
+                var lastCenterPixel=0
                 repeat(30) {
                     if(rendered)return@repeat
                     val signal=CountDownLatch(1)
@@ -101,7 +104,12 @@ class NativeMediaDeviceTest {
                                 if(success)loop@ for(y in 0 until image.height step 4)for(x in 0 until image.width step 4){
                                     val p=image.getPixel(x,y)
                                     val g=android.graphics.Color.green(p)
-                                    if(g>80 && g>android.graphics.Color.red(p)+35 && g>android.graphics.Color.blue(p)+35){rendered=true;break@loop}
+                                    maxGreenSeen=maxOf(maxGreenSeen,g)
+                                    maxGreenDominance=maxOf(maxGreenDominance,g-
+                                        maxOf(android.graphics.Color.red(p),android.graphics.Color.blue(p)))
+                                    if(x==image.width/2 || y==image.height/2) lastCenterPixel=p
+                                    if(g>80 && g>android.graphics.Color.red(p)+35 &&
+                                        g>android.graphics.Color.blue(p)+35){rendered=true;break@loop}
                                 }
                             }finally{image.recycle()}
                         }
@@ -110,8 +118,10 @@ class NativeMediaDeviceTest {
                 }
                 assertTrue("Expected actual green model pixels on Filament SurfaceView; "+
                     "validSurfaceSamples="+validSurfaces+", successfulPixelCopies="+copiedFrames+
-                    ", pixelCopyStatus="+lastPixelCopyStatus+
-                    " (check DOMINION-Avatar logcat for initialization errors)",rendered)
+                    ", pixelCopyStatus="+lastPixelCopyStatus+", maxGreen="+maxGreenSeen+
+                    ", maxGreenDominance="+maxGreenDominance+", sampleColor="+
+                    Integer.toHexString(lastCenterPixel)+
+                    " (inspect DOMINION-Avatar logcat for model/renderer state)",rendered)
             }
         }finally{store.remove(key)}
     }

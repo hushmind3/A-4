@@ -34,6 +34,8 @@ private class StandardAvatarSurface(context: Context): FrameLayout(context) {
     private var expression:String?=null
     private var expressionStrength=1f
     private var viseme:String?="aa"
+    private var loggedFrame=false
+    private var renderFrames=0
     private var rig:com.dominion.mobile.data.VrmExpressions?=null
     private var rigTargets=emptyMap<Pair<Int,Int>,Int>()
     private var failure: ()->Unit={}
@@ -107,6 +109,8 @@ private class StandardAvatarSurface(context: Context): FrameLayout(context) {
                         Triple(ri,index,manager.getMorphTargetCount(ri)) else null
                 }
                 loaded=data
+                Log.i("DOMINION-Avatar","Model parsed: renderables="+asset.renderableEntities.size+
+                    ", dimensions="+child.width+"x"+child.height+", active="+active)
                 frameStart=0L;previousIndex=-1
                 animationInfo(v.animator?.let { animator ->
                     (0 until animator.animationCount).map { animator.getAnimationName(it).ifBlank { "Animation ${it+1}" } }
@@ -138,6 +142,13 @@ private class StandardAvatarSurface(context: Context): FrameLayout(context) {
                 }
             }else morphs.forEach { (instance,index,_) -> manager.setMorphWeights(instance,floatArrayOf(mouth),index) }
             v.render(now)
+            renderFrames++
+            if(!loggedFrame && renderFrames>=40){
+                loggedFrame=true
+                Log.i("DOMINION-Avatar","40 render callbacks; viewport="+
+                    v.view.viewport.width+"x"+v.view.viewport.height+
+                    ", assetPresent="+(v.asset!=null)+", attached="+isAttachedToWindow)
+            }
             schedule()
         }catch(e:Exception){Log.e("DOMINION-Avatar","Filament frame failed",e);failure()}
         catch(e:LinkageError){Log.e("DOMINION-Avatar","Filament rendering unavailable",e);failure()}
