@@ -147,6 +147,8 @@ fun ChatRoomScreen(
     var speakText by remember(conversationId, conversation.sessionId) { mutableStateOf<String?>(null) }
     var showMenu by remember { mutableStateOf(false) }
     var messageMenu by remember { mutableStateOf<Message?>(null) }
+    var miniAppMessage by remember(conversationId, conversation.sessionId) { mutableStateOf<Message?>(null) }
+    var createMiniApp by remember(conversationId, conversation.sessionId) { mutableStateOf(false) }
     var attachmentViewer by remember(conversationId, conversation.sessionId) {
         mutableStateOf<com.dominion.mobile.data.model.ArchiveItem?>(null)
     }
@@ -409,6 +411,14 @@ fun ChatRoomScreen(
                                 }
                             }
                         )
+                        if (entry.message.sender == MessageSender.ASSISTANT && entry.message.status == MessageStatus.SENT &&
+                            conversation.sessionId != null &&
+                            remember(entry.message.id, entry.message.text) {
+                                com.dominion.mobile.data.MiniAppDocument.fromMessage(entry.message.text) != null
+                            }) {
+                            androidx.compose.material3.OutlinedButton(onClick = { miniAppMessage = entry.message },
+                                modifier = Modifier.padding(start = 40.dp, bottom = 8.dp)) { Text("미니앱 실행") }
+                        }
                         if (entry.message.sender == MessageSender.USER && entry.message.jobStatus != null &&
                             entry.message.status == MessageStatus.SENT) {
                             val jobLabel = when (entry.message.jobStatus) {
@@ -630,6 +640,9 @@ fun ChatRoomScreen(
                     context.toast(tr(lang, "파일 선택기를 열 수 없습니다.", "File picker unavailable"))
                 }
             }
+            SheetRow(tr(lang, "네이티브 미니앱 제작", "Create a native mini app"), Glyph.SPARK) {
+                showAttach = false; createMiniApp = true
+            }
             SheetRow(tr(lang, "할 일", "Task"), Glyph.TASK) { showAttach = false; onNavigate(com.dominion.mobile.ui.nav.Routes.TASKS) }
             SheetRow(tr(lang, "일정", "Schedule"), Glyph.CALENDAR) { showAttach = false; onNavigate(com.dominion.mobile.ui.nav.Routes.SCHEDULES) }
             SheetRow(tr(lang, "휴대폰 기능", "Phone actions"), Glyph.PLUG) {
@@ -661,6 +674,30 @@ fun ChatRoomScreen(
         }
     }
 
+    if (createMiniApp) com.dominion.mobile.ui.components.TextPromptDialog(
+        title = "미니앱 제작", label = "필요한 체크리스트·표·예산 계산기·입력 양식을 설명하세요.",
+        confirmLabel = "요청 작성", singleLine = false, onConfirm = { text ->
+            if (text.isNotBlank()) {
+                draft = listOf(draft, com.dominion.mobile.data.MiniAppDocument.prompt(text)).filter { it.isNotBlank() }.joinToString("\n")
+                vm.setDraft(conversationId, draft)
+                createMiniApp = false
+            }
+        }, onDismiss = { createMiniApp = false })
+    miniAppMessage?.let { message ->
+        val session = conversation.sessionId
+        val document = remember(message.id, message.text) { com.dominion.mobile.data.MiniAppDocument.fromMessage(message.text) }
+        if (document != null && !session.isNullOrBlank()) {
+            val key = document.storageKey(conversationId, session, message.id)
+            com.dominion.mobile.ui.components.MiniAppDialog(document, state.miniAppStates.orEmpty()[key].orEmpty(),
+                save = { values -> vm.saveMiniAppState(conversationId, session, message.id, key, values) },
+                onDismiss = { miniAppMessage = null },
+                onUseResult = { result ->
+                    draft = listOf(draft, result).filter { it.isNotBlank() }.joinToString("\n")
+                    vm.setDraft(conversationId, draft)
+                    miniAppMessage = null
+                })
+        }
+    }
     attachmentViewer?.let { item ->
         com.dominion.mobile.ui.screens.archive.AttachmentViewerDialog(item,
             load = { vm.downloadAttachment(conversationId, requireNotNull(item.attachmentId)) },
@@ -669,6 +706,13 @@ fun ChatRoomScreen(
     messageMenu?.let { message ->
         AppBottomSheet(onDismiss = { messageMenu = null }) {
             SheetTitle(tr(lang, "메시지", "Message"))
+            if (message.sender == MessageSender.ASSISTANT && message.status == MessageStatus.SENT &&
+                conversation.sessionId != null &&
+                com.dominion.mobile.data.MiniAppDocument.fromMessage(message.text) != null) {
+                SheetRow("네이티브 미니앱 열기", Glyph.SPARK) {
+                    miniAppMessage = message; messageMenu = null
+                }
+            }
             com.dominion.mobile.data.ArchiveIndex.fromMessage(message).filter { it.attachmentId != null }.forEach { item ->
                 SheetRow(tr(lang, "파일 열기 · ", "Open file · ") + item.title.take(80), Glyph.FILE) {
                     messageMenu = null

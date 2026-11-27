@@ -68,8 +68,14 @@ fun AttachmentViewerDialog(item: ArchiveItem, load: suspend () -> ByteArray, onD
                 }
                 bytes?.let { content ->
                     val mime = item.mimeType.orEmpty().lowercase()
+                    val miniApp = remember(content) {
+                        if (content.size <= 65536 && (mime == "application/json" || item.title.endsWith(".json", true)))
+                            com.dominion.mobile.data.MiniAppDocument.parseOrNull(content.toString(Charsets.UTF_8))
+                        else null
+                    }
                     Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                         when {
+                            miniApp != null -> com.dominion.mobile.ui.components.MiniAppPanel(miniApp)
                             mime.startsWith("image/") -> ImagePreview(content)
                             mime == "application/pdf" -> PdfPreview(content)
                             mime.startsWith("video/") || mime.startsWith("audio/") -> MediaPreview(content, mime)

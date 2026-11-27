@@ -320,6 +320,10 @@ class AppViewModel(
         if (prompt.isNotBlank()) sendMessage(conversationId, prompt, card)
     }
 
+    suspend fun saveMiniAppState(roomId: String, session: String, messageId: String,
+        documentKey: String, values: Map<String, String>) =
+        repo.saveMiniAppState(roomId, session, messageId, documentKey, values)
+
     fun setDraft(conversationId: String, draft: String) = mutate { s ->
         s.withConversation(conversationId) { it.copy(draft = draft) }
     }

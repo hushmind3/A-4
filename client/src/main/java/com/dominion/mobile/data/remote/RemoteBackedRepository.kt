@@ -615,6 +615,24 @@ class RemoteBackedRepository(
         return emptyList()
     }
 
+    override suspend fun saveMiniAppState(roomId: String, session: String, messageId: String,
+        documentKey: String, values: Map<String, String>) = roomMutationLock.withLock {
+        val room = requireNotNull(state.value.conversation(roomId))
+        check(room.sessionId == session)
+        val message = room.messages.single { it.id == messageId &&
+            it.sender == MessageSender.ASSISTANT && it.status == com.dominion.mobile.data.model.MessageStatus.SENT }
+        val document = requireNotNull(com.dominion.mobile.data.MiniAppDocument.fromMessage(message.text))
+        check(document.storageKey(roomId, session, messageId) == documentKey)
+        val validated = document.validateValues(values)
+        update { current ->
+            check(current.conversation(roomId)?.sessionId == session)
+            val all = current.miniAppStates.orEmpty()
+            require(documentKey in all || all.size < 100) { "Mini app storage limit" }
+            current.copy(miniAppStates = all + (documentKey to validated))
+        }
+        store.saveStateNow(state.value)
+    }
+
     override fun update(transform: (AppState) -> AppState) {
         _state.update(transform)
         store.saveState(_state.value)

@@ -408,7 +408,8 @@ data class AppState(
     val sharedText: String? = null,
     val vaultUnlocked: Boolean = false,
     val characterPreferences: Map<Id, CharacterPreference>? = emptyMap(),
-    val hiddenRooms: Set<Id>? = emptySet()
+    val hiddenRooms: Set<Id>? = emptySet(),
+    val miniAppStates: Map<String, Map<String, String>>? = emptyMap()
 ) {
     fun character(id: Id): Character? = characters.firstOrNull { it.id == id }
     fun myCharacter(): Character? = characters.firstOrNull { it.mine }

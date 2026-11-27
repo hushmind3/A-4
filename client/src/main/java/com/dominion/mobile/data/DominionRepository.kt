@@ -87,6 +87,9 @@ interface DominionRepository {
     suspend fun changeSchedules(transform: (List<com.dominion.mobile.data.model.ScheduleItem>) ->
         List<com.dominion.mobile.data.model.ScheduleItem>): Unit = error("Reminder storage unavailable")
 
+    suspend fun saveMiniAppState(roomId: String, session: String, messageId: String,
+        documentKey: String, values: Map<String, String>): Unit = error("Mini app storage unavailable")
+
     fun update(transform: (AppState) -> AppState)
     suspend fun refresh() = Unit
     fun reset()
