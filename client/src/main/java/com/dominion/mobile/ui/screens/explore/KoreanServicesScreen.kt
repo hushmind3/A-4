@@ -32,6 +32,7 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
     val context = LocalContext.current
     var selected by remember { mutableStateOf<KoreanService?>(null) }
     var privateErrand by remember { mutableStateOf<com.dominion.mobile.data.KoreanErrand?>(null) }
+    var phoneBridge by remember { mutableStateOf(false) }
  
     var institutionDraft by remember { mutableStateOf<Pair<String, String>?>(null) }
     var scheduleDraft by remember { mutableStateOf<ServiceScheduleDraft?>(null) }
@@ -51,6 +52,7 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
                 style = MaterialTheme.typography.labelSmall, color = p.textTertiary)
             AppTextField(query, { query = it }, placeholder = "복지, 민원, 학교 등 검색")
             OutlinedButton(onClick = onDeviceActions, modifier = Modifier.fillMaxWidth()) { Text("휴대폰 연결 · 연락처 / 문자 / 이메일 / 앱") }
+            OutlinedButton(onClick={phoneBridge=true},modifier=Modifier.fillMaxWidth()){Text("AI 외부 전화 문의 대행")}
             Row {
                 TextButton(onClick = onTasks) { Text("내가 맡긴 업무") }
                 TextButton(onClick = onAgenda) { Text("내 일정") }
@@ -85,6 +87,7 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
         }
     }
 
+    if(phoneBridge)PhoneBridgeDialog{phoneBridge=false}
     privateErrand?.let{errand->
         key(errand.id){
             val installed=remember(errand.id){DeviceActions.launchableApps(context)}
