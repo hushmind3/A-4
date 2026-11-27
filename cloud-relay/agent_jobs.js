@@ -20,7 +20,9 @@ export const safeSite=link=>{
 };
 export function decision(text){
   if(typeof text!=='string'||text.length>8000)return null;
-  let a;try{a=JSON.parse(text.trim())}catch{return null}
+  const raw=text.trim();
+  const fenced=/^\x60\x60\x60(?:json)?\s*([\s\S]*?)\s*\x60\x60\x60$/i.exec(raw);
+  let a;try{a=JSON.parse(fenced?.[1]??raw)}catch{return null}
   if(!a||typeof a!=='object'||Array.isArray(a))return null;
   if(Object.keys(a).length===1&&typeof a.final==='string'&&a.final.trim()&&a.final.length<=5000)
     return {kind:'final',content:a.final.trim()};
@@ -106,8 +108,8 @@ export async function jobRoute(request,env,user,ctx,infer){
       id=crypto.randomUUID();
       const enc=await seal(env,user.id,id,'prompt',prompt);
       inserted=await env.DB.prepare(
-        "INSERT OR IGNORE INTO cloud_agent_jobs(id,account_id,client_id,prompt_enc,status,next_run,created_at,updated_at) VALUES(?,?,?,?,'queued',?,?,?) RETURNING id")
-        .bind(id,user.id,value.client_id,enc,now(),now(),now()).first();
+        "INSERT OR IGNORE INTO cloud_agent_jobs(id,account_id,client_id,prompt_enc,status,next_run,created_at,updated_at) SELECT ?,?,?,?,'queued',?,?,? WHERE (SELECT COUNT(*) FROM cloud_agent_jobs WHERE account_id=? AND status IN ('queued','running'))<? RETURNING id")
+        .bind(id,user.id,value.client_id,enc,now(),now(),now(),user.id,maxActive).first();
     }catch(e){await refund();throw e}
     if(!inserted){
       await refund();
@@ -116,6 +118,8 @@ export async function jobRoute(request,env,user,ctx,infer){
         .bind(user.id,value.client_id).first();
       if(duplicate&&await unseal(env,user.id,duplicate.id,'prompt',duplicate.prompt_enc)===prompt)
         return reply({id:duplicate.id,status:duplicate.status,duplicate:true});
+      const count=await env.DB.prepare("SELECT COUNT(*) AS active FROM cloud_agent_jobs WHERE account_id=? AND status IN ('queued','running')").bind(user.id).first();
+      if(Number(count?.active||0)>=maxActive)return failure('Active cloud task limit reached',429);
       return failure('Concurrent task submission',409);
     }
     ctx.waitUntil(runJob(env,id,infer));

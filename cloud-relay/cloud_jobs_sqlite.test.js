@@ -85,3 +85,17 @@ test('invalid submissions cannot reserve quota or create jobs',async()=>{
   assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM free_quota').get().n,0);
  }finally{sqlite.close()}
 });
+
+test('simultaneous submissions cannot exceed the active account limit',async()=>{
+ const {sqlite,send,pending}=await fixture();
+ try{
+  const responses=await Promise.all(Array.from({length:6},(_,i)=>send('a','/v1/agent/jobs','POST',{
+    prompt:'Research task number '+i,
+    client_id:'11111111-1111-4111-8111-'+String(i+1).padStart(12,'0')
+  })));
+  await Promise.all(pending);
+  assert.equal(responses.filter(r=>r.status===202).length,3);
+  assert.ok(responses.every(r=>[202,429].includes(r.status)));
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM cloud_agent_jobs WHERE status IN ('queued','running')").get().n,3);
+ }finally{sqlite.close()}
+});

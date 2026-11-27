@@ -21,3 +21,17 @@ test('missing D1 binding fails closed before agent/voice handling',async()=>{
  }),{ALLOWED_ORIGIN:'https://dominion.example'},{waitUntil(){}});
  assert.equal(res.status,503);
 });
+
+test('minute recovery trigger does not run older message retention or model maintenance',async()=>{
+ const queries=[];
+ const env={AGENT_ENCRYPTION_KEY:'configured',DB:{prepare(sql){queries.push(sql);return{
+   bind(){return this},
+   async all(){return {results:[]}},
+   async run(){return {}}
+ };}}};
+ const pending=[];
+ await worker.scheduled({cron:'* * * * *'},env,{waitUntil:p=>pending.push(p)});
+ await Promise.all(pending);
+ assert.equal(queries.length,2);
+ assert.ok(queries.every(sql=>sql.includes('cloud_agent_jobs')));
+});

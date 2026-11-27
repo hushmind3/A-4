@@ -519,11 +519,15 @@ async function inferCloudJob(env,messages,user){
   return content;
 }
 export default {
-  async scheduled(_event, env, ctx) {
+  async scheduled(event, env, ctx) {
+    // A-4's minute trigger is dedicated to job recovery. Do not silently
+    // enable older account/message maintenance on the new trigger.
+    if(event.cron==='* * * * *'){
+      if(env.AGENT_ENCRYPTION_KEY)ctx.waitUntil(tickJobs(env,(messages,user)=>inferCloudJob(env,messages,user)));
+      return;
+    }
     ctx.waitUntil(availableModels(env, true));
     ctx.waitUntil(cleanupAssistant(env));
-    if(env.AGENT_ENCRYPTION_KEY)ctx.waitUntil(tickJobs(env,(messages,user)=>inferCloudJob(env,messages,user)));
-
   },
   async fetch(request, env, ctx) {
     const origin = request.headers.get('origin');
