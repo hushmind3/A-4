@@ -64,7 +64,9 @@ class BackgroundJobWorker(context: Context, params: WorkerParameters) : Coroutin
         val jobId = inputData.getString(BackgroundJobMonitor.JOB) ?: return Result.failure()
         if (expected.length != 64 || roomId.isBlank() || jobId.isBlank()) return Result.failure()
 
-        val engine = (applicationContext as DominionApplication).container.engine
+        val container = (applicationContext as DominionApplication).container
+        val engine = container.engine
+        val repository = container.repository
         // Never use a new engine's owner token to fetch the previous engine's job.
         if (engine == null || BackgroundJobMonitor.originKey(engine.origin) != expected) {
             WorkManager.getInstance(applicationContext).cancelWorkById(id)
@@ -76,7 +78,7 @@ class BackgroundJobWorker(context: Context, params: WorkerParameters) : Coroutin
             catch (_: Exception) { return Result.success() } // next scheduled poll
 
         val currentEngine = (applicationContext as DominionApplication).container.engine
-        if (currentEngine !== engine) {
+        if (currentEngine !== engine || container.repository !== repository) {
             if (currentEngine?.origin != engine.origin) WorkManager.getInstance(applicationContext).cancelWorkById(id)
             return Result.success()
         }
@@ -84,11 +86,17 @@ class BackgroundJobWorker(context: Context, params: WorkerParameters) : Coroutin
             BackgroundJobMonitor.stop(applicationContext, engine.origin, roomId, jobId)
             return Result.success()
         }
+        // Persist actual server status before announcing it or cancelling the durable watcher.
+        try { repository.recordObservedJob(roomId, jobId, job) }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { return Result.retry() }
+        if (container.engine !== engine || container.repository !== repository) return Result.success()
         val key = BackgroundJobMonitor.workKey(engine.origin, roomId, jobId)
         when (job.status) {
             "completed" -> {
-                val task = (applicationContext as DominionApplication).container.repository.state.value.tasks
-                    .firstOrNull { it.engineJobId == jobId && it.engineRoomId == roomId }
+                val task = repository.state.value.tasks.firstOrNull {
+                    com.dominion.mobile.data.remote.TaskDispatch.matches(it, job)
+                }
                 if (!task?.watchCondition.isNullOrBlank()) {
                     when (com.dominion.mobile.data.WatchDecision.evaluate(requireNotNull(task), job)) {
                         com.dominion.mobile.data.WatchDecision.MATCH ->

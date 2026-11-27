@@ -81,6 +81,9 @@ interface DominionRepository {
     suspend fun submitTask(id: String): Unit = error("Engine not connected")
     suspend fun dispatchScheduledTask(id: String, occurrence: Long): Unit = error("Engine not connected")
     suspend fun refreshTask(id: String): Unit = error("Engine not connected")
+    /** Persist a verified server observation without submitting any work. */
+    suspend fun recordObservedJob(roomId: String, jobId: String,
+        job: com.dominion.mobile.data.remote.EngineJob): Unit = error("Engine not connected")
     suspend fun taskReceipt(id: String): com.dominion.mobile.data.remote.TaskReceipt = error("Engine not connected")
     suspend fun taskEvidence(id: String, replyId: String): com.dominion.mobile.data.remote.TaskEvidence = error("Engine not connected")
 

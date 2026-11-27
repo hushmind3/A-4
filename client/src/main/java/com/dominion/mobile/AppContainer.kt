@@ -21,7 +21,15 @@ class AppContainer(context: Context) {
     @Volatile var repository: DominionRepository = buildRepository(engine)
         private set
 
+    private fun restoreJobWatches() {
+        val connection = engine ?: return
+        com.dominion.mobile.data.remote.pendingJobWatches(repository.state.value).forEach { watch ->
+            BackgroundJobMonitor.enqueue(app, connection.origin, watch.roomId, watch.jobId)
+        }
+    }
+
     init {
+        restoreJobWatches()
         com.dominion.mobile.platform.background.ReminderMonitor.install(app)
         com.dominion.mobile.platform.background.ReminderMonitor.schedule(app,
             reminderScope(), repository.state.value.schedules)
@@ -52,6 +60,7 @@ class AppContainer(context: Context) {
         if (connection == null) credentials.clear() else credentials.save(connection)
         engine = connection
         repository = next
+        restoreJobWatches()
         com.dominion.mobile.platform.background.ReminderMonitor.schedule(app,
             reminderScope(), next.state.value.schedules)
     }

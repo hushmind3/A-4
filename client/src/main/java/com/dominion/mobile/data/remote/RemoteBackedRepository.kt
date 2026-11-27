@@ -184,6 +184,15 @@ class RemoteBackedRepository(
         verifyTask(task)
     }
 
+    override suspend fun recordObservedJob(roomId: String, jobId: String, job: EngineJob) {
+        check(job.belongsToRoom(roomId, jobId))
+        taskLock.withLock {
+            update { current -> applyObservedJob(current, roomId, jobId, job) }
+            // Flush the queued latest snapshot before the worker stops monitoring.
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { store.flush() }
+        }
+    }
+
     override suspend fun refreshTask(id: String) = taskLock.withLock {
         val task = state.value.tasks.firstOrNull { it.id == id } ?: return@withLock
         if (task.engineJobId != null) verifyTask(task)
