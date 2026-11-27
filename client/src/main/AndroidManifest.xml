@@ -54,6 +54,8 @@
         android:theme="@style/Theme.Dominion">
 
         <meta-data android:name="com.google.ar.core" android:value="optional" />
+        <activity android:name=".platform.avatar.StandardAvatarActivity"
+            android:exported="false" android:screenOrientation="portrait" />
         <activity android:name=".platform.avatar.AvatarSceneActivity"
             android:exported="false" android:screenOrientation="portrait" />
         <activity

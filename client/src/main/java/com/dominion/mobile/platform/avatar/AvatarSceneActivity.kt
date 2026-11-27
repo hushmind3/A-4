@@ -258,6 +258,13 @@ class AvatarSceneActivity : ComponentActivity() {
                         Row(Modifier.fillMaxWidth().padding(8.dp)) {
                             Text(name + if (ar) " · AR" else " · 3D", modifier = Modifier.weight(1f),
                                 style = MaterialTheme.typography.titleLarge)
+                            TextButton(onClick = {
+                                startActivity(Intent(this@AvatarSceneActivity,StandardAvatarActivity::class.java).apply {
+                                    putExtra("model_scope", intent.getStringExtra("model_scope"))
+                                    putExtra("character_id", intent.getStringExtra("character_id"))
+                                    putExtra("name",name)
+                                })
+                            }) { Text("GLB·VRM") }
                             TextButton(onClick = { finish() }) { Text("닫기") }
                         }
                         AndroidView(factory = { surface }, modifier = Modifier.weight(1f).fillMaxWidth())

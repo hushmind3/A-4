@@ -295,7 +295,23 @@ fun CallScreen(
 
             if (!call.video && !(mediaReady && (media.remoteVideo != null || media.remoteScreen != null))) {
                 Spacer(Modifier.weight(0.6f))
-                CallAvatar(accent, character, speechLevel)
+                val app = context.applicationContext as com.dominion.mobile.DominionApplication
+                val modelKey = remember(character.id, call.sessionId) {
+                    com.dominion.mobile.platform.avatar.AvatarModelStore.key(app.container.reminderScope(),character.id)
+                }
+                val standardModel by produceState<com.dominion.mobile.data.StandardAvatarAsset?>(null, modelKey) {
+                    value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        runCatching { com.dominion.mobile.platform.avatar.StandardAvatarStore(context.noBackupFilesDir)
+                            .load(modelKey) }.getOrNull()
+                    }
+                }
+                var standardFailed by remember(modelKey) { mutableStateOf(false) }
+                val model = standardModel
+                if (model != null && !standardFailed) {
+                    com.dominion.mobile.platform.avatar.StandardAvatarView(model,
+                        Modifier.fillMaxWidth().height(260.dp), speechLevel = speechLevel,
+                        onFailure = { standardFailed = true })
+                } else CallAvatar(accent, character, speechLevel)
                 Spacer(Modifier.height(26.dp))
                 Text(
                     character.name,

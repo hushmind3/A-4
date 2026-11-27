@@ -88,6 +88,8 @@ dependencies {
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
     implementation("io.livekit:livekit-android:2.30.0")
     implementation("com.google.ar:core:1.57.0")
+    // Kotlin 2.0-compatible Filament release, with native glTF skinning and morphs.
+    implementation("com.google.android.filament:filament-utils-android:1.56.0")
     // SDK 35 compatible WorkManager release.
     implementation("androidx.work:work-runtime-ktx:2.10.5")
 
