@@ -647,7 +647,7 @@ fun ChatRoomScreen(
             }
             SheetRow(tr(lang, "할 일", "Task"), Glyph.TASK) { showAttach = false; onNavigate(com.dominion.mobile.ui.nav.Routes.TASKS) }
             SheetRow(tr(lang, "일정", "Schedule"), Glyph.CALENDAR) { showAttach = false; onNavigate(com.dominion.mobile.ui.nav.Routes.SCHEDULES) }
-            SheetRow("휴대폰 지도 조작 계획", Glyph.PLUG) {
+            SheetRow("휴대폰 앱 조작 계획", Glyph.PLUG) {
                 showAttach = false; createPhonePlan = true
             }
             SheetRow(tr(lang, "휴대폰 기능", "Phone actions"), Glyph.PLUG) {
@@ -680,7 +680,7 @@ fun ChatRoomScreen(
     }
 
     if (createPhonePlan) com.dominion.mobile.ui.components.TextPromptDialog(
-        title = "휴대폰 지도 조작 계획", label = "네이버 지도·카카오맵에서 검색하거나 길찾기할 내용을 요청하세요.",
+        title = "휴대폰 앱 조작 계획", label = "지도·유튜브·캘린더·파일 앱에서 검색하거나 탐색할 내용을 요청하세요.",
         confirmLabel = "요청 작성", singleLine = false, onConfirm = { text ->
             if (text.isNotBlank()) {
                 draft = listOf(draft, com.dominion.mobile.data.PhoneNavigationPlan.prompt(text)).filter { it.isNotBlank() }.joinToString("\n")
@@ -732,7 +732,7 @@ fun ChatRoomScreen(
             SheetTitle(tr(lang, "메시지", "Message"))
             if (message.sender == MessageSender.ASSISTANT && message.status == MessageStatus.SENT &&
                 com.dominion.mobile.data.PhoneNavigationPlan.fromMessage(message.text) != null) {
-                SheetRow("지도 앱 조작 검토·실행", Glyph.PLUG) {
+                SheetRow("앱 조작 검토·실행", Glyph.PLUG) {
                     phonePlanMessage = message; messageMenu = null
                 }
             }

@@ -101,12 +101,12 @@ fun DeviceActionsScreen(state: AppState, roomId: String? = null, onBack: () -> U
                 latest?.text?.let(com.dominion.mobile.data.PhoneNavigationPlan::fromMessage)
             }
             if (plan != null) OutlinedButton(onClick = { navigationPlan = plan }) {
-                Text("현재 AI 답변의 지도 조작 실행")
+                Text("현재 AI 답변의 앱 조작 실행")
             }
             TextButton(onClick = {
                 runCatching { context.startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
                     .onFailure { error = "접근성 설정을 열 수 없습니다." }
-            }) { Text("지도 조작 권한 설정") }
+            }) { Text("앱 조작 권한 설정") }
             val navigationStatus by com.dominion.mobile.platform.automation.PhoneNavigationService.status.collectAsState()
             if (navigationStatus.isNotBlank()) Text("최근 기기 실행: " + navigationStatus, style = MaterialTheme.typography.labelSmall)
             AppTextField(location, { location = it.take(250) }, placeholder = "장소·주소")

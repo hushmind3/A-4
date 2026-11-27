@@ -25,7 +25,10 @@ import kotlinx.coroutines.flow.asStateFlow
 class PhoneNavigationService : AccessibilityService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var work: Job? = null
-    private var stopView: Button? = null
+    private var stopView: android.widget.LinearLayout? = null
+    private var approveButton: Button? = null
+    private var stepLabel: android.widget.TextView? = null
+    private var approval: CompletableDeferred<Boolean>? = null
     override fun onServiceConnected() { super.onServiceConnected(); instance = this; _connected.value = true }
     override fun onAccessibilityEvent(event: AccessibilityEvent?) { /* Never collect event payloads. */ }
     override fun onInterrupt() { work?.cancel() }
@@ -42,18 +45,64 @@ class PhoneNavigationService : AccessibilityService() {
     private fun removeStop() {
         stopView?.let { runCatching { getSystemService(WindowManager::class.java).removeViewImmediate(it) } }
         stopView = null
+        approveButton = null
+        stepLabel = null
+        approval?.cancel()
+        approval = null
     }
     private fun showStop() {
-        val button = Button(this).apply {
-            text = "DOMINION · 조작 중지"
+        val panel = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(12,8,12,8)
+            setBackgroundColor(android.graphics.Color.rgb(25,30,42))
+        }
+        val label = android.widget.TextView(this).apply {
+            setTextColor(android.graphics.Color.WHITE)
+            text = "DOMINION · 앱 탐색"
+            maxWidth = (resources.displayMetrics.widthPixels * 0.75f).toInt()
+        }
+        val approve = Button(this).apply {
+            text = "이 단계 실행"
+            isEnabled = false
+            setOnClickListener { approval?.complete(true) }
+        }
+        val stop = Button(this).apply {
+            text = "중지"
             setOnClickListener { work?.cancel() }
         }
-        getSystemService(WindowManager::class.java).addView(button, WindowManager.LayoutParams(
+        panel.addView(label)
+        panel.addView(approve)
+        panel.addView(stop)
+        getSystemService(WindowManager::class.java).addView(panel, WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT).apply { gravity = Gravity.TOP or Gravity.END })
-        stopView = button
+        stopView = panel
+        approveButton = approve
+        stepLabel = label
+    }
+    private suspend fun approveStep(step:PhoneNavigationStep,pkg:String,index:Int,total:Int) {
+        val deferred = CompletableDeferred<Boolean>()
+        approval = deferred
+        stepLabel?.text = "단계 " + index + "/" + total + " · " + step.label +
+            (step.value?.let { "\n입력: " + it } ?: "")
+        approveButton?.isEnabled = true
+        try {
+            withTimeout(30_000L) {
+                while (!deferred.isCompleted) {
+                    check(unlocked())
+                    val root = rootInActiveWindow
+                    try { check(root?.packageName?.toString() == pkg) { "App changed" } }
+                    finally { root?.recycle() }
+                    delay(150)
+                }
+                check(deferred.await())
+            }
+        } finally {
+            approval = null
+            approveButton?.isEnabled = false
+        }
     }
     private fun unlocked(): Boolean =
         getSystemService(PowerManager::class.java).isInteractive &&
@@ -61,13 +110,16 @@ class PhoneNavigationService : AccessibilityService() {
 
     private fun begin(plan: PhoneNavigationPlan): Boolean {
         if (work?.isActive == true || !unlocked() || plan.app !in PhoneNavigationPlan.apps) return false
+        // No unreviewed background launch or arbitrary app package.
+        if (plan.steps.size !in 1..8 || plan.steps.last().action != "expect" ||
+            plan.steps.any { it.action != "expect" && it.label !in PhoneNavigationPlan.labels(plan.app,it.action) }) return false
         _status.value = "대상 앱 열기 요청"
         work = scope.launch {
             var completed = 0
             try {
                 showStop()
                 check(DeviceActions.openInstalledApp(this@PhoneNavigationService,plan.app))
-                withTimeout(35_000L) {
+                withTimeout(300_000L) {
                     // Startup may show the previous window briefly. Never read that window.
                     var entered = false
                     repeat(40) {
@@ -82,6 +134,8 @@ class PhoneNavigationService : AccessibilityService() {
                     check(entered) { "Target app unavailable" }
                     for (step in plan.steps) {
                         _status.value = "기기 단계 " + (completed + 1) + "/" + plan.steps.size + " · " + step.action
+                        // Show the real target on the foreground app and require a fresh tap for every step.
+                        approveStep(step,plan.app,completed+1,plan.steps.size)
                         val deadline = android.os.SystemClock.elapsedRealtime() + 4000
                         var success = false
                         while (!success && android.os.SystemClock.elapsedRealtime() < deadline) {

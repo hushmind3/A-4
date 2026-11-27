@@ -33,6 +33,10 @@
         <package android:name="com.nhn.android.nmap" />
         <package android:name="net.daum.android.map" />
         <package android:name="com.google.android.gm" />
+        <package android:name="com.google.android.youtube" />
+        <package android:name="com.google.android.calendar" />
+        <package android:name="com.google.android.apps.nbu.files" />
+        <package android:name="com.sec.android.app.myfiles" />
         <intent><action android:name="android.intent.action.TTS_SERVICE" /></intent>
     </queries>
 
@@ -105,7 +109,7 @@
 
         <service
             android:name=".platform.automation.PhoneNavigationService"
-            android:label="DOMINION 지도 조작"
+            android:label="DOMINION 앱 조작"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:exported="true">
             <intent-filter>

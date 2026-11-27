@@ -22,12 +22,12 @@ fun PhoneNavigationDialog(plan: PhoneNavigationPlan, onDismiss: () -> Unit,
     var started by remember(plan) { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
     AlertDialog(onDismissRequest = { PhoneNavigationService.stop(); onDismiss() },
-        title = { Text("기기 지도 조작 검토") },
+        title = { Text("기기 앱 조작 검토") },
         text = {
             Column(Modifier.heightIn(max = 450.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("대상: " + PhoneNavigationPlan.apps[plan.app].orEmpty())
-                Text("선택한 앱에서 아래 단계만 실행합니다. 35초 이내에 종료하며, 다른 앱이나 잠금 화면으로 바뀌면 중단합니다. 실제 화면의 중지 버튼으로 취소할 수 있습니다.")
+                Text("선택한 앱에서 각 단계를 화면 위 확인 버튼으로 직접 승인해야 실행합니다. 단계별 승인 제한은 30초, 전체 제한은 5분입니다. 다른 앱·잠금 화면으로 바뀌면 중단합니다.")
                 plan.steps.forEachIndexed { index, step ->
                     Text((index + 1).toString() + ". " + when(step.action) {
                         "click" -> "선택: "
@@ -38,7 +38,7 @@ fun PhoneNavigationDialog(plan: PhoneNavigationPlan, onDismiss: () -> Unit,
                 if (!connected) TextButton(onClick = {
                     runCatching { context.startActivity(Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
                         .onFailure { error = "접근성 설정 열기 실패" }
-                }) { Text("Android 접근성에서 DOMINION 지도 조작 허용") }
+                }) { Text("Android 접근성에서 DOMINION 앱 조작 허용") }
                 Row {
                     Checkbox(checked = approved, enabled = !started, onCheckedChange = { approved = it })
                     Text("대상과 모든 단계의 기기 실행을 승인합니다.", modifier = Modifier.padding(top = 12.dp))
