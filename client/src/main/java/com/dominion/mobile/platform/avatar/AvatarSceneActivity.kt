@@ -40,6 +40,28 @@ class AvatarSceneActivity : ComponentActivity() {
     private var importing by mutableStateOf(false)
     private var imported by mutableStateOf(false)
     private var expression by mutableStateOf("idle")
+    private var savedModel by mutableStateOf(false)
+    private var modelStatus by mutableStateOf("")
+    private lateinit var modelStore: AvatarModelStore
+    private lateinit var modelKey: String
+
+    private fun restoreSavedModel() {
+        if (importing) return
+        importing = true
+        lifecycleScope.launch {
+            try {
+                val mesh = withContext(Dispatchers.IO) { modelStore.load(modelKey) }
+                savedModel = mesh != null
+                if (mesh != null) {
+                    renderer.replaceMesh(mesh)
+                    imported = true
+                    modelStatus = "저장된 OBJ · " + mesh.size / 18 + "개 삼각형"
+                }
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) { modelStatus = "저장 모델 읽기 실패 · 기존 파일은 유지됩니다." }
+            finally { importing = false }
+        }
+    }
     private val modelPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null && !importing) {
             importing = true
@@ -58,13 +80,14 @@ class AvatarSceneActivity : ComponentActivity() {
                             }
                             output.toByteArray()
                         }
-                        ObjAvatarMesh.parse(bytes.toString(Charsets.UTF_8))
+                        modelStore.save(modelKey, bytes)
                     }
                     renderer.replaceMesh(mesh)
                     imported = true
-                    status = "OBJ 모델 열기 완료 · " + mesh.size / 18 + "개 삼각형"
+                    savedModel = true
+                    modelStatus = "OBJ 모델 저장 완료 · " + mesh.size / 18 + "개 삼각형"
                 } catch (e: CancellationException) { throw e }
-                catch (_: Exception) { status = "OBJ 읽기 실패 · 5MB 이하 삼각형 메시 파일을 선택하세요." }
+                catch (_: Exception) { modelStatus = "OBJ 저장 실패 · 5MB 이하 삼각형 메시 파일을 선택하세요. 기존 모델은 유지됩니다." }
                 finally { importing = false }
             }
         }
@@ -77,6 +100,10 @@ class AvatarSceneActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         ar = intent.getBooleanExtra("ar",false)
+        modelStore = AvatarModelStore(noBackupFilesDir)
+        modelKey = AvatarModelStore.key(
+            requireNotNull(intent.getStringExtra("model_scope")),
+            requireNotNull(intent.getStringExtra("character_id")))
         name = intent.getStringExtra("name").orEmpty().take(80).ifBlank { "DOMINION" }
         val shape = runCatching { CharacterShape.valueOf(intent.getStringExtra("shape").orEmpty()) }
             .getOrDefault(CharacterShape.BLOB)
@@ -108,16 +135,21 @@ class AvatarSceneActivity : ComponentActivity() {
                         }
                         AndroidView(factory = { surface }, modifier = Modifier.weight(1f).fillMaxWidth())
                         Text(status, modifier = Modifier.padding(12.dp))
+                        if (modelStatus.isNotBlank()) Text(modelStatus,
+                            modifier = Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.labelMedium)
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                             TextButton(onClick = { renderer.changeSize(-1) }) { Text("축소") }
                             TextButton(onClick = { renderer.changeSize(1) }) { Text("확대") }
                             TextButton(onClick = { renderer.reset() }) { Text(if (ar) "배치 지우기" else "회전 초기화") }
                         }
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                            TextButton(enabled = !importing, onClick = { modelPicker.launch(arrayOf("*/*")) }) { Text("OBJ 모델 열기") }
+                            TextButton(enabled = !importing, onClick = { modelPicker.launch(arrayOf("*/*")) }) { Text("OBJ 가져오기·저장") }
                             TextButton(enabled = imported && !importing, onClick = {
                                 renderer.restoreMesh(); imported = false
+                                modelStatus = "기본 모델 표시 중 · 저장된 OBJ는 유지됩니다."
                             }) { Text("기본 모델") }
+                            if (savedModel && !imported) TextButton(enabled = !importing,
+                                onClick = { restoreSavedModel() }) { Text("저장 모델") }
                         }
                         if (!imported) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                             listOf("idle" to "기본", "happy" to "웃음", "talk" to "말하기").forEach { (mode, title) ->
@@ -133,6 +165,7 @@ class AvatarSceneActivity : ComponentActivity() {
                 }
             }
         }
+        restoreSavedModel()
     }
 
     override fun onResume() { super.onResume(); startScene() }
@@ -196,7 +229,10 @@ class AvatarSceneActivity : ComponentActivity() {
 
     companion object {
         fun open(context: Context, character: Character, ar: Boolean) {
+            val app = context.applicationContext as com.dominion.mobile.DominionApplication
+            val scope = if (app.containerReady) app.container.reminderScope() else "unconfigured"
             val launch = Intent(context,AvatarSceneActivity::class.java).apply {
+                putExtra("model_scope", scope); putExtra("character_id", character.id)
                 putExtra("ar",ar); putExtra("name",character.name)
                 putExtra("shape",character.shape.name); putExtra("color",character.color)
             }
