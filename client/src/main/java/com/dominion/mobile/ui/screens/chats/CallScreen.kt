@@ -162,6 +162,7 @@ fun CallScreen(
     }
 
     var requestInstruction by remember(call.sessionId) { mutableStateOf(false) }
+    var reviewTextWork by remember(call.sessionId) { mutableStateOf(false) }
     var frameSource by remember(call.sessionId) { mutableStateOf<String?>(null) }
     var lastInstruction by remember(call.sessionId) { mutableStateOf<String?>(null) }
     val instruction = state.conversation(call.conversationId)?.messages?.firstOrNull {
@@ -353,6 +354,9 @@ fun CallScreen(
                         vm.minimizeCall(true)
                         onOpenChat(call.conversationId)
                     }) { Text(tr(lang, "대화·결과 확인", "Chat and results"), color = Color.White) }
+                    androidx.compose.material3.TextButton(onClick = { reviewTextWork = true }) {
+                        Text("업무 기록", color = Color.White)
+                    }
                 }
                 instruction?.let { row ->
                     Text(tr(lang, "요청 상태: ", "Request: ") + when (row.status) {
@@ -421,6 +425,20 @@ fun CallScreen(
                 }
             }
         }
+    }
+    if (reviewTextWork) {
+        val room = state.conversation(call.conversationId)
+        val session = room?.sessionId
+        val nonces = room?.messages.orEmpty().filter {
+            it.sender == com.dominion.mobile.data.model.MessageSender.USER &&
+                it.createdAt >= call.startedAt
+        }.map { it.clientMessageId ?: it.id }
+        if (!session.isNullOrBlank()) com.dominion.mobile.ui.components.VoiceTranscriptDialog(
+            vm, call.conversationId, session, nonces, label = "통화 중 채팅 업무 기록",
+            onDismiss = { reviewTextWork = false })
+        else androidx.compose.material3.AlertDialog(onDismissRequest = { reviewTextWork = false },
+            title = { Text("업무 기록") }, text = { Text("본체 대화방 기록을 먼저 동기화하세요.") },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { reviewTextWork = false }) { Text("닫기") } })
     }
     frameSource?.let { source ->
         com.dominion.mobile.ui.components.CallFrameDialog(vm, call.sessionId, call.conversationId, source,

@@ -33,6 +33,10 @@ fun VoiceConversationDialog(vm: AppViewModel, roomId: String, onDismiss: () -> U
     var autoContinue by remember { mutableStateOf(true) }
     var job by remember { mutableStateOf<Job?>(null) }
     var pendingNonce by remember { mutableStateOf<String?>(null) }
+    var capturedNonces by remember { mutableStateOf<List<String>>(emptyList()) }
+    var reviewing by remember { mutableStateOf(false) }
+    var reviewSession by remember { mutableStateOf<String?>(null) }
+    var interruptAndListen by remember { mutableStateOf(false) }
     var approvals by remember { mutableStateOf<List<com.dominion.mobile.data.remote.EngineApproval>>(emptyList()) }
     var reviewedApproval by remember { mutableStateOf<com.dominion.mobile.data.remote.EngineApproval?>(null) }
     var decisionBusy by remember { mutableStateOf(false) }
@@ -67,6 +71,8 @@ fun VoiceConversationDialog(vm: AppViewModel, roomId: String, onDismiss: () -> U
                 }
                 val session = requireNotNull(vm.roomExecution(roomId).sessionId)
                 check(session.isNotBlank())
+                if (reviewSession != null) check(reviewSession == session)
+                reviewSession = session
                 fun ensureRoom() {
                     check(vm.state.value.call == null)
                     val room = requireNotNull(vm.state.value.conversation(roomId))
@@ -83,7 +89,9 @@ fun VoiceConversationDialog(vm: AppViewModel, roomId: String, onDismiss: () -> U
                         transcript = vm.transcribeVoice(wav)
                         ensureRoom()
                         phase = "본체에 요청 전송 중"
-                        pendingNonce = requireNotNull(vm.sendMessage(roomId, transcript))
+                        val nonce = requireNotNull(vm.sendMessage(roomId, transcript))
+                        pendingNonce = nonce
+                        capturedNonces = (capturedNonces + nonce).distinct()
                         answer = ""
                     }
                     val nonce = requireNotNull(pendingNonce)
@@ -150,7 +158,14 @@ fun VoiceConversationDialog(vm: AppViewModel, roomId: String, onDismiss: () -> U
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) begin() else failure = "마이크 권한이 필요합니다."
     }
-    StopOnBackground { stop(); onDismiss() }
+    LaunchedEffect(active, interruptAndListen) {
+        if (!active && interruptAndListen) {
+            interruptAndListen = false
+            job?.join()
+            begin()
+        }
+    }
+    StopOnBackground { interruptAndListen = false; stop(); onDismiss() }
     DisposableEffect(Unit) { onDispose { stop() } }
 
     AlertDialog(onDismissRequest = { stop(); onDismiss() },
@@ -179,10 +194,14 @@ fun VoiceConversationDialog(vm: AppViewModel, roomId: String, onDismiss: () -> U
                 if (active && phase == "듣는 중") OutlinedButton(onClick = { finishRecording.set(true) }) { Text("말하기 끝내기") }
                 if (active && pendingNonce != null && phase == "본체 음성으로 응답 중") {
                     TextButton(onClick = {
+                        interruptAndListen = true
                         stop()
                         pendingNonce = null
-                        phase = "응답 읽기 중단 · 다음 발화 시작 가능"
+                        phase = "응답 읽기 중단 · 다음 발화 준비"
                     }) { Text("응답 끊고 새로 말하기") }
+                }
+                if (!active && capturedNonces.isNotEmpty() && reviewSession != null) {
+                    TextButton(onClick = { reviewing = true }) { Text("이번 음성 대화 기록·요약·기억") }
                 }
                 if (pendingNonce != null && !active) {
                     Text("이미 접수된 요청은 대화에 남습니다. 다시 시작하면 새 요청을 보내지 않고 기존 요청부터 확인합니다.",
@@ -202,6 +221,8 @@ fun VoiceConversationDialog(vm: AppViewModel, roomId: String, onDismiss: () -> U
                 else onDismiss()
             }) { Text(if (active) "듣기·재생 중단" else "닫기") }
         })
+    if (reviewing) VoiceTranscriptDialog(vm, roomId, requireNotNull(reviewSession),
+        capturedNonces, onDismiss = { reviewing = false })
     reviewedApproval?.let { item ->
         AlertDialog(onDismissRequest = { if (!decisionBusy) reviewedApproval = null },
             title = { Text("본체 도구 실행 확인") },

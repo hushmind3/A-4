@@ -595,10 +595,10 @@ class AppViewModel(
         }
     }
 
-    fun addMemory(characterId: String, text: String) {
+    fun addMemory(characterId: String, text: String, source: String = "대화에서 저장") {
         if (text.isBlank()) return
         val memory = MemoryItem(id = id("mem"), characterId = characterId, text = text.trim(),
-            serverBacked = false)
+            source = source, serverBacked = false)
         mutate { it.copy(memories = listOf(memory) + it.memories) }
         syncMemory(memory.id)
     }
