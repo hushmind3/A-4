@@ -24,6 +24,17 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
+/** Only the server explicitly lacking cloud-job support may use the
+ * already-existing mobile execution path. Never hide revocation, exhausted
+ * quota, HTTP 5xx inference errors or connection failures behind a fallback.
+ */
+internal fun cloudJobFeatureUnavailable(error:retrofit2.HttpException):Boolean{
+    if(error.code()==404)return true
+    if(error.code()!=503)return false
+    val body=runCatching{error.response()?.errorBody()?.string()?.take(400)}.getOrNull().orEmpty()
+    return body.contains("Cloud jobs not configured",ignoreCase=true)
+}
+
 class RemoteBackedRepository(
     private val endpoint: DominionApi?,
     private val store: LocalStore,
@@ -213,19 +224,26 @@ class RemoteBackedRepository(
                 val cloud=requireNotNull(mobileCloud){"DOMINION Cloud account required"}
                 val prompt=TaskDispatch.prompt(task).take(3500)
                 val clientId=TaskDispatch.messageNonce(id)
-                val result=if(task.engineJobId==null)cloud.submitCloudTask(prompt,clientId)
+                val result=try {
+                    if(task.engineJobId==null) cloud.submitCloudTask(prompt,clientId)
                     else cloud.cloudTask(requireNotNull(task.engineJobId).removePrefix("cloud:"))
-                val linked=task.copy(
-                    engineRoomId=TaskDispatch.roomId(id),
-                    engineSessionId=clientId,
-                    engineMessageId=clientId,
-                    engineJobId="cloud:"+result.id,
-                    enginePrompt=prompt,
-                    engineLanguage=if(state.value.settings.lang==com.dominion.mobile.data.model.Lang.KO)"ko"else"default",
-                    engineStatus=result.status
-                )
-                saveTaskLink(linked)
-                return@withLock
+                }catch(e:retrofit2.HttpException){
+                    if(task.engineJobId!=null||!cloudJobFeatureUnavailable(e))throw e
+                    null // Existing A-4 mobile harness still works before server rollout.
+                }
+                if(result!=null){
+                    val linked=task.copy(
+                        engineRoomId=TaskDispatch.roomId(id),
+                        engineSessionId=clientId,
+                        engineMessageId=clientId,
+                        engineJobId="cloud:"+result.id,
+                        enginePrompt=prompt,
+                        engineLanguage=if(state.value.settings.lang==com.dominion.mobile.data.model.Lang.KO)"ko"else"default",
+                        engineStatus=result.status
+                    )
+                    saveTaskLink(linked)
+                    return@withLock
+                }
             }
             val roomId=TaskDispatch.roomId(id)
             val existing=state.value.conversation(roomId)

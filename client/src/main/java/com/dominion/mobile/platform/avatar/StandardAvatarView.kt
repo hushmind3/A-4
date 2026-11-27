@@ -147,6 +147,7 @@ private class StandardAvatarSurface(context: Context): FrameLayout(context) {
                 loggedFrame=true
                 Log.i("DOMINION-Avatar","40 render callbacks; viewport="+
                     v.view.viewport.width+"x"+v.view.viewport.height+
+                    ", sceneRenderables="+v.scene.renderableCount+
                     ", assetPresent="+(v.asset!=null)+", attached="+isAttachedToWindow)
             }
             schedule()
