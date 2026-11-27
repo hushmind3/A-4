@@ -570,9 +570,9 @@ class AppViewModel(
         repo.saveReplyAppointment(id,observedAt,draft)
 
     suspend fun planErrandWorkflow(goal:String)=repo.planErrandWorkflow(goal)
-    fun acceptErrandWorkflow(draft:com.dominion.mobile.data.ErrandWorkflowDraft){
+    fun acceptErrandWorkflow(draft:com.dominion.mobile.data.ErrandWorkflowDraft,finalTaskIds:List<String> = emptyList()){
         viewModelScope.launch{
-            try{repo.acceptErrandWorkflow(draft);_notice.value="업무 분해·비서 배정 완료";repo.advanceTaskWorkflows()}
+            try{repo.acceptErrandWorkflow(draft,finalTaskIds);_notice.value="업무 분해·비서 배정 완료";repo.advanceTaskWorkflows()}
             catch(e:CancellationException){throw e}
             catch(_:Exception){_notice.value="연계 업무 접수 상태를 확인하세요."}
         }

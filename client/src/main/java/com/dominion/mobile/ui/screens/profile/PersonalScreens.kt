@@ -338,23 +338,26 @@ fun TasksScreen(
         val scope=androidx.compose.runtime.rememberCoroutineScope()
         var goal by remember{mutableStateOf("")}
         var preview by remember{mutableStateOf<com.dominion.mobile.data.ErrandWorkflowDraft?>(null)}
+        var finalIds by remember{mutableStateOf<List<String>>(emptyList())}
+        val finalCandidates=state.tasks.filter{com.dominion.mobile.data.TaskHandoff.eligible(it)&&
+            it.phonePackage!=null&&(it.phoneTransaction!=null||it.kakaoMessage!=null)}
         var busy by remember{mutableStateOf(false)}
         var error by remember{mutableStateOf("")}
         AlertDialog(onDismissRequest={if(!busy)showAutoWorkflow=false},title={Text("복합 업무 자동 분해")},
             text={Column{
-                AppTextField(goal,{goal=it.take(1500);preview=null},label="전체 업무 목표",singleLine=false,maxLines=4)
-                Text("AI가 공개 정보 조사와 앱 검색 단계를 배정합니다. 요청 내용은 기존 AI에 전송됩니다. 결제·발송·예약 확정은 별도 업무로 승인해야 합니다.")
+                AppTextField(goal,{goal=it.take(1500);preview=null;finalIds=emptyList()},label="전체 업무 목표",singleLine=false,maxLines=4)
+                Text("AI가 조사·검색 단계를 배정합니다. 이미 등록한 주문·예약·발송 업무를 마지막에 연결할 수 있습니다. 최종 거래는 실제 화면에서 별도 승인합니다.")
                 TextButton(enabled=!busy&&goal.trim().length>=3,onClick={
                     scope.launch{
                         busy=true;error=""
-                        try{preview=vm.planErrandWorkflow(goal)}
+                        try{preview=vm.planErrandWorkflow(goal);finalIds=emptyList()}
                         catch(e:kotlinx.coroutines.CancellationException){throw e}
                         catch(_:Exception){error="계획을 만들지 못했습니다. 요청 또는 연결을 확인하세요."}
                         finally{busy=false}
                     }
                 }){Text(if(busy)"업무 분해 중" else "실행 계획 생성")}
                 preview?.let{draft->
-                    LazyColumn(modifier=Modifier.height(230.dp)){
+                    LazyColumn(modifier=Modifier.height(260.dp)){
                         itemsIndexed(draft.stages){index,stage->
                             Column(Modifier.padding(vertical=6.dp)){
                                 Text("${index+1}. "+stage.title,style=MaterialTheme.typography.titleSmall)
@@ -362,12 +365,26 @@ fun TasksScreen(
                                 Text(stage.request,style=MaterialTheme.typography.bodySmall)
                             }
                         }
+                        item{
+                            Text("후속 실제 업무 선택 (선택 사항)",style=MaterialTheme.typography.titleSmall)
+                            if(finalCandidates.isEmpty())Text("탐색 메뉴에서 주문·예약·발송 업무를 먼저 등록하면 여기에 연결할 수 있습니다.")
+                        }
+                        items(finalCandidates,key={it.id}){task->
+                            val i=finalIds.indexOf(task.id)
+                            TextButton(enabled=!busy,onClick={
+                                finalIds=if(i>=0)finalIds.filterNot{it==task.id}
+                                    else if(draft.stages.size+finalIds.size<6)finalIds+task.id else finalIds
+                            }){
+                                Text((if(i>=0)"${draft.stages.size+i+1}. " else "＋ ")+task.title+
+                                    (task.phoneTransaction?.let{" · "+it.target+" / 최대 "+it.maxWon+"원"}?:""))
+                            }
+                        }
                     }
                 }
                 if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
             }},
             confirmButton={TextButton(enabled=!busy&&preview!=null,onClick={
-                vm.acceptErrandWorkflow(requireNotNull(preview));showAutoWorkflow=false
+                vm.acceptErrandWorkflow(requireNotNull(preview),finalIds);showAutoWorkflow=false
             }){Text("검토한 단계 실행 등록")}},
             dismissButton={TextButton(enabled=!busy,onClick={showAutoWorkflow=false}){Text("닫기")}})
     }

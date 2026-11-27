@@ -128,7 +128,7 @@ interface DominionRepository {
     suspend fun suggestReplyAppointment(id:String,observedAt:Long):ReplyAppointment? = error("Appointment extraction unavailable")
     suspend fun saveReplyAppointment(id:String,observedAt:Long,draft:ReplyAppointment):Unit = error("Appointment storage unavailable")
     suspend fun planErrandWorkflow(goal:String):ErrandWorkflowDraft = error("Workflow planner unavailable")
-    suspend fun acceptErrandWorkflow(draft:ErrandWorkflowDraft):Unit = error("Workflow planner unavailable")
+    suspend fun acceptErrandWorkflow(draft:ErrandWorkflowDraft,finalTaskIds:List<String> = emptyList()):Unit = error("Workflow planner unavailable")
     suspend fun linkTaskWorkflow(ids:List<String>):Unit = error("Workflow unavailable")
     suspend fun advanceTaskWorkflows():Unit = Unit
     suspend fun submitTask(id: String): Unit = error("Engine not connected")

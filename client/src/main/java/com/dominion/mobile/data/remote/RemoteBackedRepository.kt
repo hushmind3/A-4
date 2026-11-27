@@ -233,11 +233,17 @@ class RemoteBackedRepository(
             agents.map{it.id}.toSet(),apps.map{it.packageName}.toSet())
     }
 
-    override suspend fun acceptErrandWorkflow(draft:com.dominion.mobile.data.ErrandWorkflowDraft):Unit=taskLock.withLock{
+    override suspend fun acceptErrandWorkflow(draft:com.dominion.mobile.data.ErrandWorkflowDraft,finalTaskIds:List<String>):Unit=taskLock.withLock{
         check(localExecution)
         draft.checked(state.value.characters.map{it.id}.toSet(),workflowApps().map{it.packageName}.toSet())
         val workflow="workflow:"+draft.id
         if(state.value.tasks.any{it.workflowId==workflow})return@withLock
+        // Final external operations are existing explicitly authored tasks, not
+        // permissions synthesized by the planning model.
+        require(finalTaskIds.distinct().size==finalTaskIds.size&&draft.stages.size+finalTaskIds.size<=6)
+        val finalTasks=finalTaskIds.map{id->state.value.tasks.single{it.id==id}}
+        require(finalTasks.all{com.dominion.mobile.data.TaskHandoff.eligible(it)&&
+            it.phonePackage!=null&&(it.phoneTransaction!=null||it.kakaoMessage!=null)})
         val ids=draft.stages.indices.map{"auto-workflow:"+draft.id+":"+it}
         val tasks=mutableListOf<com.dominion.mobile.data.model.TaskItem>()
         val rooms=mutableListOf<com.dominion.mobile.data.model.Conversation>()
@@ -268,7 +274,13 @@ class RemoteBackedRepository(
         }
         update{st->
             check(tasks.all{st.character(it.characterId)!=null}&&st.tasks.none{it.id in ids})
-            st.copy(tasks=tasks+st.tasks,conversations=rooms+st.conversations)
+            check(finalTasks.all{original->st.tasks.singleOrNull{it.id==original.id}==original})
+            st.copy(tasks=tasks+st.tasks.map{row->
+                val index=finalTaskIds.indexOf(row.id)
+                if(index<0)row else row.copy(workflowId=workflow,
+                    workflowAfter=if(index==0)ids.last() else finalTaskIds[index-1],
+                    workflowState="waiting")
+            },conversations=rooms+st.conversations)
         }
         store.saveStateNow(state.value)
     }

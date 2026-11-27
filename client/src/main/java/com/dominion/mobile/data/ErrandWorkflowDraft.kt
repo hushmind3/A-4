@@ -39,6 +39,28 @@ internal object ExecutionExperience{
         .groupBy{it.tool}.map{(tool,rows)->Triple(tool,rows.count{it.status=="completed"},rows.size)}
         .filter{it.third>=2}.sortedByDescending{it.third}.take(8)
         .joinToString("; "){(name,ok,total)->"$name $ok/$total successful observations"}
+    /** Transfer actual successful fallback routes between assistants in this
+     * account. Never transfer arguments, output text, or authorization. */
+    fun recoveryRoutes(state:AppState):String{
+        val allowed=setOf("web.read","web.search","browser.read","browser.links","korea.lookup")
+        val groups=state.mobileActions.orEmpty().takeLast(100).filter{it.tool in allowed}
+            .groupBy{Triple(it.roomId,it.session,it.messageId)}
+        val edges=mutableMapOf<Pair<String,String>,Pair<Int,Int>>()
+        for(rows in groups.values){
+            val ordered=rows.sortedWith(compareBy<com.dominion.mobile.data.harness.MobileActionRecord>{it.createdAt}.thenBy{it.id})
+            for((failed,next) in ordered.zipWithNext()){
+                if(failed.status!="failed"||failed.tool==next.tool||next.status !in setOf("completed","failed"))continue
+                val edge=failed.tool to next.tool
+                val counts=edges[edge]?: (0 to 0)
+                edges[edge]=(counts.first+(if(next.status=="completed")1 else 0)) to (counts.second+1)
+            }
+        }
+        return edges.entries.filter{it.value.first>=1}.sortedWith(
+            compareByDescending<Map.Entry<Pair<String,String>,Pair<Int,Int>>>{(it.value.first+1.0)/(it.value.second+2.0)}
+                .thenByDescending{it.value.first}).take(6).joinToString("; "){
+            "${it.key.first} failed -> ${it.key.second}: ${it.value.first}/${it.value.second} successful fallback observations"
+        }
+    }
     fun app(state:AppState,pkg:String):String{
         val rows=state.tasks.filter{it.phonePackage==pkg&&it.phonePrivateRead==null&&
             it.engineStatus in setOf("completed","failed","paused","cancelled")}.sortedByDescending{it.createdAt}.take(20)
