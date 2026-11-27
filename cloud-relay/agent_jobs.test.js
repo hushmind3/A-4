@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {safeSite,decision,seal,unseal,jobRoute} from './agent_jobs.js';
+import {safeSite,decision,seal,unseal,jobRoute,boundedText,observation,checkpointMessages} from './agent_jobs.js';
 const env={AGENT_ENCRYPTION_KEY:Buffer.alloc(32,17).toString('base64')};
 test('no localhost or lookalike hosts',()=>{
  for(const url of ['http://ko.wikipedia.org','https://localhost/',
@@ -50,4 +50,43 @@ test('create rejects invalid client IDs without spending quota',async()=>{
    body:JSON.stringify({client_id:'not-a-uuid',prompt:'Research this'})
  }),{...env,DB:{prepare(){throw Error('Must not touch DB')}}},account,{waitUntil(){}},async()=>null);
  assert.equal(res.status,400);
+});
+
+test('search tools require a supported public source and bounded query',()=>{
+ assert.deepEqual(decision(JSON.stringify({tool:'web.search',args:{source:'wiki-ko',query:'한국 역사'}})),
+   {kind:'web.search',source:'wiki-ko',query:'한국 역사'});
+ for(const args of [{source:'private',query:'abc'},{source:'github',query:'x'.repeat(161)},
+  {source:'github',query:'abc',url:'https://evil.test'},{source:'github',query:'a\nb'}])
+   assert.equal(decision(JSON.stringify({tool:'web.search',args})),null);
+});
+test('search uses fixed endpoints and filters returned lookalike links',async()=>{
+ const seen=[];
+ const fake=async(url,opts)=>{
+  seen.push(new URL(url));assert.equal(opts.redirect,'manual');
+  return Response.json(['history',['Korea','fake'],['',''],['https://ko.wikipedia.org/wiki/Korea','https://ko.wikipedia.org.evil.test/']]);
+ };
+ const result=await observation({kind:'web.search',source:'wiki-ko',query:'한국 역사'},fake);
+ assert.equal(seen[0].hostname,'ko.wikipedia.org');
+ assert.equal(seen[0].searchParams.get('search'),'한국 역사');
+ assert.match(result,/wiki\/Korea/);
+ assert.doesNotMatch(result,/evil\.test/);
+});
+test('GitHub search returns public repository API URLs for subsequent reading',async()=>{
+ const result=await observation({kind:'web.search',source:'github',query:'agent'},async(url)=>{
+  const u=new URL(url);assert.equal(u.pathname,'/search/repositories');assert.equal(u.searchParams.get('per_page'),'3');
+  return Response.json({items:[{full_name:'owner/repo',url:'https://api.github.com/repos/owner/repo',description:'Agent'}]});
+ });
+ assert.match(result,/api\.github\.com\/repos\/owner\/repo/);
+});
+test('chunked responses are cancelled as soon as actual byte cap is crossed',async()=>{
+ let cancelled=false;
+ const stream=new ReadableStream({pull(c){c.enqueue(new Uint8Array(8))},cancel(){cancelled=true}});
+ await assert.rejects(boundedText(new Response(stream,{headers:{'content-type':'text/plain'}}),10),/Oversized/);
+ assert.equal(cancelled,true);
+});
+test('checkpoint preserves system and original user request across many steps',()=>{
+ let messages=checkpointMessages([],'original question');
+ for(let i=0;i<12;i++)messages=checkpointMessages([...messages,{role:'assistant',content:'step '+i},{role:'user',content:'obs '+i}],'original question');
+ assert.equal(messages.length,10);assert.equal(messages[0].role,'system');
+ assert.equal(messages[1].content,'original question');assert.equal(messages.at(-1).content,'obs 11');
 });

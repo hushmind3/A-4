@@ -13,7 +13,7 @@ These files extend the existing production DOMINION Cloud Worker. **Do not repla
 | /v1/agent/jobs/{id} | GET | Same account may inspect its own state/result only |
 | /v1/agent/jobs/{id}/cancel | POST | Same account may cancel queued/running tasks |
 
-The hosted job loop currently offers **read-only** clock and allowlisted HTTPS lookup tools, at most 5 model steps. D1 prompt, checkpoint, and result fields are encrypted with an operator-managed AES-GCM key. This is not end-to-end encryption or an attested credential enclave.
+The hosted job loop currently offers **read-only** clock and allowlisted HTTPS lookup tools, at most 5 model steps. The next source revision adds public Korean/English Wikipedia and GitHub repository discovery, bounded streamed reads and checkpoint context preservation; this revision requires separate deployment and live verification. It is not a general web search engine or browser automation. D1 prompt, checkpoint, and result fields are encrypted with an operator-managed AES-GCM key. This is not end-to-end encryption or an attested credential enclave.
 
 ## Deployment and verification checklist
 
