@@ -408,6 +408,15 @@ data class CallSession(
     val realtimeAgent: Boolean = false
 )
 
+data class GovernmentReceipt(
+    val id: String,
+    val serviceId: String,
+    val serviceTitle: String,
+    val receiptNumber: String?,
+    val pageExcerpt: String,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
 data class AppState(
     val version: Int = 1,
     val onboarded: Boolean = false,
@@ -435,7 +444,8 @@ data class AppState(
     val characterPreferences: Map<Id, CharacterPreference>? = emptyMap(),
     val hiddenRooms: Set<Id>? = emptySet(),
     val miniAppStates: Map<String, Map<String, String>>? = emptyMap(),
-    val mobileActions:List<com.dominion.mobile.data.harness.MobileActionRecord>?=emptyList()
+    val mobileActions:List<com.dominion.mobile.data.harness.MobileActionRecord>?=emptyList(),
+    val governmentReceipts:List<GovernmentReceipt>?=emptyList()
 ) {
     fun character(id: Id): Character? = characters.firstOrNull { it.id == id }
     fun myCharacter(): Character? = characters.firstOrNull { it.mine }

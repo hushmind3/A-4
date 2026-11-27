@@ -58,6 +58,17 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
                 TextButton(onClick = onAgenda) { Text("내 일정") }
                 TextButton(onClick = { if (!DeviceActions.dial(context, "110")) context.toast("전화 앱을 열 수 없습니다.") }) { Text("110") }
             }
+            state.governmentReceipts.orEmpty().take(3).forEach { record ->
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(10.dp)) {
+                        Text("최근 공식 접수 · "+record.serviceTitle, style=MaterialTheme.typography.labelMedium)
+                        Text(record.receiptNumber?.let{"접수번호 "+it} ?: "접수 결과 화면 확인",
+                            style=MaterialTheme.typography.bodySmall)
+                        Text(java.text.DateFormat.getDateTimeInstance().format(java.util.Date(record.createdAt)),
+                            style=MaterialTheme.typography.labelSmall, color=p.textTertiary)
+                    }
+                }
+            }
         }
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -310,10 +321,18 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
                         institutionDraft = service.id to request()
                         selected = null
                     }, modifier = Modifier.fillMaxWidth()) { Text("기관 실제 접수·인증·결제 연동") }
-                    if(!nativeLookup&&vm.localExecution)Text(
-                        "기관 인증·제출·결제는 공식 앱이나 웹에서 직접 진행합니다. " +
-                            "AI는 공식 절차·서류·기한을 조사하고, 완료 결과는 업무 결과에서 파일 저장이나 메신저 공유로 넘길 수 있습니다.",
-                        style=MaterialTheme.typography.bodySmall,color=p.textSecondary)
+                    if(!nativeLookup&&vm.localExecution){
+                        Button(enabled = true, onClick = {
+                            runCatching {
+                                context.startActivity(
+                                    com.dominion.mobile.platform.web.GovernmentWebActivity.intent(context, service.id))
+                            }.onFailure { context.toast("공식 사이트 화면을 열 수 없습니다.") }
+                        }, modifier = Modifier.fillMaxWidth()) { Text("공식 사이트에서 신청·작성·제출") }
+                        Text(
+                            "공식 사이트에 직접 로그인·인증한 뒤 AI가 화면의 입력란과 첨부를 채웁니다. " +
+                                "최종 제출은 별도 승인 후 실행하고 접수번호를 기기에 기록합니다.",
+                            style=MaterialTheme.typography.bodySmall,color=p.textSecondary)
+                    }
                     if (workflow.repeatable) OutlinedButton(enabled = ready && state.character(agent) != null && request().length <= 3000,
                         onClick = {
                             scheduleDraft = ServiceScheduleDraft(service.title + " · " + workflow.title, agent, request())

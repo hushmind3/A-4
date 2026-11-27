@@ -71,6 +71,7 @@ fun FriendsScreen(
     var filter by remember { mutableStateOf("") }
     var serverFriends by remember { mutableStateOf(false) }
     var messenger by remember { mutableStateOf(false) }
+    var cloudMessenger by remember { mutableStateOf(false) }
     val shown = state.friends.filter { filter.isBlank() ||
         (it.name + " " + it.handle + " " + it.phone.orEmpty() + " " + it.email.orEmpty()).contains(filter, true) }
 
@@ -206,8 +207,14 @@ fun FriendsScreen(
         }
 
         item {
-            SettingsRow(title = "메신저 · 그룹·파일·검색", subtitle = "실제 서버 스레드, 읽음 기록과 첨부",
-                onClick = { messenger = true })
+            if (vm.localExecution) {
+                SettingsRow(title = "Cloud 메신저 · 친구·그룹·실시간",
+                    subtitle = "Cloudflare 계정 기반 메시지, 친구 요청과 그룹 대화",
+                    onClick = { cloudMessenger = true })
+            } else {
+                SettingsRow(title = "메신저 · 그룹·파일·검색", subtitle = "실제 서버 스레드, 읽음 기록과 첨부",
+                    onClick = { messenger = true })
+            }
             SettingsRow(title = "서버 친구 · 직접 메시지", subtitle = "실제 계정 연결·요청·메시지·접수 기록",
                 onClick = { serverFriends = true })
             SectionLabel(tr(lang, "친구 목록", "All friends"), Modifier.padding(horizontal = 20.dp, vertical = 10.dp))
@@ -251,6 +258,7 @@ fun FriendsScreen(
     }
 
     if (messenger) com.dominion.mobile.ui.components.ServerMessengerDialog(vm,onDismiss={messenger=false})
+    if (cloudMessenger) com.dominion.mobile.ui.components.CloudMessengerDialog(onDismiss={cloudMessenger=false})
     if (serverFriends) com.dominion.mobile.ui.components.ServerFriendsDialog(vm, onDismiss = { serverFriends = false })
 
     removeTarget?.let { friend ->

@@ -14,6 +14,7 @@ class AppContainer(context: Context) {
     private val app = context.applicationContext
     private val credentials = EncryptedRecordStore(app, "dominion_engine_connection", EngineConnection::class.java)
     val cloudAccount by lazy { com.dominion.mobile.data.remote.CloudAccountRepository(app) }
+    val cloudMessenger by lazy { com.dominion.mobile.data.remote.CloudMessengerRepository(cloudAccount) }
     /** PC is an optional execution target. Keep saved credentials but never
      * require a PC to start the primary mobile assistant. */
     @Volatile var rememberedEngine:EngineConnection?=runCatching{credentials.load()?.validated()}.getOrNull()

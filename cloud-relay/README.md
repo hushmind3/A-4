@@ -51,3 +51,17 @@ Chat-to-background delegation: the mobile harness can propose `task.delegate` fo
 ## Free-model auto assignment source revision
 
 `dominion/free-auto` ranks configured free models with recently failing models last and may try up to 12 candidates before returning a temporary-unavailable error. A daily or monthly 429 remains authoritative and is returned immediately; quota is refunded for provider/model failures inside `freeProxy`. The Android model picker keeps auto selection visible instead of substituting the first catalog entry. Node contract tests cover ranking only; this source revision has not been deployed to the production Worker and does not prove live model availability.
+
+## Core feature source revision (2026-11-27)
+
+Added but **not deployed** by this revision:
+
+| Area | Source | Required operator configuration |
+|---|---|---|
+| Messenger | `migrations/0005_messenger.sql`, `messenger.js` | Apply migration 0005; no new binding |
+| Realtime voice | `realtime.js`, `../voice-agent/` | `LIVEKIT_URL` (`wss://`), `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `LIVEKIT_AGENT_NAME` (default `dominion-voice`), optional `LIVEKIT_AUTO_DISPATCH=1`, `LIVEKIT_VIDEO=1`; deploy the voice worker separately |
+| FCM job push | `assistant_messages.js` (`pushConfig`, `registerAppPush`), `agent_jobs.js` (`notifyJob`) | `ASSISTANT_PUSH_ENABLED=1`, existing `ASSISTANT_FCM_PROJECT_ID/SERVICE_EMAIL/PRIVATE_KEY`, plus public `ASSISTANT_ANDROID_APP_ID`, `ASSISTANT_ANDROID_API_KEY`, `ASSISTANT_FCM_SENDER_ID` |
+
+Messenger identity is always derived from the authenticated app session. Thread creation requires accepted friendships; message sends are idempotent per `(sender_id, client_id)`. The SSE endpoint tails D1 for 25 seconds per connection and the Android client reconnects; it is near-realtime, not a Durable Object push. FCM payloads intentionally omit task prompts, results and message text.
+
+Realtime token issuance fails closed if LiveKit is not configured or explicit dispatch fails. The Android client verifies the exact `dominion-voice` participant before publishing the microphone. A room token alone is not evidence that STT/LLM/TTS or PSTN connectivity works.

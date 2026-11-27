@@ -45,8 +45,11 @@ class MainActivity : ComponentActivity() {
         setContent { Text("DOMINION · Loading local data") }
         lifecycleScope.launch {
             try {
-                withContext(Dispatchers.IO) { (application as DominionApplication).container }
+                val container=withContext(Dispatchers.IO) { (application as DominionApplication).container }
                 ready = true
+                if(container.cloudAccount.savedAccountId()!=null)
+                    com.dominion.mobile.platform.background.FirebasePush.ensureEventually(
+                        applicationContext,container.cloudAccount)
                 handleIntent(intent)
                 setContent { DominionAppRoot(viewModel) }
                 // Mobile execution is primary; PC connection is an explicit user choice.

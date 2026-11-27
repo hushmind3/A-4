@@ -58,6 +58,16 @@ data class CloudModels(val data: List<CloudModel>)
 private data class PairRequest(val app_name: String, val token_hash: String)
 private data class PairResponse(val id: String, val expires_in: Int, val status: String, val verification_uri: String)
 private data class DisconnectResponse(val status: String)
+data class CloudPushConfig(val project_id:String="",val application_id:String="",
+    val api_key:String="",val sender_id:String="") {
+    fun checked():CloudPushConfig {
+        require(project_id.matches(Regex("[a-z][a-z0-9-]{3,62}")) &&
+            application_id.matches(Regex("1:[0-9]{6,20}:android:[a-f0-9]{8,40}")) &&
+            api_key.length in 20..200 && sender_id.matches(Regex("[0-9]{6,20}")))
+        return this
+    }
+}
+data class CloudPushAck(val ok:Boolean=false)
 data class CloudVoiceCapabilities(val stt:Boolean=false, val tts_en:Boolean=false,
     val tts_ko:Boolean=false,val mode:String="cloud_only",val max_audio_seconds:Int=20)
 data class CloudTranscript(val text:String,val language:String,val remaining:Int)
@@ -111,6 +121,11 @@ private interface CloudApi {
     @POST("v1/voice/speech") suspend fun synthesizeCloud(
         @Header("Authorization") auth:String,@Body body:CloudSpeechText):ResponseBody
     @POST("v1/apps/disconnect") suspend fun disconnect(@Header("Authorization") auth: String, @Body body: Map<String, String>): DisconnectResponse
+    @GET("v1/push/config") suspend fun pushConfig(@Header("Authorization") auth:String):CloudPushConfig
+    @POST("v1/push/register") suspend fun registerPush(@Header("Authorization") auth:String,
+        @Body body:Map<String,String>):CloudPushAck
+    @POST("v1/realtime/rooms") suspend fun openRealtime(@Header("Authorization") auth:String,
+        @Body request:RealtimeCallRequest):RealtimeCallGrant
 }
 
 /** Cloud credentials stay here except for explicitly approved free-only provider registration
@@ -255,6 +270,15 @@ class CloudAccountRepository(context: Context) {
             result
         } }
 
+    /** Internal bearer handoff for account-scoped clients in this process. The
+     * token is never returned to UI state, logs, exports or notifications. */
+    internal suspend fun <T> withSessionToken(block:suspend (String)->T):T =
+        withContext(Dispatchers.IO){lock.withLock{
+            val pair=if(savedAccountId()==null)approved().first
+                else requireNotNull(loadPairing()){"DOMINION Cloud login required"}
+            block(pair.token)
+        }}
+
     /** A previously verified inference grant is authorized by the Worker on
      * every completion. Do not perform redundant status/me/catalog requests per
      * model step; refresh/selection still check the real account and model list. */
@@ -386,6 +410,29 @@ class CloudAccountRepository(context: Context) {
         check(stillSelected() && approved().second.account_id==identity.account_id)
         id
     } }
+
+    suspend fun realtimeCall(conversationId:String,sessionId:String,callId:String,video:Boolean):RealtimeCallGrant =
+        withContext(Dispatchers.IO){
+            val account=requireNotNull(savedAccountId()){"DOMINION Cloud login required"}
+            val request=RealtimeCallRequest(account,conversationId,sessionId,callId,video)
+            withSessionToken{token->api.openRealtime("Bearer "+token,request).verified(request)}
+        }
+
+    suspend fun pushConfig():CloudPushConfig?=withContext(Dispatchers.IO){
+        try{
+            withSessionToken{token->api.pushConfig("Bearer "+token).checked()}
+        }catch(e:retrofit2.HttpException){
+            if(e.code() in setOf(404,503))null else throw e
+        }
+    }
+
+    suspend fun registerPushToken(token:String)=withContext(Dispatchers.IO){
+        require(token.length in 20..400&&token.none{it.isISOControl()||it.isWhitespace()})
+        val wrapped="fcm:"+token
+        withSessionToken{ bearer->
+            check(api.registerPush("Bearer "+bearer,mapOf("token" to wrapped)).ok){"FCM registration rejected"}
+        }
+    }
 
     suspend fun disconnect(): CloudAccountSnapshot = withContext(Dispatchers.IO) {
         lock.withLock {

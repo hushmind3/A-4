@@ -46,6 +46,9 @@ interface DominionRepository {
         payload:com.dominion.mobile.data.remote.MessengerPayload):
         com.dominion.mobile.data.remote.MobileJournalEntry = error("Messenger unavailable")
 
+    /** Persist an actual official-site submission receipt observed in the WebView. */
+    suspend fun recordGovernmentReceipt(receipt: com.dominion.mobile.data.model.GovernmentReceipt) {}
+
     suspend fun mobileCapabilities(): com.dominion.mobile.data.remote.MobileCapabilities = error("Mobile extension unavailable")
     suspend fun mobilePeers(): List<com.dominion.mobile.data.remote.MobilePeer> = error("Mobile extension unavailable")
     suspend fun mobilePeerHistory(peer: String): List<com.dominion.mobile.data.remote.MobilePeerMessage> = error("Mobile extension unavailable")

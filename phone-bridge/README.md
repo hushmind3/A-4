@@ -47,3 +47,13 @@ References:
 https://docs.livekit.io/telephony/making-calls/outbound-calls/
 https://docs.livekit.io/reference/telephony/sip-api/
 https://docs.livekit.io/agents/models/llm/openai-compatible-llms/
+
+## Hosted deployment (no local server)
+
+`Dockerfile` runs both the LiveKit SIP worker and the FastAPI gateway in one
+container. Deploy it to any container host that can reach LiveKit Cloud and
+your SIP trunk provider, then set the public HTTPS origin and bearer token in
+the Android telephone dialog. The app never requires a laptop, PC or local
+server. `DOMINION_PHONE_DB` must point at a persistent volume; the worker
+registers with LiveKit under `dominion-phone` and the gateway dispatches the
+call job. Configure provider secrets only on the container host.

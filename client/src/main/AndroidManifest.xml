@@ -54,6 +54,9 @@
         android:theme="@style/Theme.Dominion">
 
         <meta-data android:name="com.google.ar.core" android:value="optional" />
+        <activity android:name=".platform.web.GovernmentWebActivity"
+            android:exported="false" android:screenOrientation="portrait"
+            android:windowSoftInputMode="adjustResize" />
         <activity android:name=".platform.avatar.StandardAvatarActivity"
             android:exported="false" android:screenOrientation="portrait" />
         <activity android:name=".platform.avatar.AvatarSceneActivity"
@@ -123,6 +126,11 @@
             </intent-filter>
             <meta-data android:name="android.accessibilityservice"
                 android:resource="@xml/phone_navigation_service" />
+        </service>
+
+        <service android:name=".platform.background.DominionMessagingService"
+            android:exported="false">
+            <intent-filter><action android:name="com.google.firebase.MESSAGING_EVENT" /></intent-filter>
         </service>
 
         <service android:name=".platform.background.ErrandReplyListener"

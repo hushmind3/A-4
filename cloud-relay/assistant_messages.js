@@ -37,3 +37,31 @@ export async function publish(env,device,b,send=fetch){
     '새 메시지가 도착했습니다.','message',{send});
  return reply({ok:true,push});
 }
+
+/** Public Firebase client identifiers. No service-account key is returned. */
+export function pushConfig(env){
+ const project=env.ASSISTANT_FCM_PROJECT_ID,app=env.ASSISTANT_ANDROID_APP_ID,
+   apiKey=env.ASSISTANT_ANDROID_API_KEY,sender=env.ASSISTANT_FCM_SENDER_ID;
+ if(typeof project!=='string'||typeof app!=='string'||typeof apiKey!=='string'||
+    typeof sender!=='string'||!project||!app||!apiKey||!sender)return null;
+ return {project_id:project,application_id:app,api_key:apiKey,sender_id:sender};
+}
+
+/** Register a native FCM token for an inference app session. */
+export async function registerAppPush(request,env,user){
+ if(user.scope!=='app'||typeof user.app_session_id!=='string')
+   return reply({error:'Mobile app session required'},403);
+ if(env.ASSISTANT_PUSH_ENABLED!=='1'||!nativePushReady(env))
+   return reply({error:'Native push not configured'},503);
+ const raw=await request.text();if(raw.length>2048)return reply({error:'Too large'},413);
+ let b;try{b=JSON.parse(raw)}catch{return reply({error:'Invalid JSON'},400)}
+ if(!isNativePushToken(b?.token))return reply({error:'Invalid FCM token'},400);
+ const old=await env.DB.prepare('SELECT account_id FROM assistant_push WHERE token=?').bind(b.token).first();
+ if(old&&old.account_id!==user.id)return reply({error:'Push token belongs to another account'},409);
+ const r=await env.DB.prepare(
+  "INSERT INTO assistant_push(token,account_id,app_session_id,created_at) VALUES(?,?,?,?) "+
+  "ON CONFLICT(token) DO UPDATE SET app_session_id=excluded.app_session_id,created_at=excluded.created_at "+
+  "WHERE assistant_push.account_id=excluded.account_id")
+  .bind(b.token,user.id,user.app_session_id,now()).run();
+ return r.meta.changes?reply({ok:true}):reply({error:'Push token update failed'},409);
+}

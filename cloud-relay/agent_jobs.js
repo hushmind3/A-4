@@ -1,5 +1,6 @@
 // Account-bound durable research jobs. The mobile may be offline.
 // Only read-only tools are allowed. All task content is encrypted in D1.
+import {deliverPush} from './assistant_push_delivery.js';
 const now=()=>Math.floor(Date.now()/1000);
 const reply=(value,status=200)=>new Response(JSON.stringify(value),{status,
   headers:{'content-type':'application/json','cache-control':'no-store'}});
@@ -11,6 +12,19 @@ const maxActive=3;
 const maxDaily=20;
 const maxSteps=5;
 const maxCronRounds=3;
+async function notifyJob(env,account,id,status){
+  if(!['done','failed'].includes(status))return;
+  try{
+    const rows=await env.DB.prepare(
+      "SELECT p.token FROM assistant_push p JOIN app_sessions s ON s.id=p.app_session_id "+
+      "WHERE p.account_id=? AND s.account_id=p.account_id AND s.status='approved' AND s.expires_at>? LIMIT 10")
+      .bind(account,now()).all();
+    if(!rows.results?.length)return;
+    await deliverPush(env,account,rows.results.map(x=>x.token),
+      status==='done'?'DOMINION Cloud 작업이 완료되었습니다.':'DOMINION Cloud 작업이 중단되었습니다.',
+      'agent',{});
+  }catch{/* push is best effort; D1 status remains authoritative */}
+}
 const cronStartBudgetMs=45000;
 export const quotaKey=(account,date=new Date())=>
   account+':cloud-jobs:'+date.toISOString().slice(0,10);
@@ -279,6 +293,7 @@ export async function runJob(env,id,infer,{leaseSeconds=90}={}){
       const enc=await seal(env,row.account_id,id,'result',step.content);
       const changed=await env.DB.prepare("UPDATE cloud_agent_jobs SET status='done',result_enc=?,steps=?,failures=0,error_code=NULL,lease_until=0,updated_at=? WHERE id=? AND account_id=? AND status='running' AND lease_until=? RETURNING id")
         .bind(enc,row.steps+1,now(),id,row.account_id,row.lease_until).first();
+      if(changed)await notifyJob(env,row.account_id,id,'done');
       return Boolean(changed);
     }
     // Persist actual tool receipts, never model-authored claims of execution.
@@ -297,12 +312,14 @@ export async function runJob(env,id,infer,{leaseSeconds=90}={}){
     const exhausted=row.steps+1>=maxSteps;
     const changed=await env.DB.prepare("UPDATE cloud_agent_jobs SET status=?,checkpoint_enc=?,steps=?,failures=0,error_code=?,next_run=?,lease_until=0,updated_at=? WHERE id=? AND account_id=? AND status='running' AND lease_until=? RETURNING id")
       .bind(exhausted?'failed':'queued',enc,row.steps+1,exhausted?'step_limit':null,now(),now(),id,row.account_id,row.lease_until).first();
+    if(changed&&exhausted)await notifyJob(env,row.account_id,id,'failed');
     return Boolean(changed);
   }catch{
     const failures=row.failures+1;
     await env.DB.prepare("UPDATE cloud_agent_jobs SET status=?,failures=?,error_code=?,next_run=?,lease_until=0,updated_at=? WHERE id=? AND account_id=? AND status='running' AND lease_until=?")
       .bind(failures<3?'queued':'failed',failures,
         failures<3?'retry_pending':'execution_failed',now()+60*failures,now(),id,row.account_id,row.lease_until).run();
+    if(failures>=3)await notifyJob(env,row.account_id,id,'failed');
     return false;
   }
 }

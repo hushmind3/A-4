@@ -1,0 +1,2 @@
+livekit-agents[openai,silero]>=1.9,<2
+openai>=1.60,<3

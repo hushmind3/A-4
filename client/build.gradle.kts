@@ -96,6 +96,8 @@ dependencies {
     implementation("com.google.android.filament:filament-utils-android:1.56.0")
     // SDK 35 compatible WorkManager release.
     implementation("androidx.work:work-runtime-ktx:2.10.5")
+    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+    implementation("com.google.firebase:firebase-messaging")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")

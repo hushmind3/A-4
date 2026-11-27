@@ -63,6 +63,13 @@ class RemoteBackedRepository(
         messengerExtension.download(thread,attachment)
     override suspend fun messengerOperation(action:MobileAction,target:String,payload:MessengerPayload)=
         messengerExtension.operation(action,target,payload)
+    override suspend fun recordGovernmentReceipt(receipt:com.dominion.mobile.data.model.GovernmentReceipt){
+        require(receipt.id.isNotBlank()&&receipt.serviceId.isNotBlank()&&receipt.serviceTitle.isNotBlank())
+        update{s->s.copy(governmentReceipts=(listOf(receipt)+s.governmentReceipts.orEmpty())
+            .distinctBy{it.id}.take(50))}
+        store.saveStateNow(state.value)
+    }
+
     override suspend fun mobileCapabilities() = api.mobileCapabilities()
     override suspend fun mobilePeers() = mobileExtension.peers()
     override suspend fun mobilePeerHistory(peer: String) = mobileExtension.history(peer)
@@ -1372,6 +1379,8 @@ class RemoteBackedRepository(
 
     override suspend fun roomExecution(roomId: String): RoomExecution = coroutineScope {
         if(localExecution){
+            if(state.value.mobileActions.orEmpty().any{it.roomId==roomId&&it.tool=="phone.inquire"&&
+                    it.status in setOf("launching","uncertain")})runCatching{mobile.refreshPhoneInquiry(roomId)}
             val task=state.value.tasks.firstOrNull{it.engineRoomId==roomId&&it.engineJobId?.startsWith("cloud:")==true &&
                 it.engineSessionId==state.value.conversation(roomId)?.sessionId}
             if(task==null)return@coroutineScope mobile.execution(roomId)
@@ -1656,6 +1665,11 @@ class RemoteBackedRepository(
     }
 
     override suspend fun requestRealtimeCall(conversationId: String, callId: String, video: Boolean): RealtimeCallGrant {
+        if(localExecution){
+            val session=requireNotNull(state.value.conversation(conversationId)?.sessionId)
+            check(state.value.call?.sessionId==callId)
+            return requireNotNull(mobileCloud).realtimeCall(conversationId,session,callId,video)
+        }
         val capabilities = api.mobileCapabilities()
         val account = capabilities.requireFeature("realtime_audio")
         if (video) check(capabilities.requireFeature("realtime_video") == account)

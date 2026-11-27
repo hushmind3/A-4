@@ -1,8 +1,11 @@
 import {emailLoginReady, startEmailLogin, verifyEmailLogin, pollEmailLogin} from './email_auth.js';
 import {voiceRoute} from './voice.js';
+import {messengerRoute} from './messenger.js';
+import {realtimeRoute} from './realtime.js';
 import {jobRoute,tickJobs} from './agent_jobs.js';
 import {b64url, hash, randomToken} from './token_crypto.js';
 import {assistantRoute,cleanupAssistant,ready as assistantReady,revokeAppSocket} from './assistant_link.js';
+import {pushConfig,registerAppPush} from './assistant_messages.js';
 export {AssistantSocket} from './assistant_socket.js';
 import {appAccount,isAppRequest,startApp,appStatus,disconnectApp,manageApps,pendingApp,approveApp} from './app_auth.js';
 import {connectPage} from './connect_page.js';
@@ -576,9 +579,13 @@ export default {
     try {
       let response;
       // App sessions may never enter owner, billing or identity endpoints.
-      const appAllowed=['/v1/me','/v1/models','/v1/billing','/v1/chat/completions','/v1/apps/status','/v1/apps/disconnect','/v1/voice/capabilities','/v1/voice/transcriptions','/v1/voice/speech'];
-      if(isAppRequest(request)&&!appAllowed.includes(path)&&!path.startsWith('/v1/assistant/')&&!path.startsWith('/v1/agent/jobs'))return json({error:'Owner login required'},403,headers);
+      const appAllowed=['/v1/me','/v1/models','/v1/billing','/v1/chat/completions','/v1/apps/status','/v1/apps/disconnect','/v1/voice/capabilities','/v1/voice/transcriptions','/v1/voice/speech','/v1/push/config','/v1/push/register'];
+      if(isAppRequest(request)&&!appAllowed.includes(path)&&!path.startsWith('/v1/assistant/')&&!path.startsWith('/v1/agent/jobs')&&!path.startsWith('/v1/messenger/')&&!path.startsWith('/v1/realtime/'))return json({error:'Owner login required'},403,headers);
       if(path.startsWith('/v1/agent/jobs')){const user=await account(request,env);response=await jobRoute(request,env,user,ctx,(messages,u)=>inferCloudJob(env,messages,u));}
+       else if(path.startsWith('/v1/messenger/')){const user=await account(request,env);response=await messengerRoute(request,env,user);}
+       else if(path.startsWith('/v1/realtime/')){const user=await account(request,env);response=await realtimeRoute(request,env,user);}
+       else if(path==='/v1/push/config'&&request.method==='GET'){const user=await account(request,env);const config=pushConfig(env);response=user&&config?json(config):(config?err('Unauthorized',401):err('Push not configured',503));}
+       else if(path==='/v1/push/register'&&request.method==='POST'){const user=await account(request,env);response=user?await registerAppPush(request,env,user):err('Unauthorized',401);}
        else if(path.startsWith('/v1/voice/')){const user=await account(request,env);response=await voiceRoute(request,env,user,path);}
        else if(path.startsWith('/v1/assistant/'))response=await assistantRoute(request,env,{account});
       else if(path==='/connect'&&request.method==='GET')response=await connectPage(request,env);

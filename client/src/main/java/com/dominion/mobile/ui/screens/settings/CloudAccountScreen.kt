@@ -48,6 +48,8 @@ fun CloudAccountScreen(vm:AppViewModel,onBack:()->Unit) {
     fun showAccount(next:CloudAccountSnapshot){
         snapshot=next
         val container=(context.applicationContext as DominionApplication).container
+        if(next.status=="approved")
+            com.dominion.mobile.platform.background.FirebasePush.ensureEventually(context,repo)
         if(container.switchCloudAccount(next.accountId)){
             // Clear the previous account's ViewModel and Compose tree on a scope change.
             var candidate:android.content.Context=context

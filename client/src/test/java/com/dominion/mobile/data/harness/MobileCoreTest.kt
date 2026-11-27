@@ -72,3 +72,14 @@ class MobileCoreTest{
   assertEquals("회의",MobileCore.validate("schedule.create",a,java.time.Instant.parse("2026-12-31T00:00:00Z").toEpochMilli())["title"].asString)
  }
 }
+
+class PhoneInquiryValidationTest {
+  @Test fun actualPhoneInquiryRequiresKoreanBusinessNumberAndGoal(){
+    val args=com.google.gson.JsonParser.parseString("""{"number":"02-1234-5678","goal":"영업시간을 확인해 주세요"}""").asJsonObject
+    val checked=MobileCore.validate("phone.inquire",args)
+    assertEquals("+82212345678",checked.get("number").asString)
+    assertTrue(checked.get("goal").asString.contains("영업시간"))
+    assertTrue(runCatching{MobileCore.validate("phone.inquire",
+      com.google.gson.JsonParser.parseString("""{"number":"+1 555 0100","goal":"ask"}""").asJsonObject)}.isFailure)
+  }
+}
