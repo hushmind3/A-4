@@ -612,7 +612,7 @@ private fun TaskCard(
             Text(label + " · " + tr(lang, "마지막 조회 상태", "Last known status"), color = p.textSecondary)
         }
         Row {
-            TextButton(enabled = !busy&&!task.workflowPaused&&(task.workflowNotBefore?:0)<=System.currentTimeMillis()&&task.workflowState !in setOf("waiting","blocked","verified","superseded"), onClick = onDispatch) {
+            if(task.phoneInquiryId==null)TextButton(enabled = !busy&&!task.workflowPaused&&(task.workflowNotBefore?:0)<=System.currentTimeMillis()&&task.workflowState !in setOf("waiting","blocked","verified","superseded"), onClick = onDispatch) {
                 Text(if (busy) tr(lang, "확인 중…", "Checking…")
                     else if (task.engineJobId != null) tr(lang, "상태 확인", "Check status")
                     else if (task.engineRoomId != null) tr(lang, "접수 재확인", "Recheck submission")

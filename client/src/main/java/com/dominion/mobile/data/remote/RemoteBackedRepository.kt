@@ -17,6 +17,7 @@ import com.dominion.mobile.data.local.LocalStore
 import com.dominion.mobile.data.model.AppState
 import com.dominion.mobile.data.model.Message
 import com.dominion.mobile.data.model.MessageSender
+import com.dominion.mobile.data.model.MessageKind
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -63,6 +64,98 @@ class RemoteBackedRepository(
         messengerExtension.download(thread,attachment)
     override suspend fun messengerOperation(action:MobileAction,target:String,payload:MessengerPayload)=
         messengerExtension.operation(action,target,payload)
+    override suspend fun refreshPhoneCall(roomId:String){
+        if(!localExecution)return
+        val task=state.value.tasks.firstOrNull{it.phoneInquiryId!=null&&it.engineRoomId==roomId}?:return
+        val action=state.value.mobileActions.orEmpty().firstOrNull{
+            it.tool=="phone.inquire"&&it.status in setOf("launching","uncertain")&&
+            ("phone-task:"+it.id)==task.id
+        }?:return
+        mobile.refreshPhoneInquiry(action.roomId)
+    }
+
+    override suspend fun sendExternalCallInstruction(roomId:String?,text:String):Boolean {
+        if(!localExecution)return false
+        val clean=text.trim()
+        if(clean.length !in 1..500)return false
+        val context=mobileContext?:return false
+        val account=mobileCloud?.savedAccountId()?:return false
+        val task=state.value.tasks.firstOrNull{it.phoneInquiryId!=null&&
+            (roomId==null||it.engineRoomId==roomId)}
+            ?:state.value.tasks.firstOrNull{it.phoneInquiryId!=null}?:return false
+        val callId=task.phoneInquiryId?:return false
+        val action=state.value.mobileActions.orEmpty().firstOrNull{
+            it.tool=="phone.inquire"&&it.status=="launching"&&
+            ("phone-task:"+it.id)==task.id
+        }?:return false
+        val bridge=PhoneBridge(context,account)
+        val call=PhoneBridgeCall(
+            java.util.UUID.nameUUIDFromBytes(("phone-inquiry:"+account+":"+action.id).toByteArray()).toString(),
+            action.args["number"].asString,action.args["goal"].asString)
+        val saved=kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO){bridge.reserved(call.id)}
+            ?:return false
+        return runCatching{bridge.instruction(saved.config,call,clean)}.getOrDefault(false)
+    }
+
+    override suspend fun sendWorkMessage(roomId:String,text:String):Boolean{
+        if(!localExecution)return false
+        val task=state.value.tasks.firstOrNull{it.engineRoomId==roomId&&it.engineJobId?.startsWith("work:")==true}
+            ?:return false
+        val id=requireNotNull(task.engineJobId).removePrefix("work:")
+        val ok=requireNotNull(mobileCloud).workMessage(id,text,
+            java.util.UUID.randomUUID().toString())
+        if(ok)update{s->s.copy(tasks=s.tasks.map{if(it.id==task.id)it.copy(engineStatus="queued")else it})}
+        store.saveStateNow(state.value)
+        return ok
+    }
+
+    private suspend fun syncWork(task:com.dominion.mobile.data.model.TaskItem,work:CloudWork){
+        val roomId=task.engineRoomId?:return
+        val mapped=work.events.orEmpty().map{event->
+            Message("work-event:"+event.id,roomId,
+                when(event.role){"user"->MessageSender.USER;"assistant"->MessageSender.ASSISTANT;else->MessageSender.SYSTEM},
+                event.text,kind=if(event.role=="system")MessageKind.SYSTEM else MessageKind.TEXT,
+                createdAt=if(event.createdAt>0)event.createdAt*1000 else System.currentTimeMillis())
+        }
+        update{s->
+            val existing=s.conversation(roomId)
+            val conversation=existing?:com.dominion.mobile.data.model.Conversation(roomId,task.characterId,
+                titleOverride=work.title,kind=com.dominion.mobile.data.model.ConversationKind.TASK,
+                sessionId="work:"+work.id)
+            s.copy(tasks=s.tasks.map{if(it.id==task.id)it.copy(
+                engineStatus=if(work.status=="waiting")"needs_review" else work.status)else it},
+                conversations=listOf(conversation.copy(messages=(conversation.messages+mapped.filter{m->
+                    conversation.messages.none{it.id==m.id}}),updatedAt=System.currentTimeMillis()))+
+                    s.conversations.filterNot{it.id==roomId})
+        }
+        store.saveStateNow(state.value)
+    }
+
+    override suspend fun submitCallVoiceTask(roomId:String,session:String,text:String):String?{
+        val trimmed=text.trim()
+        if(trimmed.length !in 2..4000)return null
+        val room=state.value.conversation(roomId)?:return null
+        check(room.sessionId==session)
+        val id="call-task:"+java.util.UUID.randomUUID()
+        val message=Message(id,roomId,MessageSender.USER,trimmed,status=com.dominion.mobile.data.model.MessageStatus.SENDING,
+            clientMessageId=id,jobStatus="call_voice_submitting")
+        update{current->
+            check(current.conversation(roomId)?.sessionId==session)
+            current.copy(conversations=current.conversations.map{
+                if(it.id==roomId)it.copy(messages=it.messages+message,updatedAt=message.createdAt)else it
+            })
+        }
+        store.saveStateNow(state.value)
+        if(localExecution){
+            try{mobile.deliver(roomId,message)}
+            catch(e:CancellationException){throw e}
+            catch(_:Exception){}
+        }else{
+            try{deliverMessage(roomId,message)}catch(e:CancellationException){throw e}catch(_:Exception){}
+        }
+        return id
+    }
+
     override suspend fun recordGovernmentReceipt(receipt:com.dominion.mobile.data.model.GovernmentReceipt){
         require(receipt.id.isNotBlank()&&receipt.serviceId.isNotBlank()&&receipt.serviceTitle.isNotBlank())
         update{s->s.copy(governmentReceipts=(listOf(receipt)+s.governmentReceipts.orEmpty())
@@ -864,6 +957,11 @@ class RemoteBackedRepository(
 
     override suspend fun refreshTask(id: String) = taskLock.withLock {
         val task = state.value.tasks.firstOrNull { it.id == id } ?: return@withLock
+        if(task.engineJobId?.startsWith("work:")==true){
+            val work=requireNotNull(mobileCloud).work(requireNotNull(task.engineJobId).removePrefix("work:"))
+            syncWork(task,work)
+            return@withLock
+        }
         if(task.engineJobId!=null)verifyTask(task)
         else if(localExecution&&TaskDispatch.pendingCloudSubmission(task)){
             // Reconcile a request persisted before a process/network failure. Only
@@ -1884,6 +1982,10 @@ class RemoteBackedRepository(
                 }
                 if(connection.value!=ConnectionState.CONNECTED)return false
                 var ok=true
+                state.value.mobileActions.orEmpty().filter{it.tool=="phone.inquire"&&it.status=="launching"}
+                    .map{it.roomId}.distinct().forEach{room->
+                        try{mobile.refreshPhoneInquiry(room)}catch(e:CancellationException){throw e}catch(_:Exception){ok=false}
+                    }
                 for(task in state.value.tasks.filter{
                     TaskDispatch.needsCloudRefresh(it,state.value.conversation(it.engineRoomId.orEmpty()))
                 }.take(16)){

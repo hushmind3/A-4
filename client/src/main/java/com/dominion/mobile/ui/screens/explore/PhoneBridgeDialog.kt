@@ -11,6 +11,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.dominion.mobile.DominionApplication
 import com.dominion.mobile.data.remote.*
+import com.dominion.mobile.platform.audio.DeviceSpeech
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.*
 
 @Composable
@@ -38,6 +40,7 @@ internal fun PhoneBridgeDialog(onDismiss:()->Unit){
     var busy by remember{mutableStateOf(false)}
     var confirm by remember{mutableStateOf(false)}
     var error by remember{mutableStateOf("")}
+    var playing by remember{mutableStateOf<Int?>(null)}
     fun config()=PhoneBridgeConfig(origin,token).checked()
     fun validAccount()=check(container.cloudAccount.savedAccountId()==account)
     fun action(method:String,call:PhoneBridgeCall){
@@ -88,11 +91,10 @@ internal fun PhoneBridgeDialog(onDismiss:()->Unit){
     AlertDialog(onDismissRequest={if(!busy)onDismiss()},title={Text("AI 외부 전화 대행")},
         text={Column(Modifier.heightIn(max=480.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)){
             Text("자체 SIP 연결 어댑터가 필요한 실제 업체 전화 문의입니다. 발신 비용이 발생할 수 있습니다. 상대에게 AI임을 밝히고 동의 후 문의합니다.")
-            OutlinedTextField(origin,{origin=it},enabled=pending==null&&!busy,label={Text("전화 어댑터 HTTPS 주소")},singleLine=true)
-            OutlinedTextField(token,{token=it},enabled=pending==null&&!busy,label={Text("전화 어댑터 접속 토큰")},visualTransformation=PasswordVisualTransformation(),singleLine=true)
+            Text("DOMINION Cloud 전화 서비스 · 주소·토큰·SIP 설정은 앱에서 입력하지 않습니다.",
+                style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
             if(pending==null){
-                TextButton(enabled=!busy&&runCatching{config();true}.getOrDefault(false),onClick={checkHealth()}){Text("연결 확인")}
-                health?.let{Text("어댑터 연결됨 · 승인된 발신 번호 "+it.approved_numbers+"개")}
+                health?.let{Text("Cloud 전화 연결됨 · 승인된 발신 번호 "+it.approved_numbers+"개")}
             }
             OutlinedTextField(number,{number=it.take(14)},enabled=pending==null&&!busy,label={Text("승인된 업체 번호 (+82...)")},singleLine=true)
             OutlinedTextField(goal,{goal=it.take(800)},enabled=pending==null&&!busy,label={Text("전화 문의 목적")},maxLines=5)
@@ -106,6 +108,25 @@ internal fun PhoneBridgeDialog(onDismiss:()->Unit){
                 })
                 receipt?.summary?.let{Text("업무 결과 후보: "+it)}
                 receipt?.evidence?.let{Text("실제 음성 인식 인용: "+it)}
+                receipt?.utterances.orEmpty().takeLast(30).forEach{line->
+                    Row(Modifier.fillMaxWidth(),verticalAlignment=androidx.compose.ui.Alignment.CenterVertically){
+                        Text((if(line.speaker=="ai")"AI" else "상대")+": "+line.text,
+                            modifier=Modifier.weight(1f),style=MaterialTheme.typography.bodySmall)
+                        TextButton(enabled=playing==null,onClick={
+                            playing=line.seq
+                            scope.launch{
+                                var session:DeviceSpeech.Session?=null
+                                try{
+                                    session=DeviceSpeech.open(context,"ko")
+                                    if(session==null)error="이 기기의 한국어 TTS를 사용할 수 없습니다."
+                                    else session.speak(line.text,AtomicBoolean(false),communication=false)
+                                }catch(e:CancellationException){throw e}
+                                catch(_:Exception){error="발화 음성을 재생하지 못했습니다."}
+                                finally{session?.close();playing=null}
+                            }
+                        }){Text(if(playing==line.seq)"재생 중" else "▶")}
+                    }
+                }
                 if(receipt?.answered==1)Text("전화 연결 확인 · 통화 상대 및 합의는 직접 확인")
                 TextButton(enabled=!busy,onClick={action("status",call)}){Text("상태 다시 조회")}
                 if(receipt?.terminal!=true&&!missing)TextButton(enabled=!busy,onClick={action("cancel",call)}){Text("통화 중단 요청")}

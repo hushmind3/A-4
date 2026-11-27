@@ -407,6 +407,12 @@ fun DominionAppRoot(vm: AppViewModel) {
             }
         }
 
+        state.call?.takeIf{it.minimized}?.let{
+            com.dominion.mobile.ui.screens.main.MinimizedCallBar(state,
+                onOpen={nav.navigate(Routes.CALL){launchSingleTop=true}},
+                onEnd={vm.endCall()},
+                modifier=Modifier.align(androidx.compose.ui.Alignment.BottomCenter).padding(bottom=78.dp))
+        }
         if (locked) {
             BackHandler { }
             AppLockOverlay(onUnlock = { appUnlocked = true })

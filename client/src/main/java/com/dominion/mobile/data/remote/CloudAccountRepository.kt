@@ -58,6 +58,24 @@ data class CloudModels(val data: List<CloudModel>)
 private data class PairRequest(val app_name: String, val token_hash: String)
 private data class PairResponse(val id: String, val expires_in: Int, val status: String, val verification_uri: String)
 private data class DisconnectResponse(val status: String)
+data class CloudBrowserSession(val host:String="",val updatedAt:Long=0)
+data class CloudBrowserSessions(val sessions:List<CloudBrowserSession>?=null)
+data class CloudBrowserRead(val url:String="",val host:String="",val title:String="",val text:String="")
+data class CloudWorkEvent(val id:String="",val role:String="",val text:String="",val createdAt:Long=0)
+data class CloudWork(val id:String="",val kind:String="",val title:String="",val status:String="",
+    val waitingFor:String?=null,val result:String?=null,val createdAt:Long=0,val updatedAt:Long=0,
+    val events:List<CloudWorkEvent>?=null) {
+    fun checked():CloudWork {
+        require(id.matches(Regex("[a-f0-9-]{36}"))&&kind in setOf("research","browser","phone","admin")&&
+            status in setOf("queued","running","waiting","done","failed","cancelled")&&title.length<=160)
+        return this
+    }
+}
+data class CloudWorks(val work:List<CloudWork>?=null)
+data class CloudWorkAck(val id:String="",val status:String="")
+data class CloudWorkCreate(val client_id:String,val kind:String,val title:String,val request:String,
+    val metadata:Map<String,String> = emptyMap())
+data class CloudWorkMessage(val client_id:String,val text:String)
 data class CloudPushConfig(val project_id:String="",val application_id:String="",
     val api_key:String="",val sender_id:String="") {
     fun checked():CloudPushConfig {
@@ -126,6 +144,20 @@ private interface CloudApi {
         @Body body:Map<String,String>):CloudPushAck
     @POST("v1/realtime/rooms") suspend fun openRealtime(@Header("Authorization") auth:String,
         @Body request:RealtimeCallRequest):RealtimeCallGrant
+    @POST("v1/work") suspend fun createWork(@Header("Authorization") auth:String,
+        @Body body:CloudWorkCreate):CloudWork
+    @GET("v1/work") suspend fun works(@Header("Authorization") auth:String):CloudWorks
+    @GET("v1/work/{id}") suspend fun work(@Header("Authorization") auth:String,
+        @Path("id") id:String):CloudWork
+    @POST("v1/work/{id}/message") suspend fun workMessage(@Header("Authorization") auth:String,
+        @Path("id") id:String,@Body body:CloudWorkMessage):CloudWorkAck
+    @POST("v1/work/{id}/cancel") suspend fun cancelWork(@Header("Authorization") auth:String,
+        @Path("id") id:String):CloudWorkAck
+    @POST("v1/browser/session") suspend fun saveBrowserSession(@Header("Authorization") auth:String,
+        @Body body:Map<String,String>):CloudBrowserSession
+    @GET("v1/browser/sessions") suspend fun browserSessions(@Header("Authorization") auth:String):CloudBrowserSessions
+    @POST("v1/browser/read") suspend fun readBrowser(@Header("Authorization") auth:String,
+        @Body body:Map<String,String>):CloudBrowserRead
 }
 
 /** Cloud credentials stay here except for explicitly approved free-only provider registration
@@ -199,6 +231,10 @@ class CloudAccountRepository(context: Context) {
                     require(pair.verifiedAccountId == null || pair.verifiedAccountId == identity.account_id)
                     val billing = api.billing(auth).verifiedFor(identity.account_id)
                     if (pair.verifiedAccountId == null) store.save(pair.copy(verifiedAccountId = identity.account_id))
+                    runCatching{
+                        com.dominion.mobile.data.remote.PhoneBridge(appContext,identity.account_id)
+                            .saveConfig(com.dominion.mobile.data.remote.PhoneBridgeConfig(CLOUD_ORIGIN,pair.token))
+                    }
                     val link=links().forAccount(identity.account_id)
                     CloudAccountSnapshot(pair.id, status = "approved", expiresAt = status.expires_at,
                         accountId = identity.account_id, billing = billing,
@@ -410,6 +446,47 @@ class CloudAccountRepository(context: Context) {
         check(stillSelected() && approved().second.account_id==identity.account_id)
         id
     } }
+
+    suspend fun saveBrowserSession(url:String,cookie:String):CloudBrowserSession=withContext(Dispatchers.IO){
+        require(url.startsWith("https://")&&cookie.length in 1..16000)
+        withSessionToken{api.saveBrowserSession("Bearer "+it,mapOf("url" to url,"cookie" to cookie))}
+    }
+
+    suspend fun browserSessions(): List<CloudBrowserSession> = withContext(Dispatchers.IO){
+        withSessionToken{api.browserSessions("Bearer "+it)}.sessions.orEmpty()
+    }
+
+    suspend fun readBrowser(url:String):CloudBrowserRead=withContext(Dispatchers.IO){
+        require(url.startsWith("https://"))
+        withSessionToken{api.readBrowser("Bearer "+it,mapOf("url" to url))}
+    }
+
+    suspend fun createWork(clientId:String,kind:String,title:String,request:String,
+        metadata:Map<String,String> = emptyMap()):CloudWork=withContext(Dispatchers.IO){
+        require(java.util.UUID.fromString(clientId).toString()==clientId)
+        val body=CloudWorkCreate(clientId,kind,title.take(160),request.take(3500),metadata)
+        withSessionToken{api.createWork("Bearer "+it,body).checked()}
+    }
+
+    suspend fun works(): List<CloudWork> = withContext(Dispatchers.IO){
+        withSessionToken{api.works("Bearer "+it)}.work.orEmpty().map{it.checked()}
+    }
+
+    suspend fun work(id:String):CloudWork=withContext(Dispatchers.IO){
+        require(id.matches(Regex("[a-f0-9-]{36}")))
+        withSessionToken{api.work("Bearer "+it,id).checked()}
+    }
+
+    suspend fun workMessage(id:String,text:String,clientId:String):Boolean=withContext(Dispatchers.IO){
+        require(id.matches(Regex("[a-f0-9-]{36}"))&&text.isNotBlank()&&text.length<=3000)
+        require(java.util.UUID.fromString(clientId).toString()==clientId)
+        withSessionToken{api.workMessage("Bearer "+it,id,CloudWorkMessage(clientId,text))}.status=="queued"
+    }
+
+    suspend fun cancelWork(id:String):Boolean=withContext(Dispatchers.IO){
+        require(id.matches(Regex("[a-f0-9-]{36}")))
+        withSessionToken{api.cancelWork("Bearer "+it,id)}.status=="cancelled"
+    }
 
     suspend fun realtimeCall(conversationId:String,sessionId:String,callId:String,video:Boolean):RealtimeCallGrant =
         withContext(Dispatchers.IO){

@@ -132,10 +132,30 @@ class AppViewModel(
 
     // -------------------------------------------------------------------- chats
 
+    suspend fun refreshPhoneCall(roomId:String){repo.refreshPhoneCall(roomId)}
+    suspend fun refreshWorkConversation(roomId:String){
+        state.value.tasks.firstOrNull{it.engineRoomId==roomId&&it.engineJobId?.startsWith("work:")==true}
+            ?.let{repo.refreshTask(it.id)}
+    }
+    fun sendExternalCallInstruction(roomId:String,text:String){
+        viewModelScope.launch{runCatching{repo.sendExternalCallInstruction(roomId,text)}}
+    }
+
     fun sendMessage(conversationId: String, text: String, card: MessageCard? = null,
         attachmentIds: List<String> = emptyList()): String? {
         val trimmed = text.trim()
         if (trimmed.isEmpty() && card == null) return null
+        if(conversationId.startsWith("work:")&&repo.localExecution){
+            val now=System.currentTimeMillis()
+            val message=Message(id("msg"),conversationId,MessageSender.USER,trimmed,createdAt=now)
+            mutate{it.withConversation(conversationId){c->c.copy(messages=c.messages+message,
+                updatedAt=now,draft="")}}
+            viewModelScope.launch{
+                runCatching{repo.sendWorkMessage(conversationId,trimmed)}
+                    .onFailure{_notice.value="클라우드 업무에 답변을 전달하지 못했습니다."}
+            }
+            return message.id
+        }
         if (repo.state.value.conversation(conversationId) == null || conversationId in _roomChanges.value) return null
         val now = System.currentTimeMillis()
         val message = Message(

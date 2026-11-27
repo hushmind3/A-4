@@ -73,6 +73,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dominion.mobile.data.model.AppState
+import com.dominion.mobile.data.model.Lang
+import com.dominion.mobile.data.model.MessageKind
 import com.dominion.mobile.data.model.CardKind
 import com.dominion.mobile.data.model.Character
 import com.dominion.mobile.data.model.Message
@@ -128,6 +130,16 @@ fun ChatRoomScreen(
         return
     }
 
+    LaunchedEffect(conversationId) {
+        if(conversationId.startsWith("phone-call:"))while(true){
+            try{vm.refreshPhoneCall(conversationId)}catch(e:kotlinx.coroutines.CancellationException){throw e}catch(_:Exception){}
+            kotlinx.coroutines.delay(3_000)
+        }
+        if(conversationId.startsWith("work:"))while(true){
+            try{vm.refreshWorkConversation(conversationId)}catch(e:kotlinx.coroutines.CancellationException){throw e}catch(_:Exception){}
+            kotlinx.coroutines.delay(4_000)
+        }
+    }
     LaunchedEffect(conversationId) { vm.refreshConversation(conversationId) }
 
     var liveTurns by remember(conversationId, conversation.sessionId) {
@@ -835,6 +847,18 @@ fun ChatRoomScreen(
                 }
             }
             if (message.text.isNotBlank()) {
+                if(message.kind==MessageKind.VOICE)SheetRow(tr(lang,"발화 다시 듣기","Play utterance"),Glyph.SPEAKER){
+                    scope.launch{
+                        var session:com.dominion.mobile.platform.audio.DeviceSpeech.Session?=null
+                        try{
+                            session=com.dominion.mobile.platform.audio.DeviceSpeech.open(context,
+                                if(state.settings.lang==Lang.KO)"ko" else "en")
+                            session?.speak(message.text,java.util.concurrent.atomic.AtomicBoolean(false),false)
+                        }catch(_:Exception){context.toast(tr(lang,"발화 음성을 재생하지 못했습니다.","Playback failed"))}
+                        finally{session?.close()}
+                    }
+                    messageMenu=null
+                }
                 if(!vm.localExecution)SheetRow(tr(lang, "음성으로 읽기", "Read aloud"), Glyph.SPEAKER) {
                     messageMenu = null
                     if (state.call == null) speakText = message.text

@@ -10,7 +10,7 @@ import json
 import os
 
 from livekit import agents
-from livekit.agents import Agent, AgentSession
+from livekit.agents import Agent, AgentSession, RunContext, function_tool
 from livekit.plugins import openai, silero
 
 MODEL = os.getenv("DOMINION_VOICE_MODEL", "gpt-4o-mini")
@@ -49,7 +49,31 @@ async def voice_entry(ctx: agents.JobContext):
         vad=silero.VAD.load(),
         preemptive_generation=True,
     )
-    agent = Agent(instructions=INSTRUCTIONS)
+    class VoiceAgent(Agent):
+        @function_tool
+        async def delegate_task(self, context: RunContext, request: str):
+            """Create a real DOMINION task in the user's shared chat and harness.
+            Use only when the user explicitly asks for an action or investigation."""
+            clean = (request or "").strip()
+            if not (2 <= len(clean) <= 4000):
+                return "업무 내용을 조금 더 구체적으로 말씀해 주세요."
+            await ctx.room.local_participant.publish_data(
+                json.dumps({"type": "task", "text": clean}, ensure_ascii=False).encode("utf-8"),
+                reliable=True, topic="dominion")
+            return "업무를 같은 대화와 실행 하네스에 접수했습니다. 진행 상황은 채팅에서 확인할 수 있습니다."
+
+        @function_tool
+        async def instruct_external_call(self, request: str):
+            """Send a real-time instruction to the active external phone call."""
+            clean = (request or "").strip()
+            if not (1 <= len(clean) <= 500):
+                return "지시 내용을 짧게 말씀해 주세요."
+            await ctx.room.local_participant.publish_data(
+                json.dumps({"type": "call_instruction", "text": clean}, ensure_ascii=False).encode("utf-8"),
+                reliable=True, topic="dominion")
+            return "진행 중인 외부 통화에 지시를 전달했습니다."
+
+    agent = VoiceAgent(instructions=INSTRUCTIONS + " 사용자가 실제 업무를 지시하면 delegate_task를 호출하세요.")
     closed = asyncio.Event()
 
     @ctx.room.on("disconnected")

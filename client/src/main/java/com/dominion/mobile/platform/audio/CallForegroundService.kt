@@ -131,6 +131,35 @@ class CallForegroundService : Service() {
                                         fail("Realtime AI participant changed; media stopped")
                                     } else if (repo.state.value.call?.phase != CallPhase.CONNECTING) peerState(media)
                                 }
+                                is RoomEvent.DataReceived -> {
+                                    if (agentIdentity != null && event.participant?.identity?.value == agentIdentity) {
+                                        runCatching {
+                                            val text = event.data.toString(Charsets.UTF_8)
+                                            if (text.length <= 6000) {
+                                                val obj = com.google.gson.JsonParser.parseString(text).asJsonObject
+                                                when (obj.get("type")?.asString) {
+                                                    "task" -> {
+                                                        val request = obj.get("text")?.asString.orEmpty()
+                                                        if (request.length in 2..4000) scope.launch {
+                                                            runCatching {
+                                                                repo.submitCallVoiceTask(call.conversationId,
+                                                                    agentRoomSession ?: requireNotNull(
+                                                                        repo.state.value.conversation(call.conversationId)?.sessionId),
+                                                                    request)
+                                                            }
+                                                        }
+                                                    }
+                                                    "call_instruction" -> {
+                                                        val request = obj.get("text")?.asString.orEmpty()
+                                                        if (request.length in 1..500) scope.launch {
+                                                            runCatching { repo.sendExternalCallInstruction(null, request) }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                                 is RoomEvent.Disconnected, is RoomEvent.FailedToConnect ->
                                     fail("Media connection closed")
                                 else -> Unit

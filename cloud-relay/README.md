@@ -65,3 +65,7 @@ Added but **not deployed** by this revision:
 Messenger identity is always derived from the authenticated app session. Thread creation requires accepted friendships; message sends are idempotent per `(sender_id, client_id)`. The SSE endpoint tails D1 for 25 seconds per connection and the Android client reconnects; it is near-realtime, not a Durable Object push. FCM payloads intentionally omit task prompts, results and message text.
 
 Realtime token issuance fails closed if LiveKit is not configured or explicit dispatch fails. The Android client verifies the exact `dominion-voice` participant before publishing the microphone. A room token alone is not evidence that STT/LLM/TTS or PSTN connectivity works.
+
+## Work-session and browser source revision
+
+Migration 0007 adds `cloud_work_sessions`/`cloud_work_events`. `work_sessions.js` implements durable research, browser, phone and admin work with user questions, answers, resume, parallel queues, events and generic push. The phone adapter uses operator `PHONE_BRIDGE_URL/TOKEN`; the Android app never receives those credentials. `browser_session.js` adds encrypted per-account official-site cookie sessions and Browser Rendering reads; migration 0006 is required. `LIVEKIT_*` and `PHONE_BRIDGE_*` remain operator configuration. This source revision is not deployed; no live Cloud work/browser/phone roundtrip is claimed.

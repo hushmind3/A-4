@@ -15,6 +15,13 @@ def connection():
     c.row_factory = sqlite3.Row
     try:
         c.execute("PRAGMA journal_mode=WAL")
+        c.execute("""CREATE TABLE IF NOT EXISTS instructions(
+            call_id TEXT NOT NULL, seq INTEGER NOT NULL, text TEXT NOT NULL,
+            created INTEGER NOT NULL, consumed INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY(call_id,seq))""")
+        c.execute("""CREATE TABLE IF NOT EXISTS utterances(
+            call_id TEXT NOT NULL, seq INTEGER NOT NULL, speaker TEXT NOT NULL,
+            text TEXT NOT NULL, created INTEGER NOT NULL, PRIMARY KEY(call_id,seq))""")
         c.execute("""CREATE TABLE IF NOT EXISTS calls(
             id TEXT PRIMARY KEY, number TEXT NOT NULL, goal TEXT NOT NULL,
             status TEXT NOT NULL, created INTEGER NOT NULL, updated INTEGER NOT NULL,
@@ -28,10 +35,62 @@ def connection():
     finally:
         c.close()
 
+def add_utterance(call_id, speaker, text):
+    if speaker not in ("ai", "callee"):
+        raise ValueError("invalid_speaker")
+    clean = (text or "").strip()
+    if not (1 <= len(clean) <= 800):
+        return False
+    with connection() as c:
+        seq = c.execute("SELECT COALESCE(MAX(seq),0)+1 FROM utterances WHERE call_id=?",
+                        (call_id,)).fetchone()[0]
+        try:
+            c.execute("INSERT INTO utterances(call_id,seq,speaker,text,created) VALUES(?,?,?,?,?)",
+                      (call_id, seq, speaker, clean, int(time.time())))
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
+def add_instruction(call_id, text):
+    clean = (text or "").strip()
+    if not (1 <= len(clean) <= 500):
+        return False
+    with connection() as c:
+        seq = c.execute("SELECT COALESCE(MAX(seq),0)+1 FROM instructions WHERE call_id=?",
+                        (call_id,)).fetchone()[0]
+        if seq > 50:
+            return False
+        c.execute("INSERT INTO instructions(call_id,seq,text,created) VALUES(?,?,?,?)",
+                  (call_id, seq, clean, int(time.time())))
+        return True
+
+def pending_instructions(call_id):
+    with connection() as c:
+        rows = c.execute("SELECT seq,text FROM instructions WHERE call_id=? AND consumed=0 ORDER BY seq LIMIT 10",
+                         (call_id,)).fetchall()
+        return [dict(row) for row in rows]
+
+def consume_instruction(call_id, seq):
+    with connection() as c:
+        return c.execute("UPDATE instructions SET consumed=1 WHERE call_id=? AND seq=? AND consumed=0",
+                         (call_id, seq)).rowcount == 1
+
+def utterances(call_id):
+    with connection() as c:
+        rows = c.execute("SELECT seq,speaker,text,created FROM utterances WHERE call_id=? ORDER BY seq",
+                         (call_id,)).fetchall()
+        return [dict(row) for row in rows]
+
 def get(call_id):
     with connection() as c:
         row = c.execute("SELECT * FROM calls WHERE id=?", (call_id,)).fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        result = dict(row)
+        result["utterances"] = [dict(x) for x in c.execute(
+            "SELECT seq,speaker,text,created FROM utterances WHERE call_id=? ORDER BY seq",
+            (call_id,)).fetchall()]
+        return result
 
 def create(call_id, number, goal):
     now = int(time.time())

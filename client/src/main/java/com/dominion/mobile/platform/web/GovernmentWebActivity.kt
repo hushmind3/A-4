@@ -16,6 +16,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -163,11 +164,20 @@ private fun GovernmentWebScreen(serviceId: String, serviceTitle: String, service
 
     Column(Modifier.fillMaxSize().background(palette.screen).statusBarsPadding().navigationBarsPadding()) {
         ScreenTopBar(title = serviceTitle, subtitle = "공식 사이트 · 사용자 인증은 이 화면에서 직접", onBack = onClose)
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             TextButton(enabled = loaded && !busy, onClick = { runAction { takeSnapshot().also { status = "화면 ${it.elements.size}개 요소를 확인했습니다." } } }) { Text("화면 분석") }
             TextButton(enabled = loaded && !busy, onClick = { runAction { makePlan() } }) { Text("AI 계획") }
             TextButton(enabled = plan != null && !busy, onClick = { runAction { executePrepare() } }) { Text("입력 실행") }
             TextButton(enabled = plan?.hasSubmit == true && !busy, onClick = { confirmSubmit = true }) { Text("최종 제출") }
+            TextButton(enabled = loaded && !busy, onClick = {
+                runAction {
+                    val cookie=CookieManager.getInstance().getCookie(currentUrl).orEmpty()
+                    check(cookie.isNotBlank()) { "저장할 로그인 쿠키가 없습니다. 공식 사이트에 먼저 로그인하세요." }
+                    val session=container.cloudAccount.saveBrowserSession(currentUrl,cookie)
+                    status="Cloud 브라우저 로그인 세션을 저장했습니다 · "+session.host
+                }
+            }) { Text("Cloud 세션 저장") }
         }
         Text(status, style = MaterialTheme.typography.bodySmall, color = palette.textSecondary,
             modifier = Modifier.padding(horizontal = 16.dp))

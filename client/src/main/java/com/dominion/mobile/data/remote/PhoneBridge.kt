@@ -29,8 +29,10 @@ internal data class PhoneBridgeHealth(val status:String="",val approved_numbers:
     }
 }
 internal data class PhoneBridgeState(val config:PhoneBridgeConfig,val pending:PhoneBridgeCall?=null)
+internal data class PhoneBridgeUtterance(val seq:Int=0,val speaker:String="",val text:String="",val created:Long=0)
 internal data class PhoneBridgeReceipt(val id:String,val status:String,val answered:Int=0,val consent:Int=0,
-    val summary:String?=null,val evidence:String?=null,val reason:String?=null){
+    val summary:String?=null,val evidence:String?=null,val reason:String?=null,
+    val utterances:List<PhoneBridgeUtterance>?=null){
     val terminal get()=status in setOf("reported","ended","failed","cancelled","unknown","expired")
 }
 internal class PhoneBridge(private val context:Context,account:String){
@@ -73,7 +75,7 @@ internal class PhoneBridge(private val context:Context,account:String){
     }
     suspend fun health(config:PhoneBridgeConfig):PhoneBridgeHealth=withContext(Dispatchers.IO){
         val checked=config.checked()
-        val request=Request.Builder().url(checked.origin+"/v1/health")
+        val request=Request.Builder().url(checked.origin+"/v1/phone/health")
             .header("Authorization","Bearer "+checked.token).get().build()
         http.newCall(request).execute().use{response->
             check(response.isSuccessful){"전화 어댑터 응답 "+response.code}
@@ -85,10 +87,24 @@ internal class PhoneBridge(private val context:Context,account:String){
             gson.fromJson(source.readUtf8(),PhoneBridgeHealth::class.java).checked()
         }
     }
+    suspend fun instruction(config:PhoneBridgeConfig,call:PhoneBridgeCall,text:String):Boolean=withContext(Dispatchers.IO){
+        val checked=config.checked()
+        val clean=text.trim()
+        require(call.id.matches(Regex("[a-f0-9-]{36}"))&&clean.length in 1..500&&clean.none{it=='\u0000'})
+        val base=if(checked.origin==CLOUD_ORIGIN)"/v1/phone/calls" else "/v1/calls"
+        val request=Request.Builder().url(checked.origin+base+"/"+call.id+"/instruction")
+            .header("Authorization","Bearer "+checked.token)
+            .post(gson.toJson(mapOf("text" to clean)).toRequestBody("application/json".toMediaType())).build()
+        http.newCall(request).execute().use{response->
+            check(response.isSuccessful){"전화 지시 응답 "+response.code}
+            true
+        }
+    }
     suspend fun request(config:PhoneBridgeConfig,call:PhoneBridgeCall,method:String):PhoneBridgeReceipt?=withContext(Dispatchers.IO){
         val checked=config.checked()
         require(call.id.matches(Regex("[a-f0-9-]{36}"))&&call.number.matches(Regex("\\+82[1-9][0-9]{7,10}"))&&call.goal.length in 3..800)
-        val endpoint=checked.origin+"/v1/calls"+when(method){"start"->"";"cancel"->"/"+call.id+"/cancel";"status"->"/"+call.id;else->error("Invalid action")}
+        val base=if(checked.origin==CLOUD_ORIGIN)"/v1/phone/calls" else "/v1/calls"
+        val endpoint=checked.origin+base+when(method){"start"->"";"cancel"->"/"+call.id+"/cancel";"status"->"/"+call.id;else->error("Invalid action")}
         val request=Request.Builder().url(endpoint).header("Authorization","Bearer "+checked.token).apply{
             if(method!="status")post((if(method=="start")gson.toJson(call) else "{}").toRequestBody("application/json".toMediaType()))
         }.build()
@@ -103,6 +119,9 @@ internal class PhoneBridge(private val context:Context,account:String){
             val receipt=gson.fromJson(source.readUtf8(),PhoneBridgeReceipt::class.java)
             check(receipt.id==call.id&&receipt.status in setOf("queued","dialing","connected","cancel_requested",
                 "reported","ended","failed","cancelled","unknown","expired"))
+            val rows=receipt.utterances.orEmpty()
+            require(rows.size<=200&&rows.map{it.seq}.distinct().size==rows.size&&
+                rows.all{it.seq>0&&it.speaker in setOf("ai","callee")&&it.text.isNotBlank()&&it.text.length<=800&&it.created>0})
             receipt
         }
     }

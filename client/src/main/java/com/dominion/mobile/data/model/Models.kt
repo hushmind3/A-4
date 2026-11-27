@@ -165,6 +165,7 @@ data class TaskItem(
     val phonePublicRead:Boolean=false,
     val phoneTransaction:com.dominion.mobile.data.PhoneTransactionRequest?=null,
     val phonePrivateRead:com.dominion.mobile.data.PhonePrivateRead?=null,
+    val phoneInquiryId:String?=null,
     val workflowId:String?=null,
     val workflowAfter:String?=null,
     val workflowState:String?=null,

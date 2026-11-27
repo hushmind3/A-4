@@ -31,7 +31,7 @@ class CallRequest(BaseModel):
 
 def public(row):
     if not row: raise HTTPException(404,"call_not_found")
-    return {k:row[k] for k in ("id","status","created","updated","answered","consent","summary","evidence","reason")}
+    return {k:row[k] for k in ("id","status","created","updated","answered","consent","summary","evidence","reason","utterances")}
 
 @app.get("/v1/health", dependencies=[Depends(auth)])
 async def health():
@@ -67,6 +67,18 @@ async def start(request:CallRequest):
         finally:
             await lk.aclose()
     return public(journal.get(call_id))
+
+@app.post("/v1/calls/{call_id}/instruction", dependencies=[Depends(auth)])
+async def instruction(call_id:uuid.UUID, request:dict):
+    row=journal.get(str(call_id))
+    if not row: raise HTTPException(404,"call_not_found")
+    if row["status"] not in ("connected","dialing"):
+        raise HTTPException(409,"call_not_active")
+    text=str(request.get("text","")).strip()
+    if not journal.add_instruction(str(call_id),text):
+        raise HTTPException(400,"invalid_instruction")
+    return {"ok":True,"queued":True}
+
 
 @app.post("/v1/calls/{call_id}/cancel",dependencies=[Depends(auth)])
 async def cancel(call_id:uuid.UUID):

@@ -48,6 +48,11 @@ interface DominionRepository {
 
     /** Persist an actual official-site submission receipt observed in the WebView. */
     suspend fun recordGovernmentReceipt(receipt: com.dominion.mobile.data.model.GovernmentReceipt) {}
+    /** A task spoken during a realtime AI call enters the same chat/harness. */
+    suspend fun submitCallVoiceTask(roomId:String,session:String,text:String):String? = null
+    suspend fun sendExternalCallInstruction(roomId:String?,text:String):Boolean = false
+    suspend fun refreshPhoneCall(roomId:String) {}
+    suspend fun sendWorkMessage(roomId:String,text:String):Boolean = false
 
     suspend fun mobileCapabilities(): com.dominion.mobile.data.remote.MobileCapabilities = error("Mobile extension unavailable")
     suspend fun mobilePeers(): List<com.dominion.mobile.data.remote.MobilePeer> = error("Mobile extension unavailable")

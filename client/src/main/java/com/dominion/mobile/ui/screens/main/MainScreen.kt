@@ -128,13 +128,6 @@ fun MainScreen(
                 contentWindowInsets = WindowInsets(0, 0, 0, 0),
                 bottomBar = {
                     Column {
-                        state.call?.takeIf { it.minimized }?.let { call ->
-                            MinimizedCallBar(
-                                state = state,
-                                onOpen = { onNavigate(Routes.CALL) },
-                                onEnd = { vm.endCall() }
-                            )
-                        }
                         BottomBar(
                             state = state,
                             onSelect = { vm.selectTab(it) }
@@ -533,10 +526,11 @@ private fun SharedBanner(text: String, onDismiss: () -> Unit, onSend: () -> Unit
 }
 
 @Composable
-private fun MinimizedCallBar(
+fun MinimizedCallBar(
     state: AppState,
     onOpen: () -> Unit,
-    onEnd: () -> Unit
+    onEnd: () -> Unit,
+    modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier
 ) {
     val p = LocalDominionPalette.current
     val lang = LocalLang.current
@@ -544,7 +538,7 @@ private fun MinimizedCallBar(
     val call = state.call ?: return
     val character = state.character(call.characterId) ?: return
     Row(
-        Modifier
+        modifier
             .fillMaxWidth()
             .background(Color(0xFF171A20))
             .clickable(onClick = onOpen)

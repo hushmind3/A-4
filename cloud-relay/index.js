@@ -2,6 +2,9 @@ import {emailLoginReady, startEmailLogin, verifyEmailLogin, pollEmailLogin} from
 import {voiceRoute} from './voice.js';
 import {messengerRoute} from './messenger.js';
 import {realtimeRoute} from './realtime.js';
+import {workRoute,tickWork} from './work_sessions.js';
+import {browserSessionRoute} from './browser_session.js';
+import {phoneProxyRoute} from './phone_proxy.js';
 import {jobRoute,tickJobs} from './agent_jobs.js';
 import {b64url, hash, randomToken} from './token_crypto.js';
 import {assistantRoute,cleanupAssistant,ready as assistantReady,revokeAppSocket} from './assistant_link.js';
@@ -537,6 +540,7 @@ export default {
     // enable older account/message maintenance on the new trigger.
     if(event.cron==='* * * * *'){
       if(env.AGENT_ENCRYPTION_KEY)ctx.waitUntil(tickJobs(env,(messages,user)=>inferCloudJob(env,messages,user)));
+      if(env.AGENT_ENCRYPTION_KEY)ctx.waitUntil(tickWork(env,(user,messages)=>inferCloudJob(env,messages,user)));
       return;
     }
     ctx.waitUntil(availableModels(env, true));
@@ -580,10 +584,13 @@ export default {
       let response;
       // App sessions may never enter owner, billing or identity endpoints.
       const appAllowed=['/v1/me','/v1/models','/v1/billing','/v1/chat/completions','/v1/apps/status','/v1/apps/disconnect','/v1/voice/capabilities','/v1/voice/transcriptions','/v1/voice/speech','/v1/push/config','/v1/push/register'];
-      if(isAppRequest(request)&&!appAllowed.includes(path)&&!path.startsWith('/v1/assistant/')&&!path.startsWith('/v1/agent/jobs')&&!path.startsWith('/v1/messenger/')&&!path.startsWith('/v1/realtime/'))return json({error:'Owner login required'},403,headers);
+      if(isAppRequest(request)&&!appAllowed.includes(path)&&!path.startsWith('/v1/assistant/')&&!path.startsWith('/v1/agent/jobs')&&!path.startsWith('/v1/messenger/')&&!path.startsWith('/v1/realtime/')&&!path.startsWith('/v1/work')&&!path.startsWith('/v1/browser/')&&!path.startsWith('/v1/phone/'))return json({error:'Owner login required'},403,headers);
       if(path.startsWith('/v1/agent/jobs')){const user=await account(request,env);response=await jobRoute(request,env,user,ctx,(messages,u)=>inferCloudJob(env,messages,u));}
        else if(path.startsWith('/v1/messenger/')){const user=await account(request,env);response=await messengerRoute(request,env,user);}
        else if(path.startsWith('/v1/realtime/')){const user=await account(request,env);response=await realtimeRoute(request,env,user);}
+       else if(path.startsWith('/v1/work')){const user=await account(request,env);response=await workRoute(request,env,user,ctx,(u,m)=>inferCloudJob(env,m,u));}
+       else if(path.startsWith('/v1/browser/')){const user=await account(request,env);response=await browserSessionRoute(request,env,user);}
+       else if(path.startsWith('/v1/phone/')){const user=await account(request,env);response=await phoneProxyRoute(request,env,user);}
        else if(path==='/v1/push/config'&&request.method==='GET'){const user=await account(request,env);const config=pushConfig(env);response=user&&config?json(config):(config?err('Unauthorized',401):err('Push not configured',503));}
        else if(path==='/v1/push/register'&&request.method==='POST'){const user=await account(request,env);response=user?await registerAppPush(request,env,user):err('Unauthorized',401);}
        else if(path.startsWith('/v1/voice/')){const user=await account(request,env);response=await voiceRoute(request,env,user,path);}
