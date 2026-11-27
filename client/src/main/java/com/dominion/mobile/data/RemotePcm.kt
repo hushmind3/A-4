@@ -5,7 +5,7 @@ import java.nio.ByteOrder
 
 /** Bounded PCM16 mono conversion. Resample with averaged input frames and a persistent
  * integer phase; the callback's direct buffer is never retained. */
-class RemotePcm(seconds: Int = 30) {
+class RemotePcm(seconds: Int = 30, private val endpoint: SpeechEndpoint? = null) {
     private val samples = ShortArray(WaveAudio.SAMPLE_RATE * seconds.also { require(it in 1..60) })
     private var count = 0
     private var rate = 0
@@ -28,9 +28,13 @@ class RemotePcm(seconds: Int = 30) {
         }
         rate = sampleRate
         channels = channelCount
+        val previousCount = count
         val pcm = data.duplicate().order(ByteOrder.nativeOrder())
         repeat(frames) {
-            if (count == samples.size) return
+            if (count == samples.size) {
+                endpoint?.accept(samples, previousCount, count - previousCount)
+                return
+            }
             var mono = 0
             repeat(channelCount) { mono += pcm.short.toInt() }
             mono /= channelCount
@@ -49,7 +53,11 @@ class RemotePcm(seconds: Int = 30) {
                 window = 0
             }
         }
+        endpoint?.accept(samples, previousCount, count - previousCount)
     }
+    @Synchronized fun endpointFinished(): Boolean = endpoint?.finished == true
+    @Synchronized fun endpointTimedOut(): Boolean = endpoint?.noSpeechTimeout == true
+    @Synchronized fun endpointHasSpeech(): Boolean = endpoint?.hasSpeech == true
     @Synchronized fun size(): Int = count
     @Synchronized fun wave(): ByteArray {
         check(!failed) { "Unsupported or changed remote PCM format" }

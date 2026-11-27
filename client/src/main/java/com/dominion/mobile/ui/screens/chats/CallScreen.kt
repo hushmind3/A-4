@@ -169,6 +169,7 @@ fun CallScreen(
     var frameSource by remember(call.sessionId) { mutableStateOf<String?>(null) }
     var lastInstruction by remember(call.sessionId) { mutableStateOf<String?>(null) }
     var readResult by remember(call.sessionId) { mutableStateOf(false) }
+    var continuousAssistant by remember(call.sessionId) { mutableStateOf(false) }
     var piperLevel by remember(call.sessionId) { mutableFloatStateOf(0f) }
     val speechLevel = if (mediaReady) maxOf(media.remoteAudioLevel, piperLevel) else 0f
     val instruction = state.conversation(call.conversationId)?.messages?.firstOrNull {
@@ -373,6 +374,10 @@ fun CallScreen(
                         Text("업무 기록", color = Color.White)
                     }
                 }
+                if (mediaReady && !call.muted && media.room?.remoteParticipants?.isEmpty() == true)
+                    androidx.compose.material3.TextButton(onClick = { continuousAssistant = true }) {
+                        Text("연속 AI 음성·영상 대화", color = Color.White)
+                    }
                 if (mediaReady && lastInstruction != null) androidx.compose.material3.TextButton(
                     onClick = { readResult = true }) {
                     Text("업무 결과 음성 듣기", color = Color.White)
@@ -444,6 +449,11 @@ fun CallScreen(
                 }
             }
         }
+    }
+    if (continuousAssistant) {
+        com.dominion.mobile.ui.components.CallAssistantDialog(vm, call.sessionId, call.conversationId,
+            onDismiss = { continuousAssistant = false; piperLevel = 0f },
+            onSpeechLevel = { piperLevel = it }, onSubmitted = { lastInstruction = it })
     }
     if (readResult && lastInstruction != null) {
         com.dominion.mobile.ui.components.CallResultSpeechDialog(vm, call.sessionId, call.conversationId,

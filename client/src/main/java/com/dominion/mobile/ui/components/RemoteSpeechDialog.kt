@@ -80,7 +80,7 @@ fun RemoteSpeechDialog(vm: AppViewModel, callId: String, roomId: String,
                     onProgress = { seconds = it })
                 recording = false
                 check(verify(expected, selected.first, selected.third))
-                transcript = vm.transcribeVoice(wav)
+                transcript = vm.transcribeCallVoice(callId, roomId, expected, wav)
                 check(verify(expected, selected.first, selected.third))
             } catch (e: CancellationException) { throw e }
             catch (_: Exception) { transcript = ""; error = "상대 음성·통화 상태 또는 본체 전사 실패. 다시 확인하세요." }

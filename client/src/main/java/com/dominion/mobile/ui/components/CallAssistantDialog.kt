@@ -1,0 +1,176 @@
+package com.dominion.mobile.ui.components
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import com.dominion.mobile.data.VoiceTurn
+import com.dominion.mobile.data.WaveAudio
+import com.dominion.mobile.data.model.CallPhase
+import com.dominion.mobile.data.model.MessageStatus
+import com.dominion.mobile.platform.audio.*
+import com.dominion.mobile.ui.AppViewModel
+import io.livekit.android.room.track.LocalAudioTrack
+import io.livekit.android.room.track.Track
+import kotlinx.coroutines.*
+import java.util.concurrent.atomic.AtomicBoolean
+
+/** One assistant turn at a time on the existing call track and native room.
+ * No remote participant is recorded and no second microphone is opened.
+ */
+@Composable
+fun CallAssistantDialog(vm: AppViewModel, callId: String, roomId: String,
+    onDismiss: () -> Unit, onSpeechLevel: (Float) -> Unit, onSubmitted: (String) -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val media by CallForegroundService.mediaState.collectAsState()
+    var consent by remember { mutableStateOf(false) }
+    var vision by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    var phase by remember { mutableStateOf("준비") }
+    var transcript by remember { mutableStateOf("") }
+    var answer by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf("") }
+    var work by remember { mutableStateOf<Job?>(null) }
+    var pending by remember { mutableStateOf<String?>(null) }
+    var session by remember { mutableStateOf<String?>(null) }
+    val stopCapture = remember { AtomicBoolean(false) }
+
+    fun valid(expected: String): Boolean {
+        val current = vm.state.value
+        val call = current.call
+        val m = CallForegroundService.mediaState.value
+        return call?.sessionId == callId && call.conversationId == roomId &&
+            call.phase in setOf(CallPhase.WAITING_PEER, CallPhase.PEER_PRESENT) &&
+            !call.muted && current.conversation(roomId)?.sessionId == expected &&
+            m.sessionId == callId && m.room?.remoteParticipants?.isEmpty() == true
+    }
+    fun stop() { stopCapture.set(true); work?.cancel() }
+    fun begin() {
+        if (!consent || busy || work?.isActive == true) return
+        busy = true; error = ""
+        val useVision = vision
+        work = scope.launch {
+            try {
+                val capabilities = vm.voiceStatus()
+                check(capabilities.whisper?.available == true && capabilities.piper?.available == true)
+                withTimeout(15_000L) {
+                    while (!vm.refreshConversationNow(roomId)) delay(300)
+                }
+                val expected = requireNotNull(vm.roomExecution(roomId).sessionId)
+                check(session == null || session == expected)
+                session = expected
+                check(valid(expected))
+                coroutineScope {
+                    val watchdog = launch {
+                        while (isActive) {
+                            check(valid(expected)) { "Call or participant changed" }
+                            delay(100)
+                        }
+                    }
+                    try {
+                        while (isActive) {
+                            check(valid(expected))
+                            if (pending == null) {
+                                val track = CallForegroundService.mediaState.value.room?.localParticipant
+                                    ?.getTrackPublication(Track.Source.MICROPHONE)
+                                    ?.takeUnless { it.muted }?.track as? LocalAudioTrack
+                                    ?: error("Local microphone unavailable")
+                                stopCapture.set(false)
+                                phase = "듣는 중"
+                                val wav = RemoteSpeechCapture.capture(track, stopCapture, valid = {
+                                    valid(expected) && CallForegroundService.mediaState.value.room?.localParticipant
+                                        ?.getTrackPublication(Track.Source.MICROPHONE)
+                                        ?.takeUnless { it.muted }?.track === track
+                                }, onProgress = {}, autoEndpoint = true)
+                                check(valid(expected))
+                                phase = "본체 음성 인식 중"
+                                transcript = vm.transcribeCallVoice(callId, roomId, expected, wav)
+                                check(valid(expected))
+                                val nonce = if (useVision) {
+                                    val video = requireNotNull(CallForegroundService.mediaState.value.localVideo)
+                                    val frame = CallFrameCapture.capture(video)
+                                    check(valid(expected) && CallForegroundService.mediaState.value.localVideo === video)
+                                    vm.sendCallFrame(callId, roomId, expected, transcript.take(4000), frame)
+                                } else requireNotNull(vm.sendCallInstruction(callId, transcript))
+                                pending = nonce; onSubmitted(nonce); answer = ""
+                            }
+                            val nonce = requireNotNull(pending)
+                            while (isActive) {
+                                check(valid(expected))
+                                if (!vm.refreshConversationNow(roomId)) { phase = "동기화 중"; delay(1000); continue }
+                                val execution = vm.roomExecution(roomId)
+                                check(execution.sessionId == expected)
+                                val owner = requireNotNull(VoiceTurn.owner(
+                                    requireNotNull(vm.state.value.conversation(roomId)).messages, roomId, nonce))
+                                check(owner.status != MessageStatus.FAILED &&
+                                    owner.jobStatus !in setOf("failed","cancelled","paused","interrupted","stopped","needs_review"))
+                                if (execution.approvals.orEmpty().any { it.actionableIn(expected) }) {
+                                    phase = "본체 도구 승인 대기 · 채팅에서 확인"
+                                    delay(1500); continue
+                                }
+                                val replies = VoiceTurn.replies(
+                                    requireNotNull(vm.state.value.conversation(roomId)).messages, roomId, owner)
+                                if (replies.isEmpty()) { phase = "본체 작업·응답 대기"; delay(1200); continue }
+                                answer = replies.joinToString("\n\n") { it.text }
+                                phase = "본체 음성 응답 중"
+                                for (chunk in replies.flatMap { WaveAudio.speechChunks(it.text) }) {
+                                    check(valid(expected))
+                                    val speech = vm.synthesizeCallVoice(callId, roomId, expected, chunk)
+                                    check(valid(expected))
+                                    EngineVoiceAudio.play(context, speech, communication = true,
+                                        existingCallFocus = true, onSpeechLevel = onSpeechLevel)
+                                }
+                                pending = null
+                                // No microphone sink during playback; allow output tail to decay.
+                                delay(400)
+                                break
+                            }
+                        }
+                    } finally { watchdog.cancelAndJoin() }
+                }
+            } catch (_: NoSpeechDetected) { phase = "발화 없음 · 다시 시작 가능" }
+            catch (e: TimeoutCancellationException) { error = "대화 동기화 시간 초과" }
+            catch (e: CancellationException) { phase = "일시정지 · 접수한 작업은 유지"; throw e }
+            catch (_: Exception) { error = "통화·본체·음성 또는 작업 상태 변경 · 대화에서 확인하세요." }
+            finally { busy = false; onSpeechLevel(0f) }
+        }
+    }
+
+    StopOnBackground { stop(); onDismiss() }
+    DisposableEffect(Unit) { onDispose { stop() } }
+    AlertDialog(onDismissRequest = { stop(); onDismiss() }, title = { Text("연속 AI 음성·영상 대화") },
+        text = {
+            Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("현재 내 마이크 발화를 감지해 본체 작업으로 보내고 정확히 연결된 완료 응답을 읽습니다. 다른 참가자가 접속하면 중단합니다. 발화와 응답은 교대합니다.")
+                Row {
+                    Checkbox(consent, { consent = it }, enabled = !busy)
+                    Text("내 음성을 본체로 전송하고 자동으로 작업 요청", modifier = Modifier.padding(top = 12.dp))
+                }
+                Row {
+                    Checkbox(vision, { vision = it }, enabled = !busy && media.localVideo != null)
+                    Text("각 발화에 현재 내 카메라 이미지 첨부", modifier = Modifier.padding(top = 12.dp))
+                }
+                Text(phase)
+                if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                if (transcript.isNotBlank()) Text("나: " + transcript.take(900))
+                if (answer.isNotBlank()) Text("AI: " + answer.take(1400))
+                if (error.isNotBlank()) Text(error, color = MaterialTheme.colorScheme.error)
+                if (pending != null && !busy) {
+                    Text("이미 접수된 요청은 재전송하지 않고 다시 조회합니다.")
+                    TextButton(onClick = { pending = null }) { Text("기존 작업은 채팅에 두고 새 발화") }
+                }
+                if (busy && phase == "듣는 중") TextButton(onClick = { stopCapture.set(true) }) { Text("발화 종료") }
+            }
+        },
+        confirmButton = { TextButton(enabled = consent && !busy && (!vision || media.localVideo != null),
+            onClick = ::begin) { Text(if (pending == null) "시작" else "기존 응답 확인") } },
+        dismissButton = { TextButton(onClick = {
+            if (busy) stop() else onDismiss()
+        }) { Text(if (busy) "중단" else "닫기") } })
+}

@@ -73,7 +73,7 @@ fun CallResultSpeechDialog(vm: AppViewModel, callId: String, roomId: String, non
                         for ((i,chunk) in chunks.withIndex()) {
                             check(safe())
                             progress = "음성 합성·재생 " + (i+1) + "/" + chunks.size
-                            val wav = vm.synthesizeVoice(chunk)
+                            val wav = vm.synthesizeCallVoice(callId, roomId, requireNotNull(originalSession), chunk)
                             check(safe())
                             // The active LiveKit call already owns its communication route/focus.
                             EngineVoiceAudio.play(context,wav,communication=true,existingCallFocus=true,

@@ -44,6 +44,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import com.dominion.mobile.data.model.CallPhase
 import kotlinx.coroutines.launch
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -184,6 +185,27 @@ class AppViewModel(
     suspend fun synthesizeVoice(text: String): ByteArray {
         check(state.value.call == null)
         return repo.synthesizeVoice(text)
+    }
+
+    private fun verifyCallVoice(callId: String, roomId: String, session: String) {
+        val call = state.value.call
+        check(call?.sessionId == callId && call.conversationId == roomId &&
+            call.phase in setOf(CallPhase.WAITING_PEER, CallPhase.PEER_PRESENT))
+        check(state.value.conversation(roomId)?.sessionId == session)
+    }
+
+    suspend fun transcribeCallVoice(callId: String, roomId: String, session: String, wav: ByteArray): String {
+        verifyCallVoice(callId, roomId, session)
+        val result = repo.transcribeVoice(wav)
+        verifyCallVoice(callId, roomId, session)
+        return result
+    }
+
+    suspend fun synthesizeCallVoice(callId: String, roomId: String, session: String, text: String): ByteArray {
+        verifyCallVoice(callId, roomId, session)
+        val result = repo.synthesizeVoice(text)
+        verifyCallVoice(callId, roomId, session)
+        return result
     }
 
     suspend fun sendCallFrame(callId: String, roomId: String, expectedRoomSession: String,
