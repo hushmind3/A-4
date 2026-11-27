@@ -57,7 +57,7 @@ class ReminderWorker(context: Context, params: WorkerParameters) : CoroutineWork
             for (item in repo.state.value.schedules) {
                 if (container.repository !== repo || container.reminderScope() != scope) break
                 val dueWork = com.dominion.mobile.data.ScheduledDispatch.due(item, now)
-                if (dueWork != null && scope != "unconfigured") {
+                if (dueWork != null) {
                     try { repo.dispatchScheduledTask(item.id, dueWork) }
                     catch (e: kotlinx.coroutines.CancellationException) { throw e }
                     catch (_: Exception) { /* Persisted reservation will be checked on next repair. */ }

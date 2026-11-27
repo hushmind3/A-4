@@ -1,6 +1,8 @@
 package com.dominion.mobile.data.harness
 import com.dominion.mobile.data.model.MemoryItem
 import com.google.gson.JsonObject
+import com.dominion.mobile.data.remote.CloudChatMessage
+import com.dominion.mobile.data.remote.CloudCompletionRequest
 import org.junit.Assert.*
 import org.junit.Test
 class MobileCoreTest{
@@ -9,6 +11,18 @@ class MobileCoreTest{
   val b=MemoryItem("b","other","서울 여행 일정",retrievalEligible=true)
   val c=MemoryItem("c","p","서울 여행 일정",serverBacked=true)
   assertEquals(listOf("a"),MobileCore.retrieve(listOf(a,b,c),"p","서울여행").map{it.id})
+ }
+ @Test fun boundedToolHistoryKeepsSystemAndFitsCloudProtocol(){
+  val longContext=listOf(CloudChatMessage("system","Local rules"))+
+   (1..6).flatMap{listOf(CloudChatMessage("user","previous request $it"),
+     CloudChatMessage("assistant","previous answer $it"))}+
+   CloudChatMessage("user","Current device task")
+  val bounded=MobileCore.compact(longContext)
+  assertEquals("system",bounded.first().role)
+  assertEquals("Current device task",bounded.last().content)
+  assertTrue(bounded.size<=12)
+  CloudCompletionRequest("dominion/free-auto",bounded).validated()
+  assertEquals(3,MobileCore.MAX_READ_STEPS)
  }
  @Test fun rejectsUnexpectedToolAndFields(){
   assertNull(MobileCore.action("""{"tool":"clock","args":{},"extra":1}"""))

@@ -3,7 +3,7 @@ package com.dominion.mobile.data
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.PixelCopy
+import android.view.PixelCopy
 import android.os.Handler
 import android.os.Looper
 import android.view.SurfaceView
