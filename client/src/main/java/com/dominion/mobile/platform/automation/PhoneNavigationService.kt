@@ -220,6 +220,10 @@ class PhoneNavigationService : AccessibilityService() {
                             if(activePlan.steps.last().action=="expect")"마지막 화면 문구 확인" else "화면 관찰 완료"
                         break
                     }
+                    if(!budget.canRequest()){
+                        _status.value="재계획 한도 도달 · 실행 "+completed+"단계 · 결과 확인 필요"
+                        break
+                    }
                     // Future frames may contain private data. Each transmission is separately
                     // approved on the target app; the owner may stop at any point.
                     approveStep(PhoneNavigationStep("visual_inspect","현재 화면을 본체에 전달하고 재계획"),plan.app,1,1)
@@ -245,10 +249,10 @@ class PhoneNavigationService : AccessibilityService() {
                     }
                 }
             } catch (e: CancellationException) {
-                _status.value = "중단 · 확인된 단계 " + completed + "/" + plan.steps.size
+                _status.value = "중단 · 확인된 단계 " + completed
                 if (e !is TimeoutCancellationException) throw e
             } catch (_: Exception) {
-                _status.value = "중단 · 화면/권한/대상 불일치. 확인된 단계 " + completed + "/" + plan.steps.size
+                _status.value = "중단 · 화면/권한/대상 불일치. 확인된 단계 " + completed
             } finally {
                 removeStop()
                 runCatching {

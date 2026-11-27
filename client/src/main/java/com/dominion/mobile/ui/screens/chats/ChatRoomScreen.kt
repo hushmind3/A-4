@@ -697,8 +697,11 @@ fun ChatRoomScreen(
     phonePlanMessage?.let { message ->
         val plan = remember(message.id, message.text) { com.dominion.mobile.data.PhoneNavigationPlan.fromMessage(message.text) }
         if (plan != null) com.dominion.mobile.ui.components.PhoneNavigationDialog(plan,
-            replanContext=conversation.sessionId?.takeIf{it.isNotBlank()}?.let{
-                com.dominion.mobile.data.PhoneReplanContext(conversationId,it,plan.app)
+            replanContext=conversation.sessionId?.takeIf{it.isNotBlank()}?.let{ session ->
+                conversation.messages.firstOrNull{it.id==message.replyTo &&
+                    it.sender==com.dominion.mobile.data.model.MessageSender.USER && it.text.isNotBlank()}?.let{ owner ->
+                    com.dominion.mobile.data.PhoneReplanContext(conversationId,session,plan.app,message.id,owner.text.take(4000))
+                }
             },
             onDismiss = { phonePlanMessage = null },
             onVisualResult = { frame ->
