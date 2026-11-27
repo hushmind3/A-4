@@ -54,7 +54,7 @@ fun MobileVoiceConversationDialog(vm:AppViewModel,roomId:String,onDismiss:()->Un
         phase="🎙 듣는 중 · 말씀이 끝나면 자동 인식합니다"
         recordingJob=scope.launch{
             try{
-                val wav=EngineVoiceAudio.record(context,stopRecording,autoEndpoint=true)
+                val wav=EngineVoiceAudio.record(context,stopRecording,autoEndpoint=true,maxSeconds=20)
                 phase="클라우드에서 음성 인식 중"
                 val transcript=cloud.transcribeForMobile(wav,language)
                 if(room?.sessionId!=originalSession)error("대화방 세션 변경")
@@ -95,14 +95,18 @@ fun MobileVoiceConversationDialog(vm:AppViewModel,roomId:String,onDismiss:()->Un
             answer=reply.text
             if(owner?.jobStatus=="needs_review"){
                 phase="도구 실행 승인 필요 · 대화방에서 검토해 주세요"
+            }else if(voiceCapabilities?.let{if(language=="ko")it.tts_ko else it.tts_en}!=true){
+                phase="텍스트 답변 완료 · 클라우드 음성 합성을 설정하면 음성 재생됩니다"
             }else{
                 speakingJob?.cancel()
                 speakingJob=scope.launch{
                     try{
                         phase="클라우드에서 답변 음성을 생성 중"
-                        val audio=cloud.speakForMobile(reply.text.take(700),language)
-                        phase="🔊 클라우드 음성 답변 재생 중"
-                        CloudVoicePlayback.play(context,audio)
+                        for(chunk in reply.text.take(2400).chunked(600)){
+                            val audio=cloud.speakForMobile(chunk,language)
+                            phase="🔊 클라우드 음성 답변 재생 중"
+                            CloudVoicePlayback.play(context,audio)
+                        }
                         phase="답변 완료 · 마이크를 눌러 이어서 말씀하세요"
                     }catch(cancelled:CancellationException){throw cancelled}
                     catch(e:Exception){

@@ -38,7 +38,7 @@ object EngineVoiceAudio {
     @SuppressLint("MissingPermission")
     suspend fun record(context: Context, stop: AtomicBoolean,
         autoEndpoint: Boolean = false, duringPlayback: Boolean = false,
-        speechStarted: AtomicBoolean? = null): ByteArray = withContext(Dispatchers.IO) {
+        speechStarted: AtomicBoolean? = null, maxSeconds:Int=WaveAudio.MAX_SECONDS): ByteArray = withContext(Dispatchers.IO) {
         require(ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
         check(microphoneLease.compareAndSet(false,true)){"Microphone already in use"}
         try {
@@ -48,7 +48,8 @@ object EngineVoiceAudio {
         val recorder = AudioRecord(if (duringPlayback) MediaRecorder.AudioSource.VOICE_COMMUNICATION
             else MediaRecorder.AudioSource.MIC, rate, AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT, maxOf(minimum * 2, 6400))
-        val samples = ShortArray(rate * WaveAudio.MAX_SECONDS)
+        require(maxSeconds in 1..WaveAudio.MAX_SECONDS)
+        val samples = ShortArray(rate * maxSeconds)
         var count = 0
         val detector = com.dominion.mobile.data.SpeechEndpoint()
         val started = android.os.SystemClock.elapsedRealtime()
