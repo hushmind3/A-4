@@ -1181,9 +1181,34 @@ class RemoteBackedRepository(
 
     private val syncLock=Mutex()
     private var syncCursor=0
+    private var lastCloudSessionCheck=0L
 
     override suspend fun synchronizeEngine():Boolean {
-        if(endpoint==null || !syncLock.tryLock())return false
+        if(endpoint==null){
+            if(!localExecution || !syncLock.tryLock())return false
+            try {
+                val checkedAt=System.currentTimeMillis()
+                // The foreground UI synchronizes every 30 seconds. Validate the
+                // mobile Cloud session immediately, then at most every 5 minutes.
+                if(connection.value!=ConnectionState.CONNECTED ||
+                    checkedAt-lastCloudSessionCheck>=5*60_000L){
+                    refresh()
+                    lastCloudSessionCheck=checkedAt
+                }
+                if(connection.value!=ConnectionState.CONNECTED)return false
+                var ok=true
+                for(task in state.value.tasks.filter{
+                    it.engineJobId?.startsWith("cloud:")==true &&
+                        com.dominion.mobile.platform.background.CloudJobMonitor.isActive(it.engineStatus)
+                }.take(16)){
+                    try{refreshTask(task.id)}
+                    catch(e:CancellationException){throw e}
+                    catch(_:Exception){ok=false}
+                }
+                return ok
+            }finally{syncLock.unlock()}
+        }
+        if(!syncLock.tryLock())return false
         try {
             refresh()
             if(connection.value!=ConnectionState.CONNECTED)return false
