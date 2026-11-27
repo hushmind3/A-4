@@ -42,11 +42,26 @@ class LocalStore(context: Context, scope: String = "unconfigured") {
 
     private fun clean(state: AppState) = state.copy(call = null, typingConversationId = null, vaultUnlocked = false)
 
+    /** Bind each ciphertext to its account, record kind and stable row identity. */
+    private fun plaintext(id:String,value:String):String =
+        if(vaultCipher.isSealed(value))vaultCipher.open(id,value) else value
+    private fun ciphertext(id:String,json:String,previous:String?):String =
+        if(previous!=null && vaultCipher.isSealed(previous) &&
+            vaultCipher.open(id,previous)==json)previous else vaultCipher.seal(id,json)
+
     private fun rows(state: AppState): Rows {
         val s = clean(state)
         val records = mutableListOf<RecordRow>()
+        val beforeRecords=persisted?.records.orEmpty().associateBy{it.kind to it.id}
+        val beforeMessages=persisted?.messages.orEmpty().associateBy{it.conversationId to it.id}
+        val beforeConversations=persisted?.conversations.orEmpty().associateBy{it.id}
         fun <T> add(kind: String, values: List<T>, id: (T) -> String) {
-            values.forEachIndexed { index, value -> records += RecordRow(kind, id(value), index, gson.toJson(value)) }
+            values.forEachIndexed { index, value ->
+                val key=id(value)
+                val payload=ciphertext("record:"+kind+":"+key,gson.toJson(value),
+                    beforeRecords[kind to key]?.payload)
+                records+=RecordRow(kind,key,index,payload)
+            }
         }
         add("task", s.tasks, TaskItem::id)
         add("schedule", s.schedules, ScheduleItem::id)
@@ -63,12 +78,17 @@ class LocalStore(context: Context, scope: String = "unconfigured") {
         add("activity", s.activity, ActivityItem::id)
         val metadata = s.copy(conversations = emptyList(), tasks = emptyList(), schedules = emptyList(),
             memories = emptyList(), vault = emptyList(), archive = emptyList(), activity = emptyList())
-        return Rows(MetadataRow(payload = gson.toJson(metadata)),
+        return Rows(MetadataRow(payload=ciphertext("metadata",gson.toJson(metadata),
+                persisted?.metadata?.payload)),
             s.conversations.mapIndexed { index, c ->
-                ConversationRow(c.id, index, c.updatedAt, c.title(s.characters), gson.toJson(c.copy(messages = emptyList())))
+                ConversationRow(c.id,index,c.updatedAt,"",ciphertext("conversation:"+c.id,
+                    gson.toJson(c.copy(messages=emptyList())),
+                    beforeConversations[c.id]?.payload))
             },
             s.conversations.flatMap { c -> c.messages.mapIndexed { index, m ->
-                MessageRow(c.id, m.id, index, m.createdAt, m.text, gson.toJson(m))
+                MessageRow(c.id,m.id,index,m.createdAt,"",
+                    ciphertext("message:"+c.id+":"+m.id,gson.toJson(m),
+                        beforeMessages[c.id to m.id]?.payload))
             } }, records)
     }
 
@@ -89,23 +109,35 @@ class LocalStore(context: Context, scope: String = "unconfigured") {
         val grouped = saved.messages.groupBy { it.conversationId }
         fun <T> records(kind: String, type: Class<T>): List<T> =
             saved.records.filter { it.kind == kind }.map {
-                val payload = if (kind == "vault" && vaultCipher.isSealed(it.payload))
-                    vaultCipher.open(it.id, it.payload) else it.payload
-                gson.fromJson(payload, type)
+                val key=if(kind=="vault")it.id else "record:"+kind+":"+it.id
+                gson.fromJson(plaintext(key,it.payload),type)
             }
-        val meta = gson.fromJson(saved.metadata.payload, AppState::class.java)
+        val meta = gson.fromJson(plaintext("metadata",saved.metadata.payload), AppState::class.java)
         val recovered = recoverInterrupted(clean(meta.copy(
             conversations = saved.conversations.map { row ->
-                gson.fromJson(row.payload, Conversation::class.java).copy(messages =
-                    grouped[row.id].orEmpty().map { gson.fromJson(it.payload, Message::class.java) })
+                gson.fromJson(plaintext("conversation:"+row.id,row.payload),
+                    Conversation::class.java).copy(messages =
+                    grouped[row.id].orEmpty().map {
+                        gson.fromJson(plaintext("message:"+row.id+":"+it.id,it.payload),
+                            Message::class.java)
+                    })
             },
             tasks = records("task", TaskItem::class.java), schedules = records("schedule", ScheduleItem::class.java),
             memories = records("memory", MemoryItem::class.java), vault = records("vault", VaultItem::class.java),
             archive = records("archive", ArchiveItem::class.java), activity = records("activity", ActivityItem::class.java)
         )))
-        // Rewrite legacy plaintext vault records before exposing them to the UI.
-        // Existing records are retained; a failed migration aborts loading.
-        if (saved.records.any { it.kind == "vault" && !vaultCipher.isSealed(it.payload) }) persist(recovered)
+        // Migrate legacy unencrypted rows in one transaction. Ciphertext from each
+        // committed write stays stable for unchanged records.
+        if (!vaultCipher.isSealed(saved.metadata.payload) ||
+            saved.conversations.any{!vaultCipher.isSealed(it.payload)||it.title.isNotEmpty()} ||
+            saved.messages.any{!vaultCipher.isSealed(it.payload)||it.body.isNotEmpty()} ||
+            saved.records.any{!vaultCipher.isSealed(it.payload)}) {
+            persist(recovered)
+            // Reclaim plaintext pages left by SQLite/WAL updates after migration.
+            val database=db.openHelper.writableDatabase
+            database.query("PRAGMA wal_checkpoint(TRUNCATE)").use{}
+            database.execSQL("VACUUM")
+        }
         return recovered
     }
 
@@ -187,8 +219,11 @@ class LocalStore(context: Context, scope: String = "unconfigured") {
 
     suspend fun searchMessages(query: String): List<Message> = withContext(writerDispatcher) {
         pending.getAndSet(null)?.let { persist(it.state) }
-        if (query.isBlank()) emptyList() else dao.searchMessages(query.trim(), 30)
-            .map { gson.fromJson(it.payload, Message::class.java).copy(conversationId = it.conversationId) }
+        if(query.isBlank())emptyList() else dao.messages().map { row ->
+            gson.fromJson(plaintext("message:"+row.conversationId+":"+row.id,row.payload),
+                Message::class.java).copy(conversationId=row.conversationId)
+        }.filter{it.text.contains(query.trim(),ignoreCase=true)}
+            .sortedByDescending{it.createdAt}.take(30)
     }
 
 }
