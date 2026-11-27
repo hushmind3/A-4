@@ -33,6 +33,19 @@ class RemoteBackedRepository(
 
     private val api: DominionApi get() = requireNotNull(endpoint) { "Connect DOMINION first" }
 
+    private val mobileExtension by lazy {
+        MobileExtensionRepository(api, store::loadMobileJournal, store::saveMobileJournal)
+    }
+    override suspend fun mobileCapabilities() = api.mobileCapabilities()
+    override suspend fun mobilePeers() = mobileExtension.peers()
+    override suspend fun mobilePeerHistory(peer: String) = mobileExtension.history(peer)
+    override suspend fun mobileJournal() = mobileExtension.journal()
+    override suspend fun beginMobileOperation(action: MobileAction, target: String, text: String?) =
+        mobileExtension.begin(action, target, text)
+    override suspend fun refreshMobileOperation(nonce: String) = mobileExtension.refresh(nonce)
+    override suspend fun decideMobileOperation(nonce: String, digest: String, allow: Boolean) =
+        mobileExtension.decide(nonce, digest, allow)
+
     private fun emptyRemoteState() = AppState(
         onboarded = true,
         characters = emptyList(),

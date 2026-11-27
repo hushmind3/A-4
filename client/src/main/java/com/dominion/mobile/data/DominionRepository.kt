@@ -21,6 +21,16 @@ interface DominionRepository {
     suspend fun pollForReply(conversationId: String, knownIds: Set<String>): List<Message> =
         emptyList()
 
+    suspend fun mobileCapabilities(): com.dominion.mobile.data.remote.MobileCapabilities = error("Mobile extension unavailable")
+    suspend fun mobilePeers(): List<com.dominion.mobile.data.remote.MobilePeer> = error("Mobile extension unavailable")
+    suspend fun mobilePeerHistory(peer: String): List<com.dominion.mobile.data.remote.MobilePeerMessage> = error("Mobile extension unavailable")
+    suspend fun mobileJournal(): List<com.dominion.mobile.data.remote.MobileJournalEntry> = emptyList()
+    suspend fun beginMobileOperation(action: com.dominion.mobile.data.remote.MobileAction, target: String,
+        text: String? = null): com.dominion.mobile.data.remote.MobileJournalEntry = error("Mobile extension unavailable")
+    suspend fun refreshMobileOperation(nonce: String): com.dominion.mobile.data.remote.MobileJournalEntry = error("Mobile extension unavailable")
+    suspend fun decideMobileOperation(nonce: String, digest: String, allow: Boolean):
+        com.dominion.mobile.data.remote.MobileJournalEntry = error("Mobile extension unavailable")
+
     suspend fun voiceStatus(): com.dominion.mobile.data.remote.EngineVoiceStatus = error("Engine not connected")
     suspend fun transcribeVoice(wav: ByteArray): String = error("Engine not connected")
     suspend fun synthesizeVoice(text: String): ByteArray = error("Engine not connected")

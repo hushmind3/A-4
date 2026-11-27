@@ -177,6 +177,16 @@ class AppViewModel(
     suspend fun cancelJob(roomId: String, jobId: String) = repo.cancelJob(roomId, jobId)
 
     suspend fun downloadAttachment(roomId: String, attachmentId: String) = repo.downloadAttachment(roomId, attachmentId)
+    suspend fun mobileCapabilities() = repo.mobileCapabilities()
+    suspend fun mobilePeers() = repo.mobilePeers()
+    suspend fun mobilePeerHistory(peer: String) = repo.mobilePeerHistory(peer)
+    suspend fun mobileJournal() = repo.mobileJournal()
+    suspend fun beginMobileOperation(action: com.dominion.mobile.data.remote.MobileAction, target: String,
+        text: String? = null) = repo.beginMobileOperation(action, target, text)
+    suspend fun refreshMobileOperation(nonce: String) = repo.refreshMobileOperation(nonce)
+    suspend fun decideMobileOperation(nonce: String, digest: String, allow: Boolean) =
+        repo.decideMobileOperation(nonce, digest, allow)
+
     suspend fun voiceStatus() = repo.voiceStatus()
     suspend fun transcribeVoice(wav: ByteArray): String {
         check(state.value.call == null)

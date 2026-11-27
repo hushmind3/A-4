@@ -41,6 +41,22 @@ data class NotificationDto(
 
 /** Existing DOMINION mobile and native engine contracts. */
 interface DominionApi {
+    // Negotiated extension contract. Existing engines may respond 404; no fallback to demo data.
+    @GET("v1/mobile/capabilities")
+    suspend fun mobileCapabilities(): MobileCapabilities
+    @GET("v1/mobile/peers")
+    suspend fun mobilePeers(): MobileDirectory
+    @GET("v1/mobile/peers/{id}/messages")
+    suspend fun mobilePeerHistory(@Path("id") id: String): MobilePeerHistory
+    @POST("v1/mobile/operations")
+    suspend fun createMobileOperation(@Body intent: MobileIntent): MobileReceipt
+    @GET("v1/mobile/operations/{nonce}")
+    suspend fun mobileOperation(@Path("nonce") nonce: String): MobileReceipt
+    @POST("v1/mobile/operations/{nonce}/decision")
+    suspend fun decideMobileOperation(@Path("nonce") nonce: String,
+        @Body decision: MobileReviewDecision): MobileReceipt
+
+
     @GET("api/voice/status")
     suspend fun voiceStatus(): EngineVoiceStatus
     @POST("api/voice/transcribe")

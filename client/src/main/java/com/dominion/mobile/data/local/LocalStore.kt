@@ -17,6 +17,14 @@ class LocalStore(context: Context, scope: String = "unconfigured") {
     private val prefs = context.getSharedPreferences("dominion_mobile_$scope", Context.MODE_PRIVATE)
     private val gson = GsonBuilder().serializeNulls().create()
     private val vaultCipher = VaultRecordCipher(scope)
+    private val mobileOperations = EncryptedRecordStore(context.applicationContext,
+        "dominion_mobile_operations_$scope", com.dominion.mobile.data.remote.MobileJournal::class.java)
+    internal suspend fun loadMobileJournal(): com.dominion.mobile.data.remote.MobileJournal =
+        withContext(kotlinx.coroutines.Dispatchers.IO) {
+            mobileOperations.load() ?: com.dominion.mobile.data.remote.MobileJournal()
+        }
+    internal suspend fun saveMobileJournal(value: com.dominion.mobile.data.remote.MobileJournal) =
+        withContext(kotlinx.coroutines.Dispatchers.IO) { mobileOperations.save(value) }
     internal val offlineArchive = OfflineArchiveStore(context.applicationContext, scope)
     private val db = Room.databaseBuilder(context.applicationContext, MobileDatabase::class.java,
         "dominion_mobile_$scope.db").setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING).build()
