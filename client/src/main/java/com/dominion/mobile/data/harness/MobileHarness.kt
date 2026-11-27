@@ -229,7 +229,8 @@ internal class MobileHarness(
         try{
             val room=requireNotNull(state().conversation(roomId));session=requireNotNull(room.sessionId)
             val expected=session
-            check(state().tasks.none{it.engineRoomId==roomId&&it.phonePrivateRead!=null}){
+            check(state().tasks.none{it.engineRoomId==roomId&&(it.phonePrivateRead!=null||
+                it.phoneTransaction?.let{scope->com.dominion.mobile.data.PhoneTransactions.deviceOnly(scope.kind)}==true)}){
                 "개인 조회 결과는 기기 전용입니다. 일반 대화는 다른 대화방을 사용하세요."
             }
             val owner=room.messages.single{it.id==message.id&&it.sender==MessageSender.USER}

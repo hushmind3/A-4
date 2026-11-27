@@ -174,6 +174,81 @@ class PhoneNavigationService : AccessibilityService() {
                         if(replan!=null)check(container.engine===engine && container.repository===repo &&
                             repo.state.value.conversation(replan.roomId)?.sessionId==replan.sessionId)
                     }
+                    val localTransaction=replan?.transaction?.takeIf{com.dominion.mobile.data.PhoneTransactions.deviceOnly(it.kind)}
+                    if(localTransaction!=null){
+                        check(recorded&&engine==null)
+                        var review:com.dominion.mobile.data.PhoneTransactions.Review?=null
+                        val tried=mutableSetOf<String>()
+                        for(i in 0 until 8){
+                            validRoom()
+                            val view=runCatching{withTransactionNodes(plan.app){nodes,lines->
+                                if(com.dominion.mobile.data.PhoneTransactions.authScreen(lines))null else{
+                                    val labels=nodes.filter{it.isClickable&&!it.isEditable}.flatMap(::nodeNames)
+                                    val button=com.dominion.mobile.data.PhoneTransactions.localFinal(localTransaction.kind,labels)
+                                    val candidate=button?.let{com.dominion.mobile.data.PhoneTransactions.review(localTransaction,plan.app,it,lines)}
+                                    val menu=labels.firstOrNull{it in com.dominion.mobile.data.PhoneTransactions.localMenus(localTransaction.kind)&&it !in tried}
+                                    candidate to menu
+                                }
+                            }}.getOrNull()
+                            review=view?.first
+                            if(review!=null)break
+                            val menu=view?.second
+                            if(menu!=null){
+                                tried.add(menu)
+                                approveStep(PhoneNavigationStep("기기 전용 변경 메뉴",menu),plan.app,1,1)
+                                validRoom()
+                                withTransactionNodes(plan.app){nodes,lines->
+                                    check(!com.dominion.mobile.data.PhoneTransactions.authScreen(lines))
+                                    nodes.singleOrNull{it.isClickable&&!it.isEditable&&menu in nodeNames(it)}
+                                        ?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                                }
+                                delay(500)
+                            }else{
+                                approveStep(PhoneNavigationStep("직접 인증 및 최종 확인 화면 이동",localTransaction.target,
+                                    if(localTransaction.kind=="finance")"은행 앱에서 직접 수취인·계좌를 지정하고 이체 확인 화면까지 이동하세요."
+                                    else "통신 앱에서 원하는 요금제 또는 부가서비스 확인 화면까지 이동하세요."),plan.app,1,1)
+                                validRoom();delay(350)
+                            }
+                        }
+                        val approved=review
+                        if(approved==null){
+                            _status.value="대상·조건·금액을 유일하게 확인하지 못했습니다. 거래하지 않았습니다."
+                            return@withTimeout
+                        }
+                        approveStep(PhoneNavigationStep("기기 전용 최종 실행",approved.button,approved.summary(localTransaction.kind)),plan.app,1,1)
+                        validRoom()
+                        val clicked=withTransactionNodes(plan.app){nodes,lines->
+                            if(com.dominion.mobile.data.PhoneTransactions.review(localTransaction,plan.app,approved.button,lines)!=approved)
+                                return@withTransactionNodes false
+                            val button=nodes.singleOrNull{it.isClickable&&!it.isEditable&&approved.button in nodeNames(it)}
+                                ?:return@withTransactionNodes false
+                            transactionAttempted=true
+                            button.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                        }
+                        if(!clicked){
+                            _status.value=if(transactionAttempted)"실행 여부 불명 · 재실행 금지" else "승인 이후 화면 변경 · 실행하지 않음"
+                            return@withTimeout
+                        }
+                        // The bank or carrier may require its own authentication.
+                        // Never read or enter it, wait for user completion instead.
+                        _status.value="공식 앱 실행 요청 · 앱 자체 인증은 직접 진행"
+                        val deadline=android.os.SystemClock.elapsedRealtime()+60000
+                        var receipt=emptyList<String>()
+                        while(receipt.isEmpty()&&android.os.SystemClock.elapsedRealtime()<deadline){
+                            validRoom()
+                            receipt=runCatching{withTransactionNodes(plan.app){_,lines->
+                                val found=com.dominion.mobile.data.PhoneTransactions.receipt(localTransaction.kind,lines)
+                                if(localTransaction.kind=="finance"&&lines.none{it.contains(localTransaction.target)})emptyList()else found
+                            }}.getOrDefault(emptyList())
+                            if(receipt.isEmpty())delay(750)
+                        }
+                        verified.add(approved.summary(localTransaction.kind))
+                        if(receipt.isNotEmpty()){
+                            verified.addAll(receipt);transactionVerified=true;endStatus="completed";completed++
+                            _status.value="공식 앱 완료 화면 확인 · 기기 전용 기록"
+                        }else _status.value="실행 요청 후 완료 화면 미확인 · 재실행 금지"
+                        return@withTimeout
+                    }
                     val localScope=replan?.privateRead
                     if(localScope!=null){
                         check(recorded&&engine==null)

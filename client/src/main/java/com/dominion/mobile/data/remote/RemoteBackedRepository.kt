@@ -832,7 +832,9 @@ class RemoteBackedRepository(
     override suspend fun replanPhoneControls(context:com.dominion.mobile.data.PhoneReplanContext,
         controls:List<String>,results:List<String>,feedback:String):com.dominion.mobile.data.PhoneNavigationPlan? {
         check(localExecution){"PC mode uses explicit screenshot replanning"}
-        check(context.privateRead==null){"Private account lookup stays on-device"}
+        check(context.privateRead==null&&context.transaction?.let{com.dominion.mobile.data.PhoneTransactions.deviceOnly(it.kind)}!=true){
+            "Private account lookup and account changes stay on-device"
+        }
         val room=state.value.conversation(context.roomId)
         check(room?.sessionId==context.sessionId)
         require(com.dominion.mobile.data.PhoneNavigationPlan.eligiblePackage(context.app))

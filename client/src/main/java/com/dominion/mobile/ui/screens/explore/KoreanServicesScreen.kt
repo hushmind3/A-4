@@ -129,7 +129,7 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
                     }
                     if(preferred.isEmpty())Text("추천 앱을 자동 확인하지 못했습니다. 설치된 공식 앱을 직접 선택하세요.")
                     selectedApp?.let{Text("실행 대상: "+it.label+" ("+it.packageName+")")}
-                    if(canPrivate){
+                    if(canPrivate&&!(canTransact&&transact)){
                         Text("기기에서만 개인 조회",style=MaterialTheme.typography.titleSmall)
                         (listOf<String?>(null)+com.dominion.mobile.data.PrivateAccountRead.fields(errand.id)).forEach{field->
                             Row{RadioButton(selected=privateField==field,onClick={privateField=field})
@@ -138,12 +138,16 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
                         Text("로그인은 직접 진행합니다. 선택한 금액·데이터 수치만 기기에서 읽고 저장하며 AI 서버로 보내지 않습니다.")
                     }
                     if(canTransact){
-                        Row{Checkbox(transact,{transact=it;if(it)publicRead=false});Text("실제 주문·예약·호출 실행",Modifier.padding(top=12.dp))}
+                        Row{Checkbox(transact,{transact=it;if(it){publicRead=false;privateField=null}})
+                            Text(when(errand.id){"finance"->"기기 전용 이체 실행";"telecom"->"기기 전용 요금제·부가서비스 변경";else->"실제 주문·예약·호출 실행"},Modifier.padding(top=12.dp))}
                     }
                     if(canTransact&&transact){
-                        AppTextField(target,{target=it.take(100)},label="정확한 상품·가게·목적지·숙소·병원")
-                        AppTextField(condition,{condition=it.take(160)},label="화면에서 확인할 조건",placeholder="옵션·수량·날짜·시간·출발지 등 실제 표시 문구")
-                        AppTextField(maxWon,{maxWon=it.filter(Char::isDigit).take(9)},label="최대 승인 금액(원)",placeholder="무료 진료 예약은 0")
+                        AppTextField(target,{target=it.take(100)},label=when(errand.id){"finance"->"정확한 수취인 이름";"telecom"->"정확한 요금제·부가서비스 명칭";else->"정확한 상품·가게·목적지·숙소·병원"})
+                        AppTextField(condition,{condition=if(errand.id=="finance")it.filter(Char::isDigit).take(4)else it.take(160)},
+                            label=if(errand.id=="finance")"수취 계좌 끝 4자리" else "화면에서 확인할 조건",
+                            placeholder=if(errand.id=="finance")"전체 계좌번호는 공식 은행 앱에 직접 입력" else "옵션·수량·날짜·시간·출발지 등 실제 표시 문구")
+                        AppTextField(maxWon,{maxWon=it.filter(Char::isDigit).take(9)},label=when(errand.id){"finance"->"정확한 이체 금액(원)";"telecom"->"최대 월 이용료(원)";else->"최대 승인 금액(원)"},placeholder="무료는 0")
+                        if(errand.id in setOf("finance","telecom"))Text("개인정보와 인증은 공식 앱에서 직접 처리합니다. AI 서버에 화면을 보내지 않으며 확인된 최종 버튼만 승인 후 실행합니다.")
                         Text("실제 화면의 대상·조건·최종 금액을 대조하고 마지막 실행 버튼을 별도로 승인합니다. 정보가 다르면 확정하지 않습니다.")
                     }
                     if(canPublicRead&&!(canTransact&&transact)){
@@ -171,7 +175,7 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
                         com.dominion.mobile.data.KakaoMessageRequest(recipient.trim(),messageBody.trim(),
                             requireNotNull(selectedApp).packageName,if(isDaangn)listing.trim() else null,waitReply).checked()
                     }.getOrNull() else null
-                    val privateRead=if(canPrivate)privateField?.let{
+                    val privateRead=if(canPrivate&&!(canTransact&&transact))privateField?.let{
                         com.dominion.mobile.data.PhonePrivateRead(errand.id,it).checked(requireNotNull(selectedApp).packageName)
                     }else null
                     val transaction=if(canTransact&&transact)runCatching{
@@ -185,6 +189,8 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
                             (payload.listing?.let{"\n거래 상품: "+it}?:"")+
                             "\n지정한 대화방을 찾아 사용자 입력 메시지를 별도 승인 후 발송합니다. 메시지 본문은 기기에만 저장되어 있습니다."
                             else if(privateRead!=null)"기기 전용 개인 조회: "+privateRead.field
+                            else if(transaction!=null&&com.dominion.mobile.data.PhoneTransactions.deviceOnly(transaction.kind))
+                                "기기 전용 공식 앱 거래 · "+errand.id+" · 대상·조건·금액은 로컬 승인 화면에 표시"
                             else if(transaction!=null)"실제 "+errand.title+" 업무\n대상: "+transaction.target+
                                 "\n조건: "+transaction.condition+"\n최대 승인 금액: "+transaction.maxWon+"원\n"+details
                             else com.dominion.mobile.data.KoreanErrands.request(errand.id,app.packageName,app.label,details)
