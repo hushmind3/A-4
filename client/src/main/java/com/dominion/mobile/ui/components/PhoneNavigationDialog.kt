@@ -48,6 +48,10 @@ fun PhoneNavigationDialog(plan: PhoneNavigationPlan, onDismiss: () -> Unit,
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("대상: " + (installed?.label ?: PhoneNavigationPlan.apps[plan.app] ?: plan.app))
                 Text(plan.app, style = MaterialTheme.typography.labelSmall)
+                replanContext?.transaction?.let{scope->
+                    Text("실제 거래 대상: "+scope.target+" · "+scope.condition+" · 최대 "+scope.maxWon+"원")
+                    Text("마지막 화면을 확인하고 승인하기 전에는 거래를 확정하지 않습니다.")
+                }
                 if(replanContext?.publicRead==true)Text("공개 결과 수집 업무: 실제 화면에서 확인한 결과 문구만 저장합니다. 거래·결제·인증은 제외합니다.")
                 if (installed == null) Text("이 기기에서 실행할 수 있는 앱을 확인하지 못했습니다.", color = MaterialTheme.colorScheme.error)
                 Text("기본은 각 단계 화면 위 승인입니다. 전체 제한은 5분이며 다른 앱·잠금 화면·대상 불일치 시 중단합니다.")

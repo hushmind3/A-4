@@ -142,6 +142,8 @@ class PhoneNavigationService : AccessibilityService() {
             var recorded=false
             var endStatus="paused"
             var sendAttempted=false
+            var transactionAttempted=false
+            var transactionVerified=false
             var resultVerified=false
             var approvedResults=emptyList<String>()
             var feedback=""
@@ -175,11 +177,73 @@ class PhoneNavigationService : AccessibilityService() {
                     while(true) {
                     validRoom()
                     if(replan?.publicRead==true)check(com.dominion.mobile.data.PhonePublicResult.permits(activePlan,replan.initialRequest))
+                    replan?.transaction?.let{check(com.dominion.mobile.data.PhoneTransactions.validPlan(activePlan,it,replan.initialRequest))}
                     var nextFrame:VisualFrame?=null
                     var needsSemanticReplan=false
                     var localCompleted=0
                     for (step in activePlan.steps) {
                         validRoom()
+                        if(step.action=="commit_transaction"){
+                            val intent=requireNotNull(replan?.transaction)
+                            check(recorded&&!transactionAttempted)
+                            val review=transactionScreen(plan.app,step.label,intent)
+                            if(review==null){
+                                feedback="Final review missing exact target, condition, unambiguous total, or button; no transaction occurred."
+                                needsSemanticReplan=true
+                                break
+                            }
+                            approveStep(PhoneNavigationStep("최종 거래 실행",step.label,review.summary(intent.kind)),plan.app,1,1)
+                            validRoom()
+                            // Recompute the entire screen and click only the exact
+                            // unique control in this same fresh accessibility tree.
+                            val clicked=withTransactionNodes(plan.app){nodes,lines->
+                                val fresh=com.dominion.mobile.data.PhoneTransactions.review(intent,plan.app,step.label,lines)
+                                if(fresh!=review)return@withTransactionNodes false
+                                val button=nodes.singleOrNull{it.isClickable&&!it.isEditable&&nodeNames(it).contains(step.label)}
+                                    ?:return@withTransactionNodes false
+                                transactionAttempted=true
+                                button.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                            }
+                            if(!clicked){
+                                if(transactionAttempted){
+                                    _status.value="거래 버튼 실행 결과 불명 · 재실행 금지"
+                                    break
+                                }
+                                feedback="The reviewed screen changed before approval; inspect again without submitting."
+                                needsSemanticReplan=true
+                                break
+                            }
+                            val deadline=android.os.SystemClock.elapsedRealtime()+15000
+                            var receipt=emptyList<String>()
+                            while(receipt.isEmpty()&&android.os.SystemClock.elapsedRealtime()<deadline){
+                                validRoom()
+                                receipt=runCatching{withTransactionNodes(plan.app){_,lines->
+                                    com.dominion.mobile.data.PhoneTransactions.receipt(intent.kind,lines)
+                                }}.getOrDefault(emptyList())
+                                if(receipt.isEmpty())delay(500)
+                            }
+                            verified.add(review.summary(intent.kind))
+                            if(receipt.isNotEmpty()){
+                                verified.addAll(receipt)
+                                transactionVerified=true;endStatus="completed";completed++
+                                _status.value="거래 실행 · 실제 완료 화면 확인"
+                            }else _status.value="거래 실행 요청 후 완료 화면 미확인 · 재실행 금지"
+                            break
+                        }
+                        if(step.action=="transaction_next"){
+                            val intent=requireNotNull(replan?.transaction)
+                            check(recorded&&!transactionAttempted&&com.dominion.mobile.data.PhoneTransactions.canAdvance(step.label))
+                            approveStep(PhoneNavigationStep("거래 준비",step.label),plan.app,localCompleted+1,activePlan.steps.size)
+                            validRoom()
+                            // Reversible navigation: exact, unique observed control. Never re-click a failed action.
+                            val ok=withTransactionNodes(plan.app){nodes,lines->
+                                check(!com.dominion.mobile.data.PhoneTransactions.authScreen(lines))
+                                val target=nodes.singleOrNull{it.isClickable&&!it.isEditable&&nodeNames(it).contains(step.label)}
+                                target?.performAction(AccessibilityNodeInfo.ACTION_CLICK)==true
+                            }
+                            if(!ok){feedback="Preparation control missing; inspect another path.";needsSemanticReplan=true;break}
+                            completed++;localCompleted++;delay(500);continue
+                        }
                         if(step.action=="report_result"){
                             check(recorded&&replan?.publicRead==true&&step.label in approvedResults)
                             validRoom()
@@ -314,7 +378,7 @@ class PhoneNavigationService : AccessibilityService() {
                             needsSemanticReplan=true
                         delay(500)
                     }
-                    if(sendAttempted||resultVerified)break
+                    if(sendAttempted||transactionAttempted||resultVerified)break
                     val frame=nextFrame
                     val mobileReplan=engine==null && replan!=null &&
                         (needsSemanticReplan || frame!=null || activePlan.steps.last().action=="inspect" ||
@@ -379,17 +443,19 @@ class PhoneNavigationService : AccessibilityService() {
                     }
                 }
             } catch (e: CancellationException) {
-                endStatus=if(sendAttempted)"paused" else "cancelled"
-                _status.value = if(sendAttempted)"발송 시도 후 중단 · 결과 확인 필요 · 재발송 금지" else "중단 · 확인된 단계 " + completed
+                endStatus=if(sendAttempted||transactionAttempted)"paused" else "cancelled"
+                _status.value = if(transactionAttempted)"거래 시도 후 중단 · 결과 확인 필요 · 재실행 금지" else if(sendAttempted)"발송 시도 후 중단 · 결과 확인 필요 · 재발송 금지" else "중단 · 확인된 단계 " + completed
                 if (e !is TimeoutCancellationException) throw e
             } catch (_: Exception) {
-                endStatus=if(sendAttempted)"paused" else "failed"
-                _status.value = if(sendAttempted)"발송 시도 결과 불명 · 재발송 금지" else "중단 · 화면/권한/대상 불일치. 확인된 단계 " + completed
+                endStatus=if(sendAttempted||transactionAttempted)"paused" else "failed"
+                _status.value = if(transactionAttempted)"거래 시도 결과 불명 · 재실행 금지" else if(sendAttempted)"발송 시도 결과 불명 · 재발송 금지" else "중단 · 화면/권한/대상 불일치. 확인된 단계 " + completed
             } finally {
                 if(recorded&&replan!=null)withContext(NonCancellable){
                     val detail="실제 앱: "+plan.app+"\n"+_status.value+
                         "\n확인한 화면 문구: "+verified.distinct().joinToString(", ").ifBlank{"없음"}+
-                        (if(resultVerified)"\n실제 화면에 있는 조회 결과만 기록했습니다. 거래·예약·결제는 수행하지 않았습니다."
+                        (if(transactionVerified)"\n실제 앱의 새 완료 문구를 확인했습니다. 공급자 영수증·변경 조건은 별도 확인할 수 있습니다."
+                         else if(transactionAttempted)"\n거래 요청 이후 완료 근거 없음. 중복 실행하지 마세요."
+                         else if(resultVerified)"\n실제 화면에 있는 조회 결과만 기록했습니다. 거래·예약·결제는 수행하지 않았습니다."
                          else if(endStatus=="completed")"\n기기 화면에서 새 메시지를 확인했습니다. 서버 수신·읽음은 확인하지 않았습니다."
                          else "\n최종 외부 결과는 확인되지 않았습니다. 발송을 시도했다면 재발송 전에 직접 확인하세요.")
                     try{initialRepo.recordPhoneErrand(replan,endStatus,detail)}
@@ -546,6 +612,34 @@ class PhoneNavigationService : AccessibilityService() {
             return block(editor,sends.singleOrNull(),count)
         }finally{nodes.forEach{it.recycle()};while(queue.isNotEmpty())queue.removeFirst().recycle()}
     }
+
+    private fun nodeNames(node:AccessibilityNodeInfo)=listOfNotNull(node.text?.toString(),
+        node.contentDescription?.toString(),node.hintText?.toString()).map{it.trim()}.filter{it.isNotBlank()}
+
+    private fun <T> withTransactionNodes(pkg:String,block:(List<AccessibilityNodeInfo>,List<String>)->T):T {
+        check(unlocked())
+        val root=requireNotNull(rootInActiveWindow)
+        val nodes=ArrayList<AccessibilityNodeInfo>()
+        val queue=java.util.ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        try{
+            check(root.packageName?.toString()==pkg)
+            while(queue.isNotEmpty()&&nodes.size<600){
+                val n=queue.removeFirst();nodes.add(n)
+                if(n.packageName?.toString()!=pkg||n.isPassword)continue
+                for(i in 0 until minOf(n.childCount,80))if(nodes.size+queue.size<600)n.getChild(i)?.let(queue::addLast)
+            }
+            check(nodes.none{it.isPassword}){"인증 화면은 사용자가 직접 처리"}
+            val visible=nodes.filter{it.packageName?.toString()==pkg&&it.isVisibleToUser&&it.isEnabled}
+            val lines=visible.filter{!it.isEditable}.flatMap(::nodeNames).distinct().take(350)
+            return block(visible,lines)
+        }finally{nodes.forEach{it.recycle()};while(queue.isNotEmpty())queue.removeFirst().recycle()}
+    }
+    private fun transactionScreen(pkg:String,label:String,intent:com.dominion.mobile.data.PhoneTransactionRequest):
+        com.dominion.mobile.data.PhoneTransactions.Review?=withTransactionNodes(pkg){nodes,lines->
+            if(nodes.count{it.isClickable&&!it.isEditable&&nodeNames(it).contains(label)}!=1)null
+            else com.dominion.mobile.data.PhoneTransactions.review(intent,pkg,label,lines)
+        }
 
     private fun apply(root: AccessibilityNodeInfo, pkg: String, step: PhoneNavigationStep): Boolean {
         val nodes = ArrayList<AccessibilityNodeInfo>()

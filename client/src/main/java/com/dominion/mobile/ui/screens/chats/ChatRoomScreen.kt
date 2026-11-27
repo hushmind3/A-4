@@ -735,7 +735,7 @@ fun ChatRoomScreen(
                     val task=state.tasks.firstOrNull{it.engineRoomId==conversationId&&it.engineMessageId==owner.id&&
                         it.phonePackage==plan.app}
                     com.dominion.mobile.data.PhoneReplanContext(conversationId,session,plan.app,message.id,owner.text.take(4000),
-                        task?.kakaoMessage,task?.phonePublicRead==true)
+                        task?.kakaoMessage,task?.phonePublicRead==true,task?.phoneTransaction)
                 }
             },
             onDismiss = { phonePlanMessage = null },

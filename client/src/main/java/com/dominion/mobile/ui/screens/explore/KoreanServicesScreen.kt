@@ -95,6 +95,11 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
             var details by remember{mutableStateOf("")}
             var sendMessage by remember{mutableStateOf(false)}
             var publicRead by remember{mutableStateOf(false)}
+            var transact by remember{mutableStateOf(false)}
+            var target by remember{mutableStateOf("")}
+            var condition by remember{mutableStateOf("")}
+            var maxWon by remember{mutableStateOf("")}
+            val canTransact=selectedApp?.let{com.dominion.mobile.data.PhoneTransactions.supports(errand.id,it.packageName)}==true
             val canPublicRead=errand.id in setOf("search","shopping","delivery","transport","used")&&
                 selectedApp?.packageName in com.dominion.mobile.data.PhonePublicResult.packages
             var recipient by remember{mutableStateOf("")}
@@ -105,7 +110,7 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
                 SheetTitle(errand.title,"설치된 앱에서 실제 탐색")
                 Column(Modifier.heightIn(max=500.dp).verticalScroll(rememberScrollState()).padding(18.dp),
                     verticalArrangement=Arrangement.spacedBy(8.dp)){
-                    Text("대상 앱을 선택하면 AI가 실제 화면을 관찰하고 다음 단계를 계획합니다. 최종 거래·인증은 직접 확인합니다.")
+                    Text("대상 앱을 선택하면 AI가 실제 화면을 관찰하고 업무를 실행합니다. 거래 확정은 최종 화면에서 별도로 승인합니다.")
                     TextButton(onClick={allApps=!allApps}){Text(if(allApps)"추천 앱만 보기" else "다른 설치 앱 선택")}
                     if(allApps)AppTextField(appQuery,{appQuery=it.take(100)},placeholder="설치 앱 이름")
                     (if(allApps)installed.filter{it.label.contains(appQuery,true)||it.packageName.contains(appQuery,true)}
@@ -119,7 +124,16 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
                     }
                     if(preferred.isEmpty())Text("추천 앱을 자동 확인하지 못했습니다. 설치된 공식 앱을 직접 선택하세요.")
                     selectedApp?.let{Text("실행 대상: "+it.label+" ("+it.packageName+")")}
-                    if(canPublicRead){
+                    if(canTransact){
+                        Row{Checkbox(transact,{transact=it;if(it)publicRead=false});Text("실제 주문·예약·호출 실행",Modifier.padding(top=12.dp))}
+                    }
+                    if(canTransact&&transact){
+                        AppTextField(target,{target=it.take(100)},label="정확한 상품·가게·목적지·숙소·병원")
+                        AppTextField(condition,{condition=it.take(160)},label="화면에서 확인할 조건",placeholder="옵션·수량·날짜·시간·출발지 등 실제 표시 문구")
+                        AppTextField(maxWon,{maxWon=it.filter(Char::isDigit).take(9)},label="최대 승인 금액(원)",placeholder="무료 진료 예약은 0")
+                        Text("실제 화면의 대상·조건·최종 금액을 대조하고 마지막 실행 버튼을 별도로 승인합니다. 정보가 다르면 확정하지 않습니다.")
+                    }
+                    if(canPublicRead&&!(canTransact&&transact)){
                         Row{Checkbox(publicRead,{publicRead=it});Text("공개 검색 결과 수집 및 완료",Modifier.padding(top=12.dp))}
                         if(publicRead)Text("상품·가격·업체 등 화면의 공개 결과를 확인 후 기록합니다. 주문·예약·로그인은 실행하지 않습니다.")
                     }
@@ -130,20 +144,27 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
                         AppTextField(recipient,{recipient=it.take(60)},label="정확한 대화방 이름")
                         AppTextField(messageBody,{messageBody=it.take(500)},label="발송할 메시지",singleLine=false,maxLines=5)
                         Text("메시지 원문은 기기에 저장합니다. 실제 대화방과 입력 내용을 확인한 뒤 발송 직전에 별도로 승인합니다.")
-                    }else AppTextField(details,{details=it.take(2000)},label="맡길 업무",placeholder=errand.examples,singleLine=false,maxLines=5)
+                    }else AppTextField(details,{details=it.take(2000)},label=if(canTransact&&transact)"추가 업무 조건 (선택)" else "맡길 업무",placeholder=errand.examples,singleLine=false,maxLines=5)
                     state.characters.forEach{character->
                         Row{RadioButton(selected=agent==character.id,onClick={agent=character.id});Text(character.name,Modifier.padding(top=12.dp))}
                     }
                     val payload=if(isKakao&&sendMessage)runCatching{
                         com.dominion.mobile.data.KakaoMessageRequest(recipient.trim(),messageBody.trim()).checked()
                     }.getOrNull() else null
+                    val transaction=if(canTransact&&transact)runCatching{
+                        com.dominion.mobile.data.PhoneTransactionRequest(errand.id,target.trim(),condition.trim(),
+                            requireNotNull(maxWon.toLongOrNull())).checked(requireNotNull(selectedApp).packageName)
+                    }.getOrNull() else null
                     Button(enabled=selectedApp!=null&&state.character(agent)!=null&&
-                        (if(isKakao&&sendMessage)payload!=null else details.isNotBlank()),onClick={
+                        (if(isKakao&&sendMessage)payload!=null else if(canTransact&&transact)transaction!=null else details.isNotBlank()),onClick={
                         val app=requireNotNull(selectedApp)
                         val request=if(payload!=null)"카카오톡 대화방 이름: "+payload.recipient+
                             "\n지정한 대화방을 찾아 사용자 입력 메시지를 별도 승인 후 발송합니다. 메시지 본문은 기기에만 저장되어 있습니다."
+                            else if(transaction!=null)"실제 "+errand.title+" 업무\n대상: "+transaction.target+
+                                "\n조건: "+transaction.condition+"\n최대 승인 금액: "+transaction.maxWon+"원\n"+details
                             else com.dominion.mobile.data.KoreanErrands.request(errand.id,app.packageName,app.label,details)
-                        vm.createPrivateErrand(errand.title,agent,request,app.packageName,onOpenChat,payload,canPublicRead&&publicRead)
+                        vm.createPrivateErrand(errand.title,agent,request,app.packageName,onOpenChat,payload,
+                            transaction==null&&canPublicRead&&publicRead,transaction)
                         privateErrand=null
                     }){Text("업무 등록 및 실행 검토")}
                 }
