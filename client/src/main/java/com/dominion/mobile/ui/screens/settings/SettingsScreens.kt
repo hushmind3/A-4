@@ -94,7 +94,7 @@ fun SettingsScreen(
                     Text(state.account.name, style = MaterialTheme.typography.titleMedium, color = p.textPrimary)
                     Text(state.account.email, style = MaterialTheme.typography.bodySmall, color = p.textTertiary)
                 }
-                Text(state.account.plan.label(lang), style = MaterialTheme.typography.labelSmall, color = p.blue)
+                Text(tr(lang, "Cloud 계정", "Cloud account"), style = MaterialTheme.typography.labelSmall, color = p.blue)
                 Spacer(Modifier.width(4.dp))
                 Text("›", color = p.textTertiary)
             }
@@ -115,7 +115,7 @@ fun SettingsScreen(
                 Hairline()
                 SettingsRow(
                     title = tr(lang, "플랜과 젤리", "Plans & jelly"),
-                    trailingText = state.account.plan.label(lang),
+                    trailingText = tr(lang, "Cloud 조회", "Check Cloud"),
                     leading = { GlyphIcon(Glyph.TICKET, p.textPrimary, size = 18.dp) },
                     onClick = { onNavigate(Routes.CREDITS) }
                 )
@@ -293,7 +293,7 @@ fun AccountScreen(
             SettingsGroup {
                 SettingsRow(
                     title = tr(lang, "플랜", "Plan"),
-                    trailingText = state.account.plan.label(lang),
+                    trailingText = tr(lang, "Cloud 조회", "Check Cloud"),
                     leading = { GlyphIcon(Glyph.TICKET, p.textPrimary, size = 18.dp) },
                     onClick = { onNavigate(Routes.CREDITS) }
                 )

@@ -711,57 +711,15 @@ class AppViewModel(
 
     // ------------------------------------------------------------------ credits
 
-    fun purchase(product: StoreProduct) = mutate { s ->
-        val account = when (product.kind) {
-            ProductKind.JELLY -> s.account.copy(jelly = s.account.jelly + product.amount)
-            ProductKind.ENERGY -> s.account.copy(energy = (s.account.energy + product.amount).coerceAtMost(s.account.energyMax))
-            ProductKind.TICKET -> s.account.copy(tickets = s.account.tickets + product.amount)
-            ProductKind.PLAN -> s.account.copy(plan = com.dominion.mobile.data.model.Plan.PLUS, jelly = s.account.jelly + 300)
-        }
-        s.copy(
-            account = account,
-            transactions = listOf(
-                CreditTransaction(
-                    id = id("tx"),
-                    title = product.title,
-                    amount = if (product.kind == ProductKind.PLAN) 0 else product.amount,
-                    kind = TxKind.CHARGE
-                )
-            ) + s.transactions,
-            activity = listOf(
-                ActivityItem(
-                    id = id("act"),
-                    type = ActivityType.CREDIT,
-                    title = "${product.title} 구매 완료",
-                    body = "결제가 완료됐어요. (데모 결제)",
-                    createdAt = System.currentTimeMillis()
-                )
-            ) + s.activity
-        )
+    // The Cloud external-app grant cannot charge or mint entitlements.
+    // Retain legacy entry points without mutating real balances or issuing receipts.
+    fun purchase(product: StoreProduct) {
+        _notice.value = product.title + " · Cloud 외부 앱 결제 권한이 없습니다. PC에서 결제를 관리하세요."
     }
 
     fun claimDailyJelly(): Boolean {
-        val s = repo.state.value
-        val elapsed = System.currentTimeMillis() - s.account.lastClaimAt
-        if (elapsed < TimeUnit.HOURS.toMillis(24)) return false
-        mutate {
-            it.copy(
-                account = it.account.copy(jelly = it.account.jelly + 30, lastClaimAt = System.currentTimeMillis()),
-                transactions = listOf(
-                    CreditTransaction(id = id("tx"), title = "출석 보상", amount = 30, kind = TxKind.REWARD)
-                ) + it.transactions,
-                activity = listOf(
-                    ActivityItem(
-                        id = id("act"),
-                        type = ActivityType.CREDIT,
-                        title = "젤리 30개를 받았어요",
-                        body = "오늘의 출석 보상이에요.",
-                        createdAt = System.currentTimeMillis()
-                    )
-                ) + it.activity
-            )
-        }
-        return true
+        _notice.value = "Cloud 무료 요청 잔여량은 계정 화면에서 실제 조회합니다."
+        return false
     }
 
     // Legacy ticket action now invokes the native session restart, not a fabricated purchase.

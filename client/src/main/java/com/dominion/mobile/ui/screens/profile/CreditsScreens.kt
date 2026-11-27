@@ -29,6 +29,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.LinearProgressIndicator
+import com.dominion.mobile.DominionApplication
+import com.dominion.mobile.data.remote.CloudAccountSnapshot
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -76,11 +84,29 @@ import com.dominion.mobile.util.asRelative
 fun CreditsScreen(
     state: AppState,
     vm: AppViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onCloudAccount: () -> Unit
 ) {
     val p = LocalDominionPalette.current
     val lang = LocalLang.current
     val context = LocalContext.current
+    val cloud = remember(context.applicationContext) {
+        (context.applicationContext as DominionApplication).container.cloudAccount
+    }
+    val scope = rememberCoroutineScope()
+    var snapshot by remember { mutableStateOf<CloudAccountSnapshot?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf(false) }
+    suspend fun refreshBilling() {
+        if (busy) return
+        busy = true; error = false
+        try { snapshot = cloud.refresh() }
+        catch (e: CancellationException) { throw e }
+        catch (_: Exception) { snapshot = null; error = true }
+        finally { busy = false }
+    }
+    LaunchedEffect(cloud) { refreshBilling() }
+    val billing = snapshot?.takeIf { it.status == "approved" }?.billing
     var buyTarget by remember { mutableStateOf<StoreProduct?>(null) }
     var showPlans by remember { mutableStateOf(false) }
     var tab by remember { mutableIntStateOf(0) }
@@ -89,7 +115,7 @@ fun CreditsScreen(
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().background(p.screen)) {
         ScreenTopBar(
             title = tr(lang, "젤리와 플랜", "Jelly & plans"),
-            subtitle = tr(lang, "대화와 통화에 사용하는 젤리와 에너지", "Jelly and energy for chats and calls"),
+            subtitle = tr(lang, "실제 Cloud 이용량과 계정 정보", "Verified Cloud usage and account"),
             onBack = onBack
         )
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 34.dp)) {
@@ -108,21 +134,22 @@ fun CreditsScreen(
                 ) {
                     Column {
                         Text(
-                            tr(lang, "오늘의 잔액", "Today's balance"),
+                            tr(lang, "DOMINION Cloud 잔액", "DOMINION Cloud balance"),
                             style = MaterialTheme.typography.labelMedium,
                             color = Color.White.copy(alpha = 0.8f)
                         )
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "${state.account.jelly} ${tr(lang, "젤리", "jelly")}",
+                            billing?.balanceKrw() ?: tr(lang, "조회 필요", "Not verified"),
                             style = MaterialTheme.typography.displaySmall,
                             color = Color.White
                         )
                         Spacer(Modifier.height(12.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            MiniBalance("${state.account.energy}/${state.account.energyMax}", tr(lang, "에너지", "Energy"))
-                            MiniBalance("${state.account.tickets}", tr(lang, "리셋 티켓", "Tickets"))
-                            MiniBalance("${state.account.credits}", tr(lang, "크레딧", "Credits"))
+                            MiniBalance(billing?.let { it.free_daily_remaining.toString() + "/" + it.free_daily_limit } ?: "—",
+                                tr(lang, "오늘 무료 요청", "Daily free requests"))
+                            MiniBalance(billing?.free_monthly_remaining?.toString() ?: "—", tr(lang, "월 잔여 요청", "Monthly remaining"))
+                            MiniBalance(billing?.plan ?: "—", tr(lang, "플랜", "Plan"))
                         }
                         Spacer(Modifier.height(14.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -131,12 +158,11 @@ fun CreditsScreen(
                                     .clip(RoundedCornerShape(14.dp))
                                     .background(Color.White)
                                     .clickable {
-                                        if (!vm.claimDailyJelly()) context.toast(tr(lang, "오늘은 이미 받았어요", "Already claimed today"))
-                                        else context.toast(tr(lang, "젤리 30개를 받았어요", "30 jelly claimed"))
+                                        scope.launch { refreshBilling() }
                                     }
                                     .padding(horizontal = 13.dp, vertical = 8.dp)
                             ) {
-                                Text(tr(lang, "출석 보상 받기", "Claim daily"), style = MaterialTheme.typography.labelSmall, color = Color(0xFF1B1D22), fontWeight = FontWeight.Medium)
+                                Text(tr(lang, "잔여량 새로고침", "Refresh quota"), style = MaterialTheme.typography.labelSmall, color = Color(0xFF1B1D22), fontWeight = FontWeight.Medium)
                             }
                             Box(
                                 Modifier
@@ -145,13 +171,22 @@ fun CreditsScreen(
                                     .clickable { showPlans = true }
                                     .padding(horizontal = 13.dp, vertical = 8.dp)
                             ) {
-                                Text("${state.account.plan.label(lang)} · ${tr(lang, "플랜 변경", "Change plan")}", style = MaterialTheme.typography.labelSmall, color = Color.White)
+                                Text(tr(lang, "플랜 확인", "View plans"), style = MaterialTheme.typography.labelSmall, color = Color.White)
                             }
                         }
                     }
                 }
             }
             item {
+                Column(Modifier.padding(16.dp)) {
+                    if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                    Text(when {
+                        error -> tr(lang, "Cloud 조회 실패 · 실제 잔액을 표시하지 않습니다.", "Cloud verification failed")
+                        billing == null -> tr(lang, "Cloud 계정 연결이 필요합니다.", "Connect your Cloud account")
+                        else -> tr(lang, "서버에서 조회한 이용량입니다. 외부 앱 권한은 무료 추론 전용입니다.", "Verified usage; external app scope is free inference only.")
+                    }, color = p.textSecondary)
+                    TextButton(onClick = onCloudAccount) { Text(tr(lang, "Cloud 계정 연결·관리", "Manage Cloud account")) }
+                }
                 LazyRow(
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -181,7 +216,7 @@ fun CreditsScreen(
                 item {
                     Box(Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(p.cardSoft).padding(14.dp)) {
                         Text(
-                            tr(lang, "젤리는 대화와 기능 사용에 쓰여요. 플랜에 따라 매월 자동 충전돼요.", "Jelly is used for conversations and features. Plans refill monthly."),
+                            tr(lang, "젤리·에너지·티켓은 기존 앱 상품 유형입니다. 현재 Cloud에는 해당 결제 상품이 등록되어 있지 않으며 실제 사용량은 위 서버 조회값을 따릅니다.", "Legacy item types are not configured Cloud products. Actual usage is shown above."),
                             style = MaterialTheme.typography.bodySmall,
                             color = p.textTertiary
                         )
@@ -189,7 +224,11 @@ fun CreditsScreen(
                 }
             }
             if (tab == 1) {
-                item { SectionLabel(tr(lang, "이용 내역", "History"), Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) }
+                item {
+                    SectionLabel(tr(lang, "기기 기록 (결제 증빙 아님)", "Device history (not payment receipts)"), Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+                    Text(tr(lang, "실제 결제 내역은 PC DOMINION의 Cloud 계정에서 확인하세요.", "View verified payment history in desktop DOMINION Cloud."),
+                        modifier = Modifier.padding(horizontal = 20.dp), color = p.textSecondary)
+                }
                 items(state.transactions, key = { it.id }) { tx ->
                     Row(
                         Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 11.dp),
@@ -225,21 +264,8 @@ fun CreditsScreen(
                 item {
                     Column(Modifier.padding(horizontal = 16.dp)) {
                         listOf(Plan.FREE, Plan.PLUS, Plan.PRO).forEach { plan ->
-                            PlanCard(plan, current = state.account.plan == plan) {
-                                if (plan != Plan.FREE) {
-                                    vm.purchase(
-                                        StoreProduct(
-                                            "plan_${plan.name}",
-                                            plan.label(lang) + " " + tr(lang, "플랜", "plan"),
-                                            plan.price(lang),
-                                            plan.price(lang),
-                                            1,
-                                            ProductKind.PLAN
-                                        )
-                                    )
-                                    context.toast(tr(lang, "${plan.label(lang)} 플랜으로 바뀌었어요 (데모)", "Switched to ${plan.label(lang)} (demo)"))
-                                }
-                            }
+                            PlanCard(plan, current = billing?.plan?.equals(plan.name, true) == true,
+                                cloudPrice = billing?.pro_price_krw) { onCloudAccount() }
                             Spacer(Modifier.height(8.dp))
                         }
                     }
@@ -271,20 +297,19 @@ fun CreditsScreen(
                         Text(product.title, style = MaterialTheme.typography.titleSmall, color = p.textPrimary)
                         Text(product.subtitle, style = MaterialTheme.typography.bodySmall, color = p.textTertiary)
                     }
-                    Text(product.price, style = MaterialTheme.typography.titleSmall, color = p.textPrimary)
+                    Text(tr(lang, "상품 미연동", "Not configured"), style = MaterialTheme.typography.titleSmall, color = p.textPrimary)
                 }
                 Spacer(Modifier.height(16.dp))
                 PrimaryButton(
-                    text = tr(lang, "${product.price}에 구매", "Buy for ${product.price}"),
+                    text = tr(lang, "실제 결제 설정 확인", "Check payment availability"),
                     onClick = {
-                        vm.purchase(product)
                         buyTarget = null
-                        context.toast(tr(lang, "구매가 완료됐어요 (데모)", "Purchase complete (demo)"))
+                        onCloudAccount()
                     }
                 )
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    tr(lang, "실제 결제는 Google Play 연결 후 활성화돼요.", "Real payments activate after Google Play is connected."),
+                    tr(lang, "현재 외부 앱 계정에는 결제 권한이 없습니다. PC에서 본인 인증 및 실제 결제를 관리하세요. 이 화면에서는 요금이 청구되지 않습니다.", "External app credentials cannot purchase. Manage identity and payments on desktop; no charge here."),
                     style = MaterialTheme.typography.labelSmall,
                     color = p.textTertiary,
                     modifier = Modifier.fillMaxWidth(),
@@ -296,18 +321,14 @@ fun CreditsScreen(
 
     if (showPlans) {
         AppBottomSheet(onDismiss = { showPlans = false }) {
-            SheetTitle(tr(lang, "플랜 비교", "Compare plans"), tr(lang, "언제든 바꿀 수 있어요.", "Change anytime."))
+            SheetTitle(tr(lang, "플랜 비교", "Compare plans"), tr(lang, "Cloud에서 확인한 실제 정보", "Verified Cloud information"))
             Column(Modifier.padding(horizontal = 24.dp)) {
-                PlanCard(Plan.FREE, state.account.plan == Plan.FREE) {}
-                Spacer(Modifier.height(8.dp))
-                PlanCard(Plan.PLUS, state.account.plan == Plan.PLUS) {
-                    vm.purchase(StoreProduct("plan_plus", "플러스", "", "₩12,000 / 월", 1, ProductKind.PLAN))
-                    showPlans = false
-                }
-                Spacer(Modifier.height(8.dp))
-                PlanCard(Plan.PRO, state.account.plan == Plan.PRO) {
-                    vm.purchase(StoreProduct("plan_pro", "프로", "", "₩29,000 / 월", 1, ProductKind.PLAN))
-                    showPlans = false
+                listOf(Plan.FREE, Plan.PLUS, Plan.PRO).forEach { plan ->
+                    PlanCard(plan, billing?.plan?.equals(plan.name, true) == true, billing?.pro_price_krw) {
+                        showPlans = false
+                        onCloudAccount()
+                    }
+                    Spacer(Modifier.height(8.dp))
                 }
             }
         }
@@ -352,7 +373,7 @@ private fun ProductCard(product: StoreProduct, onClick: () -> Unit) {
                 )
             }
             Spacer(Modifier.weight(1f))
-            Text(product.price, style = MaterialTheme.typography.labelMedium, color = p.textPrimary)
+            Text(tr(lang, "상품 미연동", "Not configured"), style = MaterialTheme.typography.labelMedium, color = p.textPrimary)
         }
         Spacer(Modifier.weight(1f))
         Text(product.title, style = MaterialTheme.typography.titleSmall, color = p.textPrimary)
@@ -361,7 +382,7 @@ private fun ProductCard(product: StoreProduct, onClick: () -> Unit) {
 }
 
 @Composable
-private fun PlanCard(plan: Plan, current: Boolean, onClick: () -> Unit) {
+private fun PlanCard(plan: Plan, current: Boolean, cloudPrice: Long?, onClick: () -> Unit) {
     val p = LocalDominionPalette.current
     val lang = LocalLang.current
     Row(
@@ -384,15 +405,19 @@ private fun PlanCard(plan: Plan, current: Boolean, onClick: () -> Unit) {
             }
             Text(
                 when (plan) {
-                    Plan.FREE -> tr(lang, "기본 대화와 하루 에너지 3개", "Basic chats and 3 energy a day")
-                    Plan.PLUS -> tr(lang, "월 젤리 300개 · 에너지 10개", "300 jelly · 10 energy a month")
-                    Plan.PRO -> tr(lang, "월 젤리 800개 · 우선 응답", "800 jelly · priority responses")
+                    Plan.FREE -> tr(lang, "서버가 정한 무료 요청 한도", "Server-defined free request quota")
+                    Plan.PLUS -> tr(lang, "현재 Cloud 상품 미등록", "Not configured in Cloud")
+                    Plan.PRO -> tr(lang, "Cloud 구독 · PC에서 관리", "Cloud subscription · manage on desktop")
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = p.textTertiary
             )
         }
-        Text(plan.price(lang), style = MaterialTheme.typography.labelMedium, color = p.textSecondary)
+        Text(when (plan) {
+            Plan.FREE -> "0원"
+            Plan.PLUS -> "—"
+            Plan.PRO -> cloudPrice?.takeIf { it > 0 }?.let { it.toString() + "원" } ?: "—"
+        }, style = MaterialTheme.typography.labelMedium, color = p.textSecondary)
     }
 }
 

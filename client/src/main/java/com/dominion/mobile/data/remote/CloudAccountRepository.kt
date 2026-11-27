@@ -35,7 +35,21 @@ internal object CloudPairingProtocol {
 data class CloudPairing(val id: String, val token: String, val verificationUrl: String, val verifiedAccountId: String? = null)
 data class CloudStatus(val id: String, val status: String, val expires_at: Long)
 data class CloudIdentity(val account_id: String, val scope: String, val app_session_id: String)
-data class CloudBilling(val plan: String, val free_daily_remaining: Int, val free_daily_limit: Int)
+data class CloudBilling(val plan: String, val free_daily_remaining: Int, val free_daily_limit: Int,
+    val account_id: String? = null, val credits_micro_krw: Long? = null,
+    val free_monthly_remaining: Int? = null, val free_monthly_limit: Int? = null,
+    val free_quota_reset_utc: String? = null, val valid_until: Long? = null,
+    val pro_price_krw: Long? = null, val checkout_enabled: Boolean? = null) {
+    fun verifiedFor(accountId: String): CloudBilling {
+        require(account_id == accountId && accountId.isNotBlank())
+        require(plan.isNotBlank() && free_daily_limit >= 0 && free_daily_remaining in 0..free_daily_limit)
+        require(credits_micro_krw != null && credits_micro_krw >= 0)
+        return this
+    }
+    fun balanceKrw(): String? = credits_micro_krw?.let {
+        java.math.BigDecimal.valueOf(it, 3).stripTrailingZeros().toPlainString() + "원"
+    }
+}
 data class CloudModel(val id: String, val name: String, val free: Boolean)
 data class CloudModels(val data: List<CloudModel>)
 private data class PairRequest(val app_name: String, val token_hash: String)
@@ -105,9 +119,12 @@ class CloudAccountRepository(context: Context) {
                 "approved" -> {
                     val identity = api.me(auth)
                     require(identity.app_session_id == pair.id && identity.scope == "free_inference")
-                    if (pair.verifiedAccountId != identity.account_id) store.save(pair.copy(verifiedAccountId = identity.account_id))
+                    require(identity.account_id.isNotBlank())
+                    require(pair.verifiedAccountId == null || pair.verifiedAccountId == identity.account_id)
+                    val billing = api.billing(auth).verifiedFor(identity.account_id)
+                    if (pair.verifiedAccountId == null) store.save(pair.copy(verifiedAccountId = identity.account_id))
                     CloudAccountSnapshot(pair.id, status = "approved", expiresAt = status.expires_at,
-                        accountId = identity.account_id, billing = api.billing(auth),
+                        accountId = identity.account_id, billing = billing,
                         models = api.models(auth).data.filter { it.free })
                 }
                 "revoked", "expired" -> {

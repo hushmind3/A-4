@@ -356,7 +356,7 @@ private fun DrawerContent(
             Column(Modifier.weight(1f)) {
                 Text(state.account.name, style = MaterialTheme.typography.titleMedium, color = p.textPrimary)
                 Text(
-                    "${state.account.plan.label(lang)} · @minji",
+                    tr(lang, "DOMINION 계정 · 설정에서 확인", "DOMINION account · view settings"),
                     style = MaterialTheme.typography.bodySmall,
                     color = p.textTertiary
                 )

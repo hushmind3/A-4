@@ -349,7 +349,8 @@ fun DominionAppRoot(vm: AppViewModel) {
                 )
             }
             composable(Routes.CREDITS) {
-                CreditsScreen(state = state, vm = vm, onBack = { nav.popBackStack() })
+                CreditsScreen(state = state, vm = vm, onBack = { nav.popBackStack() },
+                    onCloudAccount = { nav.navigate(Routes.CLOUD_ACCOUNT) })
             }
             composable(Routes.INVITE) {
                 InviteScreen(state = state, onBack = { nav.popBackStack() })

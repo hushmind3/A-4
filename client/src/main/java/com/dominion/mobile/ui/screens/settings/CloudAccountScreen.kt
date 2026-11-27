@@ -121,6 +121,10 @@ fun CloudAccountScreen(onBack: () -> Unit) {
                     current.accountId?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                     current.billing?.let {
                         Text(tr(lang, "플랜: ", "Plan: ") + it.plan)
+                        it.balanceKrw()?.let { balance -> Text(tr(lang, "실제 잔액: ", "Verified balance: ") + balance) }
+                        it.free_monthly_remaining?.let { remaining ->
+                            Text(tr(lang, "월 잔여 요청: ", "Monthly remaining: ") + remaining + "/" + it.free_monthly_limit)
+                        }
                         Text(tr(lang, "오늘 무료 모델 잔여 요청: ", "Free requests remaining today: ") +
                             "${it.free_daily_remaining} / ${it.free_daily_limit}")
                     }
