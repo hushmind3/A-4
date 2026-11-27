@@ -25,6 +25,7 @@ fun PhoneNavigationDialog(plan: PhoneNavigationPlan, onDismiss: () -> Unit,
         onDispose { PhoneNavigationService.clearObserved() }
     }
     var approved by remember(plan) { mutableStateOf(false) }
+    var reviewedBatch by remember(plan) { mutableStateOf(false) }
     var started by remember(plan) { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
     val installed = remember(plan.app) {
@@ -38,7 +39,13 @@ fun PhoneNavigationDialog(plan: PhoneNavigationPlan, onDismiss: () -> Unit,
                 Text("대상: " + (installed?.label ?: PhoneNavigationPlan.apps[plan.app] ?: plan.app))
                 Text(plan.app, style = MaterialTheme.typography.labelSmall)
                 if (installed == null) Text("이 기기에서 실행할 수 있는 앱을 확인하지 못했습니다.", color = MaterialTheme.colorScheme.error)
-                Text("선택한 앱에서 각 단계를 화면 위 확인 버튼으로 직접 승인해야 실행합니다. 단계별 승인 제한은 30초, 전체 제한은 5분입니다. 다른 앱·잠금 화면으로 바뀌면 중단합니다.")
+                Text("기본은 각 단계 화면 위 승인입니다. 전체 제한은 5분이며 다른 앱·잠금 화면·대상 불일치 시 중단합니다.")
+                if (PhoneNavigationPlan.permitsReviewedBatch(plan)) Row {
+                    Checkbox(reviewedBatch, { reviewedBatch = it; approved = false }, enabled = !started)
+                    Text("아래 탐색 계획 전체를 한 번 승인하여 자동 실행", modifier = Modifier.padding(top = 12.dp))
+                }
+                if (reviewedBatch) Text("원래 지원하던 앱의 제한된 검색·탐색 동작만 일괄 실행합니다. 중지 버튼은 계속 표시됩니다.",
+                    style = MaterialTheme.typography.bodySmall)
                 plan.steps.forEachIndexed { index, step ->
                     Text((index + 1).toString() + ". " + when(step.action) {
                         "click" -> "선택: "
@@ -91,7 +98,7 @@ fun PhoneNavigationDialog(plan: PhoneNavigationPlan, onDismiss: () -> Unit,
             }
         },
         confirmButton = { TextButton(enabled = connected && approved && !started && installed != null,onClick = {
-            started = PhoneNavigationService.start(plan)
+            started = PhoneNavigationService.start(plan, reviewedBatch)
             if (!started) error = "이미 조작 중이거나 기기가 잠겨 있습니다."
         }) { Text("기기에서 실행") } },
         dismissButton = { TextButton(onClick = { if (started) PhoneNavigationService.stop(); onDismiss() }) { Text("닫기") } })

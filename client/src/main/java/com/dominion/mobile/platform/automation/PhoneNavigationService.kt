@@ -108,9 +108,10 @@ class PhoneNavigationService : AccessibilityService() {
         getSystemService(PowerManager::class.java).isInteractive &&
             !getSystemService(KeyguardManager::class.java).isKeyguardLocked
 
-    private fun begin(plan: PhoneNavigationPlan): Boolean {
+    private fun begin(plan: PhoneNavigationPlan, reviewedBatch: Boolean): Boolean {
         if (work?.isActive == true || !unlocked() || !PhoneNavigationPlan.valid(plan) ||
-            !DeviceActions.isLaunchable(this, plan.app)) return false
+            !DeviceActions.isLaunchable(this, plan.app) ||
+            (reviewedBatch && !PhoneNavigationPlan.permitsReviewedBatch(plan))) return false
         // Limit the dynamically configured accessibility event scope to the reviewed app.
         val originalPackages = serviceInfo.packageNames
         val configured = serviceInfo
@@ -139,7 +140,13 @@ class PhoneNavigationService : AccessibilityService() {
                     for (step in plan.steps) {
                         _status.value = "기기 단계 " + (completed + 1) + "/" + plan.steps.size + " · " + step.action
                         // Show the real target on the foreground app and require a fresh tap for every step.
-                        approveStep(step,plan.app,completed+1,plan.steps.size)
+                        if (reviewedBatch) {
+                            stepLabel?.text = "승인한 일괄 실행 · " + (completed + 1) + "/" + plan.steps.size +
+                                " · " + step.action + " · " + step.label
+                            approveButton?.isEnabled = false
+                            // Give the user an opportunity to stop before each operation.
+                            delay(600)
+                        } else approveStep(step,plan.app,completed+1,plan.steps.size)
                         val deadline = android.os.SystemClock.elapsedRealtime() + 4000
                         var success = false
                         while (!success && android.os.SystemClock.elapsedRealtime() < deadline) {
@@ -252,7 +259,8 @@ class PhoneNavigationService : AccessibilityService() {
         val connected = _connected.asStateFlow()
         private val _status = MutableStateFlow("")
         val status = _status.asStateFlow()
-        fun start(plan: PhoneNavigationPlan): Boolean = instance?.begin(plan) ?: false
+        fun start(plan: PhoneNavigationPlan, reviewedBatch: Boolean = false): Boolean =
+            instance?.begin(plan, reviewedBatch) ?: false
         fun stop() { instance?.work?.cancel() }
     }
 }

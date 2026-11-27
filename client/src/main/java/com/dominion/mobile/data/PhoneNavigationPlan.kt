@@ -66,6 +66,12 @@ data class PhoneNavigationPlan(val app: String, val steps: List<PhoneNavigationS
                         else -> false
                     }
             }
+        /** Only the original narrow navigation vocabulary can run as a reviewed batch.
+         * Generic app-specific controls always require individual review. */
+        fun permitsReviewedBatch(plan: PhoneNavigationPlan): Boolean =
+            valid(plan) && plan.version == 1 && plan.app in apps &&
+                plan.steps.all { it.action in setOf("click","search_text","scroll_forward","scroll_backward","expect") }
+
         fun fromMessage(text: String): PhoneNavigationPlan? = runCatching {
             require(text.length <= 16000)
             val fence = 96.toChar().toString().repeat(3)
