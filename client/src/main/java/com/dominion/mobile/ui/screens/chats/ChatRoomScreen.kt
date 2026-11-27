@@ -146,6 +146,7 @@ fun ChatRoomScreen(
     var voiceConversation by remember(conversationId, conversation.sessionId) { mutableStateOf(false) }
     var speakText by remember(conversationId, conversation.sessionId) { mutableStateOf<String?>(null) }
     var showMenu by remember { mutableStateOf(false) }
+    var showModels by remember(conversationId) { mutableStateOf(false) }
     var realtimeChoice by remember { mutableStateOf(false) }
     var messageMenu by remember { mutableStateOf<Message?>(null) }
     var miniAppMessage by remember(conversationId, conversation.sessionId) { mutableStateOf<Message?>(null) }
@@ -661,6 +662,7 @@ fun ChatRoomScreen(
     if (showMenu) {
         AppBottomSheet(onDismiss = { showMenu = false }) {
             SheetTitle(conversation.title(state.characters), character.tagline)
+            SheetRow("실행 모델 선택 · 로컬/Cloudflare", Glyph.SPARK) { showMenu=false;showModels=true }
             SheetRow("실시간 본체 AI 통화", Glyph.PHONE) { showMenu = false; realtimeChoice = true }
             SheetRow(tr(lang, "대화방 정보", "Room info"), Glyph.PERSON) { showMenu = false; onRoomInfo() }
             SheetRow(tr(lang, "대화 검색", "Search chat"), Glyph.SEARCH) { showMenu = false; onSearch() }
@@ -681,6 +683,8 @@ fun ChatRoomScreen(
         }
     }
 
+    if(showModels) com.dominion.mobile.ui.components.RoomModelPicker(conversationId,conversation.sessionId,
+        onDismiss={showModels=false})
     if (realtimeChoice) com.dominion.mobile.ui.components.RealtimeCallDialog(vm,
         onStart = { video ->
             realtimeChoice = false

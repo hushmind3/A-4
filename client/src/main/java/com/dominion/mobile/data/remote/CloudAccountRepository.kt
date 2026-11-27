@@ -85,7 +85,8 @@ class CloudAccountRepository(context: Context) {
     private val lock = Mutex()
     private val api = Retrofit.Builder().baseUrl("$CLOUD_ORIGIN/")
         .client(OkHttpClient.Builder().followRedirects(false).followSslRedirects(false)
-            .retryOnConnectionFailure(false).callTimeout(20, TimeUnit.SECONDS).build())
+            .retryOnConnectionFailure(false).connectTimeout(15,TimeUnit.SECONDS)
+            .readTimeout(120,TimeUnit.SECONDS).callTimeout(130, TimeUnit.SECONDS).build())
         .addConverterFactory(GsonConverterFactory.create()).build().create(CloudApi::class.java)
 
     private fun loadPairing(): CloudPairing? = store.load()?.also {
