@@ -57,10 +57,12 @@ class NativeMediaDeviceTest {
         val scope="instrumentation"
         val key=AvatarModelStore.key(scope,id)
         val store=StandardAvatarStore(context.noBackupFilesDir)
-        val data=ByteBuffer.allocate(36).order(ByteOrder.LITTLE_ENDIAN)
+        val data=ByteBuffer.allocate(72).order(ByteOrder.LITTLE_ENDIAN)
         floatArrayOf(-1f,-1f,0f,1f,-1f,0f,0f,1f,0f).forEach{data.putFloat(it)}
+        // Matte glTF surface with +Z normals: no environment cubemap required.
+        repeat(3){floatArrayOf(0f,0f,1f).forEach{data.putFloat(it)}}
         val base64=java.util.Base64.getEncoder().encodeToString(data.array())
-        val json="""{"asset":{"version":"2.0"},"extensionsUsed":["KHR_materials_unlit"],"scene":0,"scenes":[{"nodes":[0]}],"nodes":[{"mesh":0}],"meshes":[{"primitives":[{"attributes":{"POSITION":0},"material":0}]}],"materials":[{"doubleSided":true,"extensions":{"KHR_materials_unlit":{}},"pbrMetallicRoughness":{"baseColorFactor":[0,1,0,1]}}],"buffers":[{"byteLength":36,"uri":"data:application/octet-stream;base64,$base64"}],"bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36,"target":34962}],"accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3","min":[-1,-1,0],"max":[1,1,0]}]}"""
+        val json="""{"asset":{"version":"2.0"},"scene":0,"scenes":[{"nodes":[0]}],"nodes":[{"mesh":0}],"meshes":[{"primitives":[{"attributes":{"POSITION":0,"NORMAL":1},"material":0}]}],"materials":[{"doubleSided":true,"pbrMetallicRoughness":{"baseColorFactor":[0,1,0,1],"metallicFactor":0,"roughnessFactor":1}}],"buffers":[{"byteLength":72,"uri":"data:application/octet-stream;base64,$base64"}],"bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36,"target":34962},{"buffer":0,"byteOffset":36,"byteLength":36,"target":34962}],"accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3","min":[-1,-1,0],"max":[1,1,0]},{"bufferView":1,"componentType":5126,"count":3,"type":"VEC3","min":[0,0,1],"max":[0,0,1]}]}"""
         store.save(key,json.toByteArray())
         try {
             val intent=Intent(context,StandardAvatarActivity::class.java)
