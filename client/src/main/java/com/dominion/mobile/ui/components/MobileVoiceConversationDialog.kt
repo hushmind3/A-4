@@ -81,14 +81,15 @@ fun MobileVoiceConversationDialog(vm:AppViewModel,roomId:String,onDismiss:()->Un
     }
     LaunchedEffect(room?.messages,waiting){
         val id=waiting?:return@LaunchedEffect
-        if(room?.sessionId!=originalSession){
+        val activeRoom=room?.takeIf{it.sessionId==originalSession}
+        if(activeRoom==null){
             waiting=null;phase="대화 세션 변경으로 중지";return@LaunchedEffect
         }
-        val owner=room.messages.firstOrNull{it.id==id}
+        val owner=activeRoom.messages.firstOrNull{it.id==id}
         if(owner?.status==MessageStatus.FAILED||owner?.jobStatus in setOf("cancelled","failed","interrupted")){
             waiting=null;phase="작업 실패 · 대화 기록에서 확인해 주세요";return@LaunchedEffect
         }
-        val reply=room.messages.firstOrNull{it.replyTo==id&&it.sender==MessageSender.ASSISTANT}
+        val reply=activeRoom.messages.firstOrNull{it.replyTo==id&&it.sender==MessageSender.ASSISTANT}
         if(reply!=null){
             waiting=null
             answer=reply.text
