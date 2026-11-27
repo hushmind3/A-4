@@ -1,7 +1,7 @@
 package com.dominion.mobile.platform.audio
 
 import com.dominion.mobile.data.RemotePcm
-import io.livekit.android.room.track.RemoteAudioTrack
+import io.livekit.android.room.track.AudioTrack
 import livekit.org.webrtc.AudioTrackSink
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -10,7 +10,7 @@ import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicBoolean
 
 object RemoteSpeechCapture {
-    suspend fun capture(track: RemoteAudioTrack, stop: AtomicBoolean,
+    suspend fun capture(track: AudioTrack, stop: AtomicBoolean,
         valid: () -> Boolean, onProgress: (Int) -> Unit): ByteArray = withContext(Dispatchers.Main.immediate) {
         val audio = RemotePcm(30)
         val collecting = AtomicBoolean(true)
