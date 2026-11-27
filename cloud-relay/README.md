@@ -69,3 +69,19 @@ Realtime token issuance fails closed if LiveKit is not configured or explicit di
 ## Work-session and browser source revision
 
 Migration 0007 adds `cloud_work_sessions`/`cloud_work_events`. `work_sessions.js` implements durable research, browser, phone and admin work with user questions, answers, resume, parallel queues, events and generic push. The phone adapter uses operator `PHONE_BRIDGE_URL/TOKEN`; the Android app never receives those credentials. `browser_session.js` adds encrypted per-account official-site cookie sessions and Browser Rendering reads; migration 0006 is required. `LIVEKIT_*` and `PHONE_BRIDGE_*` remain operator configuration. This source revision is not deployed; no live Cloud work/browser/phone roundtrip is claimed.
+
+## Production deployment (2026-11-27, A-4 main)
+
+Deployed to the existing `dominion-cloud` Worker as version **77511c72-a446-419b-828d-5c28cd025c30** on 2026-11-27. The previous stable version/rollback target is **61dbc468-2b36-4d9a-bb3e-cd4370160bf6**.
+
+Applied D1 migrations 0005 (messenger), 0006 (encrypted browser sessions), 0007 (work sessions), and 0008 (schedule/retry/deadline). Existing bindings were retained: D1 `DB`, Workers AI `AI`, `ASSISTANT_SOCKET` Durable Object and `ASSISTANT_LINK_ENABLED=1`. Existing secrets were preserved.
+
+Live checks after deployment:
+
+- `/health` returned online with login and models configured.
+- A temporary signed app grant returned `/v1/me` identity, the free-model catalog, messenger profile creation, browser-session metadata and Cloud work creation.
+- `/v1/phone/health` returned `Phone service not configured`; no phone bridge/SIP secret is present.
+- `/v1/realtime/capabilities` returned `enabled:false`; no LiveKit URL/key is present.
+- `/v1/push/config` returned `Push not configured`; no Firebase Android/FCM config is present.
+
+The temporary test account and its work/messenger/browser rows were deleted. Live external phone, LiveKit voice, FCM delivery and Browser Rendering remain blocked until their operator credentials/bindings are configured and tested. Work scheduling fields (`scheduled_at`, `repeat`, `condition`, `deadline`, `attempts`, `next_run`) are deployed in the work-session API; document/image generation and arbitrary service adapters are not yet implemented.

@@ -12,6 +12,7 @@ captures/
 *.keystore
 *.jks
 .kotlin/
+.wrangler/
 __pycache__/
 *.pyc
 

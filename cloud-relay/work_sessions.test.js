@@ -10,6 +10,7 @@ const fixture=()=>{
     'CREATE TABLE app_sessions(id TEXT PRIMARY KEY,account_id TEXT,status TEXT,expires_at INTEGER,capability TEXT,token_hash TEXT UNIQUE);'+
     'CREATE TABLE free_quota(account_day TEXT PRIMARY KEY,used INTEGER NOT NULL);');
   sqlite.exec(readFileSync(new URL('./migrations/0007_work_sessions.sql',import.meta.url),'utf8'));
+  sqlite.exec(readFileSync(new URL('./migrations/0008_work_schedule.sql',import.meta.url),'utf8'));
   const DB={prepare(sql){
     const st=sqlite.prepare(sql);let args=[];
     const b={bind(...v){args=v;return b},async first(){return st.get(...args)??null},
