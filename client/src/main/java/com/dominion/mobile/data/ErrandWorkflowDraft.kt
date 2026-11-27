@@ -4,13 +4,31 @@ import com.google.gson.JsonParser
 import com.dominion.mobile.data.model.AppState
 import com.dominion.mobile.platform.DeviceActions
 
-data class ErrandStage(val title:String,val agentId:String,val request:String,val app:String?)
+data class ErrandStage(val title:String,val agentId:String,val request:String,val app:String?,
+    val transaction:PhoneTransactionRequest?=null,val message:KakaoMessageRequest?=null){
+    val external:Boolean get()=transaction!=null||message!=null
+    fun checked(agents:Set<String>,apps:Set<String>):ErrandStage{
+        require(title.isNotBlank()&&title.length<=100&&agentId in agents&&request.isNotBlank()&&request.length<=1300)
+        require(transaction==null||message==null)
+        if(external){
+            val pkg=requireNotNull(app)
+            require(pkg in apps)
+            transaction?.let{
+                require(!PhoneTransactions.deviceOnly(it.kind))
+                it.checked(pkg)
+            }
+            message?.let{require(it.app==pkg&&it.negotiationGoal==null&&!it.waitForReply);it.checked()}
+        }else require(app==null||app in apps&&app in PhonePublicResult.packages)
+        return this
+    }
+}
 data class ErrandWorkflowDraft(val id:String,val goal:String,val stages:List<ErrandStage>){
     fun checked(agents:Set<String>,apps:Set<String>):ErrandWorkflowDraft{
         require(id.matches(Regex("[a-f0-9-]{36}"))&&goal.length in 3..1500&&stages.size in 2..4)
-        require(stages.all{it.title.isNotBlank()&&it.title.length<=100&&it.agentId in agents&&
-            it.request.isNotBlank()&&it.request.length<=1300&&
-            (it.app==null||it.app in apps&&it.app in PhonePublicResult.packages)})
+        stages.forEach{it.checked(agents,apps)}
+        // A model cannot authorize the first stage to make an external change.
+        // Research must precede any generated external operation.
+        require(!stages.first().external)
         require(stages.distinct().size==stages.size)
         return this
     }
@@ -21,9 +39,22 @@ data class ErrandWorkflowDraft(val id:String,val goal:String,val stages:List<Err
             require(o.keySet()==setOf("stages"))
             val stages=o.getAsJsonArray("stages").map{item->
                 val s=item.asJsonObject
-                require(s.keySet()==setOf("title","agentId","request","app"))
-                fun str(k:String)=s.get(k).also{require(it.isJsonPrimitive&&it.asJsonPrimitive.isString)}.asString.trim()
-                ErrandStage(str("title"),str("agentId"),str("request"),if(s.get("app").isJsonNull)null else str("app"))
+                require(s.keySet() in setOf(setOf("title","agentId","request","app"),
+                    setOf("title","agentId","request","app","transaction","message")))
+                fun str(o:com.google.gson.JsonObject,k:String)=o.get(k).also{require(it.isJsonPrimitive&&it.asJsonPrimitive.isString)}.asString.trim()
+                val pkg=if(s.get("app").isJsonNull)null else str(s,"app")
+                val tx=s.get("transaction")?.takeUnless{it.isJsonNull}?.asJsonObject?.let{t->
+                    require(t.keySet()==setOf("kind","target","condition","maxWon"))
+                    val n=t.get("maxWon").asJsonPrimitive
+                    require(n.isNumber&&n.asString.matches(Regex("[0-9]{1,9}")))
+                    PhoneTransactionRequest(str(t,"kind"),str(t,"target"),str(t,"condition"),n.asLong)
+                }
+                val message=s.get("message")?.takeUnless{it.isJsonNull}?.asJsonObject?.let{m->
+                    require(m.keySet()==setOf("recipient","body","listing"))
+                    KakaoMessageRequest(str(m,"recipient"),str(m,"body"),requireNotNull(pkg),
+                        if(m.get("listing").isJsonNull)null else str(m,"listing"))
+                }
+                ErrandStage(str(s,"title"),str(s,"agentId"),str(s,"request"),pkg,tx,message)
             }
             return ErrandWorkflowDraft(java.util.UUID.randomUUID().toString(),goal,stages).checked(agents,apps)
         }
