@@ -4,7 +4,7 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 
 data class PhoneNavigationStep(val action: String, val label: String, val value: String? = null)
-data class PhoneNavigationPlan(val app: String, val steps: List<PhoneNavigationStep>) {
+data class PhoneNavigationPlan(val app: String, val steps: List<PhoneNavigationStep>, val version: Int = 1) {
     companion object {
         val apps = mapOf("com.nhn.android.nmap" to "네이버 지도", "net.daum.android.map" to "카카오맵",
             "com.google.android.youtube" to "YouTube", "com.google.android.calendar" to "Google 캘린더",
@@ -26,15 +26,39 @@ data class PhoneNavigationPlan(val app: String, val steps: List<PhoneNavigationS
             "scroll_forward", "scroll_backward" -> if (app in apps) setOf("화면", "Screen") else emptySet()
             else -> emptySet()
         }
-        fun valid(plan: PhoneNavigationPlan): Boolean = plan.app in apps &&
+        fun eligiblePackage(app: String): Boolean =
+            app.matches(Regex("[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z0-9_]+)+")) &&
+                app.length <= 100 && app !in setOf("com.android.settings", "com.android.systemui",
+                    "com.android.permissioncontroller", "com.google.android.permissioncontroller",
+                    "com.android.packageinstaller", "com.google.android.packageinstaller", "com.android.vending")
+
+        private fun permittedLabel(plan: PhoneNavigationPlan, action: String, label: String): Boolean {
+            if (plan.version == 1 || plan.app in apps) return label in labels(plan.app, action)
+            return when (action) {
+                "scroll_forward", "scroll_backward" -> label in setOf("화면", "Screen")
+                "search_text" -> label in commonSearch
+                "click" -> {
+                    val normalized = label.lowercase(java.util.Locale.ROOT)
+                    // A new app can have arbitrary navigation labels, but never use this
+                    // generic adapter for obvious account/transaction/send/delete operations.
+                    listOf("결제","구매","송금","삭제","발송","전송","로그인","인증","제출","가입","허용",
+                        "pay","purchase","buy","transfer","delete","send","sign in","login","submit",
+                        "allow","authorize","install","uninstall","confirm order").none { normalized.contains(it) }
+                }
+                else -> false
+            }
+        }
+
+        fun valid(plan: PhoneNavigationPlan): Boolean =
+            (plan.version == 1 && plan.app in apps || plan.version == 2 && eligiblePackage(plan.app)) &&
             plan.steps.size in 1..8 && plan.steps.last().action == "expect" &&
             plan.steps.all { step ->
                 step.label.isNotBlank() && step.label.length <= 100 && step.label.none(Char::isISOControl) &&
                     when (step.action) {
                         "expect" -> step.value == null
                         "click", "scroll_forward", "scroll_backward" ->
-                            step.value == null && step.label in labels(plan.app, step.action)
-                        "search_text" -> step.label in labels(plan.app, step.action) &&
+                            step.value == null && permittedLabel(plan, step.action, step.label)
+                        "search_text" -> permittedLabel(plan, step.action, step.label) &&
                             step.value?.let { it.isNotBlank() && it.length <= 250 && it.none(Char::isISOControl) } == true
                         else -> false
                     }
@@ -58,9 +82,13 @@ data class PhoneNavigationPlan(val app: String, val steps: List<PhoneNavigationS
                 require(v.isJsonPrimitive && v.asJsonPrimitive.isString)
                 return v.asString.also { require(it.isNotBlank() && it.length <= max && it.none(Char::isISOControl)) }
             }
-            require(read(row,"schema",40) == "dominion-phone-plan/v1")
+            val version = when (read(row,"schema",40)) {
+                "dominion-phone-plan/v1" -> 1
+                "dominion-phone-plan/v2" -> 2
+                else -> error("Unsupported schema")
+            }
             val app = read(row,"app",100)
-            require(app in apps)
+            require(if (version == 1) app in apps else eligiblePackage(app))
             val items = row.getAsJsonArray("steps")
             require(items.size() in 1..8)
             val steps = items.map {
@@ -69,11 +97,11 @@ data class PhoneNavigationPlan(val app: String, val steps: List<PhoneNavigationS
                 val label = read(step,"label",100)
                 when (action) {
                     "click", "scroll_forward", "scroll_backward" -> {
-                        require(step.keySet() == setOf("action","label") && label in labels(app,action))
+                        require(step.keySet() == setOf("action","label"))
                         PhoneNavigationStep(action,label)
                     }
                     "search_text" -> {
-                        require(step.keySet() == setOf("action","label","value") && label in labels(app,action))
+                        require(step.keySet() == setOf("action","label","value"))
                         PhoneNavigationStep(action,label,read(step,"value",250))
                     }
                     "expect" -> {
@@ -83,7 +111,19 @@ data class PhoneNavigationPlan(val app: String, val steps: List<PhoneNavigationS
                     else -> error("Unsupported device operation")
                 }
             }
-            return PhoneNavigationPlan(app,steps).also { require(valid(it)) }
+            return PhoneNavigationPlan(app,steps,version).also { require(valid(it)) }
+        }
+        fun selectedAppPrompt(request: String, app: String, title: String): String {
+            require(eligiblePackage(app))
+            val safeTitle = title.filterNot(Char::isISOControl).take(100)
+            return "사용자가 선택한 설치 앱: $safeTitle ($app)\\n사용자 요청: " + request.take(2000) + "\\n" + """
+                dominion-phone-plan 코드 펜스 하나에 실제 기기 탐색 JSON을 반환하세요.
+                {"schema":"dominion-phone-plan/v2","app":"$app","steps":[{"action":"click","label":"검색"},{"action":"search_text","label":"검색","value":"사용자 검색어"},{"action":"expect","label":"확인할 화면 문구"}]}
+                앱 패키지는 변경하지 마세요. 최대 8단계, 마지막은 expect입니다.
+                click은 사용자가 실제 화면에서 확인할 정확한 탐색 버튼 문구, search_text는 검색 입력란만 가능합니다.
+                스크롤은 scroll_forward/scroll_backward와 label "화면"입니다.
+                화면 문구를 추측해 자동 실행하지 마세요. 로그인·인증·결제·발송·삭제·제출은 사용자가 직접 처리합니다.
+                """.trimIndent()
         }
         fun prompt(request: String): String = "사용자 요청: " + request.take(2000) + "\n" + """
             A-4의 실제 휴대폰 앱 탐색 계획을 작성하세요. 도구 실행이나 원격 코드가 아닙니다. 사용자가 실제 화면에서 각 단계를 승인합니다.

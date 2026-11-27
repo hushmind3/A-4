@@ -29,6 +29,10 @@
     <uses-feature android:name="android.hardware.camera.ar" android:required="false" />
 
     <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
         <package android:name="com.kakao.talk" />
         <package android:name="com.nhn.android.nmap" />
         <package android:name="net.daum.android.map" />

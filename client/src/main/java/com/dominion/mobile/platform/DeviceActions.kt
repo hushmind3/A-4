@@ -40,6 +40,22 @@ object DeviceActions {
     fun dialContact(context: Context, phone: String): Boolean =
         launch(context, Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", ContactTarget.phone(phone), null)))
 
+    data class InstalledApp(val packageName: String, val label: String)
+
+    fun launchableApps(context: Context): List<InstalledApp> {
+        val pm = context.packageManager
+        val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        return pm.queryIntentActivities(launcher, 0).mapNotNull { row ->
+            val pkg = row.activityInfo?.packageName ?: return@mapNotNull null
+            if (pkg == context.packageName || !com.dominion.mobile.data.PhoneNavigationPlan.eligiblePackage(pkg))
+                return@mapNotNull null
+            InstalledApp(pkg, row.loadLabel(pm).toString().take(100).ifBlank { pkg })
+        }.distinctBy { it.packageName }.sortedBy { it.label.lowercase(java.util.Locale.ROOT) }
+    }
+
+    fun isLaunchable(context: Context, packageName: String): Boolean =
+        launchableApps(context).any { it.packageName == packageName }
+
     fun openInstalledApp(context: Context, packageName: String): Boolean {
         require(packageName.matches(Regex("[a-zA-Z0-9_.]{1,200}")))
         val intent = context.packageManager.getLaunchIntentForPackage(packageName) ?: return false

@@ -85,7 +85,7 @@ class PhoneNavigationService : AccessibilityService() {
     private suspend fun approveStep(step:PhoneNavigationStep,pkg:String,index:Int,total:Int) {
         val deferred = CompletableDeferred<Boolean>()
         approval = deferred
-        stepLabel?.text = "단계 " + index + "/" + total + " · " + step.label +
+        stepLabel?.text = "단계 " + index + "/" + total + " · " + step.action + " · " + step.label +
             (step.value?.let { "\n입력: " + it } ?: "")
         approveButton?.isEnabled = true
         try {
@@ -109,8 +109,13 @@ class PhoneNavigationService : AccessibilityService() {
             !getSystemService(KeyguardManager::class.java).isKeyguardLocked
 
     private fun begin(plan: PhoneNavigationPlan): Boolean {
-        if (work?.isActive == true || !unlocked() || !PhoneNavigationPlan.valid(plan)) return false
-        // No unreviewed background launch or arbitrary app package.
+        if (work?.isActive == true || !unlocked() || !PhoneNavigationPlan.valid(plan) ||
+            !DeviceActions.isLaunchable(this, plan.app)) return false
+        // Limit the dynamically configured accessibility event scope to the reviewed app.
+        val originalPackages = serviceInfo.packageNames
+        val configured = serviceInfo
+        configured.packageNames = arrayOf(plan.app)
+        try { serviceInfo = configured } catch (_: Exception) { return false }
         _status.value = "대상 앱 열기 요청"
         work = scope.launch {
             var completed = 0
@@ -157,7 +162,14 @@ class PhoneNavigationService : AccessibilityService() {
                 if (e !is TimeoutCancellationException) throw e
             } catch (_: Exception) {
                 _status.value = "중단 · 화면/권한/대상 불일치. 확인된 단계 " + completed + "/" + plan.steps.size
-            } finally { removeStop() }
+            } finally {
+                removeStop()
+                runCatching {
+                    val restored = serviceInfo
+                    restored.packageNames = originalPackages
+                    serviceInfo = restored
+                }
+            }
         }
         return true
     }

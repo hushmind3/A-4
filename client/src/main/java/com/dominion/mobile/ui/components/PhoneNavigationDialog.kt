@@ -21,12 +21,17 @@ fun PhoneNavigationDialog(plan: PhoneNavigationPlan, onDismiss: () -> Unit,
     var approved by remember(plan) { mutableStateOf(false) }
     var started by remember(plan) { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
+    val installed = remember(plan.app) {
+        com.dominion.mobile.platform.DeviceActions.launchableApps(context).firstOrNull { it.packageName == plan.app }
+    }
     AlertDialog(onDismissRequest = { PhoneNavigationService.stop(); onDismiss() },
         title = { Text("기기 앱 조작 검토") },
         text = {
             Column(Modifier.heightIn(max = 450.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("대상: " + PhoneNavigationPlan.apps[plan.app].orEmpty())
+                Text("대상: " + (installed?.label ?: PhoneNavigationPlan.apps[plan.app] ?: plan.app))
+                Text(plan.app, style = MaterialTheme.typography.labelSmall)
+                if (installed == null) Text("이 기기에서 실행할 수 있는 앱을 확인하지 못했습니다.", color = MaterialTheme.colorScheme.error)
                 Text("선택한 앱에서 각 단계를 화면 위 확인 버튼으로 직접 승인해야 실행합니다. 단계별 승인 제한은 30초, 전체 제한은 5분입니다. 다른 앱·잠금 화면으로 바뀌면 중단합니다.")
                 plan.steps.forEachIndexed { index, step ->
                     Text((index + 1).toString() + ". " + when(step.action) {
@@ -56,7 +61,7 @@ fun PhoneNavigationDialog(plan: PhoneNavigationPlan, onDismiss: () -> Unit,
                 if (error.isNotBlank()) Text(error,color=MaterialTheme.colorScheme.error)
             }
         },
-        confirmButton = { TextButton(enabled = connected && approved && !started,onClick = {
+        confirmButton = { TextButton(enabled = connected && approved && !started && installed != null,onClick = {
             started = PhoneNavigationService.start(plan)
             if (!started) error = "이미 조작 중이거나 기기가 잠겨 있습니다."
         }) { Text("기기에서 실행") } },

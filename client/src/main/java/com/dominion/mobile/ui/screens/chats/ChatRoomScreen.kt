@@ -679,14 +679,11 @@ fun ChatRoomScreen(
         }
     }
 
-    if (createPhonePlan) com.dominion.mobile.ui.components.TextPromptDialog(
-        title = "휴대폰 앱 조작 계획", label = "지도·유튜브·캘린더·파일 앱에서 검색하거나 탐색할 내용을 요청하세요.",
-        confirmLabel = "요청 작성", singleLine = false, onConfirm = { text ->
-            if (text.isNotBlank()) {
-                draft = listOf(draft, com.dominion.mobile.data.PhoneNavigationPlan.prompt(text)).filter { it.isNotBlank() }.joinToString("\n")
-                vm.setDraft(conversationId, draft)
-                createPhonePlan = false
-            }
+    if (createPhonePlan) com.dominion.mobile.ui.components.PhonePlanRequestDialog(
+        onConfirm = { request ->
+            draft = listOf(draft, request).filter { it.isNotBlank() }.joinToString("\n")
+            vm.setDraft(conversationId, draft)
+            createPhonePlan = false
         }, onDismiss = { createPhonePlan = false })
     phonePlanMessage?.let { message ->
         val plan = remember(message.id, message.text) { com.dominion.mobile.data.PhoneNavigationPlan.fromMessage(message.text) }
