@@ -6,6 +6,7 @@ import java.util.UUID
 object TaskDispatch {
     fun roomId(id: String): String = UUID.nameUUIDFromBytes(("mobile-task:" + id).toByteArray(Charsets.UTF_8)).toString()
     fun messageNonce(id: String): String = roomId(id)
+    fun delegatedId(approvalId:String):String = "delegated:"+UUID.nameUUIDFromBytes(("cloud-task:"+approvalId).toByteArray(Charsets.UTF_8)).toString()
     fun prompt(task: TaskItem): String = buildString {
         append("다음 작업을 실제로 수행하고 실행 결과와 확인 근거를 보고하세요. 필요한 권한은 사용자에게 요청하세요.\n")
         append(task.title.trim())

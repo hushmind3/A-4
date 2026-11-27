@@ -119,3 +119,13 @@ test('missing browser binding and failed render are not reported as success',asy
  await assert.rejects(renderPublicPage({url:'https://developers.cloudflare.com/'},
    {BROWSER:{async quickAction(){return Response.json({success:false,result:'fake'})}}}),/No rendered content/);
 });
+
+test('browser link discovery never returns external or hidden-link requests',async()=>{
+ const result=await renderPublicPage({kind:'browser.links',url:'https://developers.cloudflare.com/'},{
+  BROWSER:{async quickAction(action,opts){
+   assert.equal(action,'links');assert.equal(opts.visibleLinksOnly,true);assert.equal(opts.excludeExternalLinks,true);
+   return Response.json({success:true,result:['https://developers.cloudflare.com/docs/','https://developers.cloudflare.com.evil.test/','https://api.github.com/repos/a/b']});
+  }}
+ });
+ assert.match(result,/docs/);assert.doesNotMatch(result,/evil|api.github.com/);
+});

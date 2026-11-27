@@ -821,7 +821,18 @@ class RemoteBackedRepository(
 
     override suspend fun decideApproval(roomId: String, approval: EngineApproval,
         allow: Boolean): ApprovalResult {
-        if(localExecution)return mobile.decide(roomId,approval,allow)
+        if(localExecution){
+            val result=mobile.decide(roomId,approval,allow)
+            if(allow&&approval.tool=="task.delegate"){
+                // The durable local queue was written before contacting the server.
+                // A network interruption leaves it eligible for account-scoped recovery.
+                val id=TaskDispatch.delegatedId(requireNotNull(approval.id))
+                try{refreshTask(id)}
+                catch(e:CancellationException){throw e}
+                catch(_:Exception){/* foreground sync / WorkManager reconciles the same nonce */}
+            }
+            return result
+        }
         val current = roomExecution(roomId)
         val session = requireNotNull(current.sessionId)
         require(approval.actionableIn(session))

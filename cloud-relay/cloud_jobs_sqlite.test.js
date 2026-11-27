@@ -174,3 +174,21 @@ test('authenticated Worker exposes only configured browser capabilities and reco
   assert.equal((await send('b','/v1/agent/jobs/'+id)).status,404);
  }finally{sqlite.close()}
 });
+
+test('direct chat tools share account-authenticated execution and reject unsupported calls',async()=>{
+ const {sqlite,send,env}=await fixture();
+ try{
+  env.BROWSER={async quickAction(action,opts){
+   assert.equal(action,'links');assert.equal(opts.visibleLinksOnly,true);
+   return Response.json({success:true,result:['https://developers.cloudflare.com/workers/','https://evil.test/']});
+  }};
+  const invalid=await send('a','/v1/agent/jobs/tools','POST',{tool:'browser.links',args:{url:'https://evil.test/'}});
+  assert.equal(invalid.status,400);
+  const good=await send('a','/v1/agent/jobs/tools','POST',{tool:'browser.links',args:{url:'https://developers.cloudflare.com/'}});
+  assert.equal(good.status,200);
+  const obs=await good.json();
+  assert.equal(obs.status,'ok');assert.match(obs.observation,/workers/);assert.doesNotMatch(obs.observation,/evil/);
+  const key=sqlite.prepare("SELECT account_day,used FROM free_quota WHERE account_day LIKE '%cloud-direct-tools%'").get();
+  assert.match(key.account_day,/^google:alice:/);assert.equal(key.used,1);
+ }finally{sqlite.close()}
+});
