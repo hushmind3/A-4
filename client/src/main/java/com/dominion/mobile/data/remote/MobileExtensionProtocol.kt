@@ -52,11 +52,14 @@ enum class MobileAction(val feature: String, val wire: String, val review: Boole
     DECLINE("friends", "friend.decline"), REMOVE("friends", "friend.remove"),
     BLOCK("friends", "friend.block"), MESSAGE("peer_messages", "peer.message"),
     ACCOUNT_DELETE("account_delete", "account.delete", true),
-    INSTITUTION("institution_actions", "institution.prepare", true)
+    INSTITUTION("institution_actions", "institution.prepare", true),
+    GROUP_CREATE("messenger_v2","messenger.group.create"),
+    THREAD_SEND("messenger_v2","messenger.thread.send"),
+    THREAD_READ("messenger_v2","messenger.thread.read")
 }
 
 data class MobileIntent(val accountId: String, val nonce: String, val action: String,
-    val target: String, val text: String? = null) {
+    val target: String, val text: String? = null, val messenger: MessengerPayload? = null) {
     fun validate() {
         require(validMobileId(accountId) && UUID.fromString(nonce).toString() == nonce &&
             validMobileId(target))
@@ -64,15 +67,22 @@ data class MobileIntent(val accountId: String, val nonce: String, val action: St
         when (kind) {
             MobileAction.MESSAGE, MobileAction.INSTITUTION ->
                 require(!text.isNullOrBlank() && text.length <= 8000)
+            MobileAction.GROUP_CREATE, MobileAction.THREAD_SEND, MobileAction.THREAD_READ -> {
+                require(text == null)
+                requireNotNull(messenger).validate(kind,accountId,target)
+            }
             else -> require(text == null)
         }
+        if (kind !in setOf(MobileAction.GROUP_CREATE,MobileAction.THREAD_SEND,MobileAction.THREAD_READ))
+            require(messenger==null)
         if (kind == MobileAction.ACCOUNT_DELETE) require(target == accountId)
         if (kind in setOf(MobileAction.ACCEPT, MobileAction.DECLINE, MobileAction.REMOVE,
                 MobileAction.BLOCK, MobileAction.MESSAGE)) require(target != accountId)
     }
     companion object {
-        fun create(owner: String, action: MobileAction, target: String, text: String? = null) =
-            MobileIntent(owner, UUID.randomUUID().toString(), action.wire, target, text)
+        fun create(owner: String, action: MobileAction, target: String, text: String? = null,
+            messenger:MessengerPayload?=null) =
+            MobileIntent(owner, UUID.randomUUID().toString(), action.wire, target, text,messenger)
                 .also { it.validate() }
     }
 }

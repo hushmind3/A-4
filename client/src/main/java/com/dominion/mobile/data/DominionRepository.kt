@@ -25,6 +25,17 @@ interface DominionRepository {
     suspend fun pollForReply(conversationId: String, knownIds: Set<String>): List<Message> =
         emptyList()
 
+    suspend fun messengerThreads(): com.dominion.mobile.data.remote.MessengerDirectory = error("Messenger unavailable")
+    suspend fun messengerMessages(thread:String,query:String?=null,before:String?=null):
+        com.dominion.mobile.data.remote.MessengerPage = error("Messenger unavailable")
+    suspend fun messengerUpload(thread:String,name:String,mime:String,bytes:ByteArray):
+        com.dominion.mobile.data.remote.MessengerAttachment = error("Messenger unavailable")
+    suspend fun messengerDownload(thread:String,attachment:com.dominion.mobile.data.remote.MessengerAttachment):
+        ByteArray = error("Messenger unavailable")
+    suspend fun messengerOperation(action:com.dominion.mobile.data.remote.MobileAction,target:String,
+        payload:com.dominion.mobile.data.remote.MessengerPayload):
+        com.dominion.mobile.data.remote.MobileJournalEntry = error("Messenger unavailable")
+
     suspend fun mobileCapabilities(): com.dominion.mobile.data.remote.MobileCapabilities = error("Mobile extension unavailable")
     suspend fun mobilePeers(): List<com.dominion.mobile.data.remote.MobilePeer> = error("Mobile extension unavailable")
     suspend fun mobilePeerHistory(peer: String): List<com.dominion.mobile.data.remote.MobilePeerMessage> = error("Mobile extension unavailable")

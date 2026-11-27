@@ -34,7 +34,8 @@ internal class MobileExtensionRepository(private val api: DominionApi,
         check(capabilities.protocol == 1 && validMobileId(account))
         load().entries.filter { it.intent.accountId == account }
     }
-    suspend fun begin(action: MobileAction, target: String, text: String?): MobileJournalEntry = gate.withLock {
+    suspend fun begin(action: MobileAction, target: String, text: String?,
+        messenger:MessengerPayload?=null): MobileJournalEntry = gate.withLock {
         val account = owner(action.feature)
         val current = load()
         // If a write may have reached the server, do not generate a second nonce.
@@ -44,7 +45,7 @@ internal class MobileExtensionRepository(private val api: DominionApi,
         val retained = current.entries.filter { it.receipt?.terminal() != true } +
             current.entries.filter { it.receipt?.terminal() == true }.take(100)
         check(retained.size < 200)
-        val entry = MobileJournalEntry(MobileIntent.create(account, action, target, text))
+        val entry = MobileJournalEntry(MobileIntent.create(account, action, target, text,messenger))
         val reserved = update(MobileJournal(retained), entry)
         save(reserved)
         val accepted = api.createMobileOperation(entry.intent)

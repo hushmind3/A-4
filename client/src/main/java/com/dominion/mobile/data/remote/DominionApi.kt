@@ -46,6 +46,16 @@ interface DominionApi {
     suspend fun openRealtimeCall(@Body request: RealtimeCallRequest): RealtimeCallGrant
     @GET("v1/mobile/capabilities")
     suspend fun mobileCapabilities(): MobileCapabilities
+    @GET("v1/mobile/messenger/threads")
+    suspend fun messengerThreads(): MessengerDirectory
+    @GET("v1/mobile/messenger/threads/{id}/messages")
+    suspend fun messengerMessages(@Path("id")id:String,@Query("q")query:String?=null,
+        @Query("before")before:String?=null): MessengerPage
+    @POST("v1/mobile/messenger/threads/{id}/attachments")
+    suspend fun messengerUpload(@Path("id")id:String,@Body body:MessengerUpload): MessengerAttachment
+    @retrofit2.http.Streaming
+    @GET("v1/mobile/messenger/threads/{id}/attachments/{attachment}")
+    suspend fun messengerDownload(@Path("id")id:String,@Path("attachment")attachment:String):okhttp3.ResponseBody
     @GET("v1/mobile/peers")
     suspend fun mobilePeers(): MobileDirectory
     @GET("v1/mobile/peers/{id}/messages")

@@ -36,6 +36,16 @@ class RemoteBackedRepository(
     private val mobileExtension by lazy {
         MobileExtensionRepository(api, store::loadMobileJournal, store::saveMobileJournal)
     }
+    private val messengerExtension by lazy { MessengerRepository(api,mobileExtension) }
+    override suspend fun messengerThreads()=messengerExtension.threads()
+    override suspend fun messengerMessages(thread:String,query:String?,before:String?)=
+        messengerExtension.messages(thread,query,before)
+    override suspend fun messengerUpload(thread:String,name:String,mime:String,bytes:ByteArray)=
+        messengerExtension.upload(thread,name,mime,bytes)
+    override suspend fun messengerDownload(thread:String,attachment:MessengerAttachment)=
+        messengerExtension.download(thread,attachment)
+    override suspend fun messengerOperation(action:MobileAction,target:String,payload:MessengerPayload)=
+        messengerExtension.operation(action,target,payload)
     override suspend fun mobileCapabilities() = api.mobileCapabilities()
     override suspend fun mobilePeers() = mobileExtension.peers()
     override suspend fun mobilePeerHistory(peer: String) = mobileExtension.history(peer)

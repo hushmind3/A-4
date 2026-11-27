@@ -177,6 +177,13 @@ class AppViewModel(
     suspend fun cancelJob(roomId: String, jobId: String) = repo.cancelJob(roomId, jobId)
 
     suspend fun downloadAttachment(roomId: String, attachmentId: String) = repo.downloadAttachment(roomId, attachmentId)
+    suspend fun messengerThreads()=repo.messengerThreads()
+    suspend fun messengerMessages(thread:String,query:String?=null,before:String?=null)=repo.messengerMessages(thread,query,before)
+    suspend fun messengerUpload(thread:String,name:String,mime:String,bytes:ByteArray)=repo.messengerUpload(thread,name,mime,bytes)
+    suspend fun messengerDownload(thread:String,attachment:com.dominion.mobile.data.remote.MessengerAttachment)=
+        repo.messengerDownload(thread,attachment)
+    suspend fun messengerOperation(action:com.dominion.mobile.data.remote.MobileAction,target:String,
+        payload:com.dominion.mobile.data.remote.MessengerPayload)=repo.messengerOperation(action,target,payload)
     suspend fun mobileCapabilities() = repo.mobileCapabilities()
     suspend fun mobilePeers() = repo.mobilePeers()
     suspend fun mobilePeerHistory(peer: String) = repo.mobilePeerHistory(peer)
