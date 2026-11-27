@@ -51,7 +51,8 @@ fun AttachmentViewerDialog(item: ArchiveItem, load: suspend () -> ByteArray, onD
         catch (e: CancellationException) { throw e }
         catch (_: Exception) { error = "실제 원본 조회 실패 · 본체 연결과 파일 권한을 확인하세요." }
     }
-    StopOnBackground(onDismiss)
+    var exportPickerOpen by remember(item.id) { mutableStateOf(false) }
+    StopOnBackground { if (!exportPickerOpen) onDismiss() }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
             Column(Modifier.fillMaxSize().padding(12.dp)) {
@@ -79,7 +80,7 @@ fun AttachmentViewerDialog(item: ArchiveItem, load: suspend () -> ByteArray, onD
                     Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                         when {
                             miniApp != null -> com.dominion.mobile.ui.components.MiniAppPanel(miniApp)
-                            office != null -> OfficeEditorPanel(office,item.title,content)
+                            office != null -> OfficeEditorPanel(office,item.title,content,onPicker={ exportPickerOpen = it })
                             mime.startsWith("image/") -> ImagePreview(content)
                             mime == "application/pdf" -> PdfPreview(content)
                             mime.startsWith("video/") || mime.startsWith("audio/") -> MediaPreview(content, mime)

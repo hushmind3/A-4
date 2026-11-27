@@ -69,7 +69,7 @@ private class StandardAvatarSurface(context: Context): FrameLayout(context) {
                 val asset=requireNotNull(v.asset) { "Filament asset unavailable" }
                 v.transformToUnitCube()
                 val manager=v.engine.renderableManager
-                morphs=asset.renderableEntities.mapNotNull { entity ->
+                morphs=asset.renderableEntities.asIterable().mapNotNull { entity ->
                     val ri=manager.getInstance(entity)
                     val names=asset.getMorphTargetNames(entity)
                     val index=names.indexOfFirst { name ->

@@ -357,6 +357,16 @@ class RemoteBackedRepository(
             val pending=room.messages.singleOrNull { it.id==nonce || it.clientMessageId==nonce }
                 ?: return@withLock false
             if (pending.sender!=MessageSender.USER || room.sessionId!=session) return@withLock false
+            if (state.value.settings.appLock || state.value.settings.hideContent) {
+                update { current -> current.copy(conversations=current.conversations.map { c ->
+                    if(c.id!=roomId || c.sessionId!=session)c else c.copy(messages=c.messages.map {
+                        if(it.id==nonce && it.status!=com.dominion.mobile.data.model.MessageStatus.SENT)
+                            it.copy(status=com.dominion.mobile.data.model.MessageStatus.FAILED,jobStatus=null) else it
+                    })
+                }) }
+                store.saveStateNow(state.value)
+                return@withLock false
+            }
             if (pending.status==com.dominion.mobile.data.model.MessageStatus.SENT && pending.jobId!=null) return@withLock true
             fun mark(status:com.dominion.mobile.data.model.MessageStatus,jobState:String?) {
                 update { current -> current.copy(conversations=current.conversations.map { c ->

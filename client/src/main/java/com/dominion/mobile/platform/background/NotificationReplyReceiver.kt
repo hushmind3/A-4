@@ -24,6 +24,7 @@ class NotificationReplyReceiver: BroadcastReceiver() {
         val id=intent.data?.lastPathSegment ?: return
         if(runCatching { UUID.fromString(id).toString()==id }.getOrDefault(false).not())return
         val origin=intent.getStringExtra("origin") ?: return
+        val credential=intent.getStringExtra("credential") ?: return
         val room=intent.getStringExtra("room") ?: return
         val session=intent.getStringExtra("session") ?: return
         val text=RemoteInput.getResultsFromIntent(intent)?.getCharSequence(INPUT)?.toString()?.trim() ?: return
@@ -37,13 +38,13 @@ class NotificationReplyReceiver: BroadcastReceiver() {
                     check(!manager.isDeviceLocked)
                     val container=(context.applicationContext as DominionApplication).container
                     val engine=container.engine ?: error("Engine disconnected")
-                    check(BackgroundJobMonitor.originKey(engine.origin)==origin)
+                    check(BackgroundJobMonitor.originKey(engine.origin)==origin && credentialKey(engine)==credential)
                     val repo=container.repository
                     check(repo.reserveNotificationReply(room,session,"notification_"+id,text))
                     check(container.repository===repo && container.engine===engine)
                     val request=OneTimeWorkRequestBuilder<NotificationReplyWorker>()
                         .setInputData(workDataOf("origin" to origin,"room" to room,"session" to session,
-                            "nonce" to "notification_"+id,"notification" to notificationId))
+                            "nonce" to "notification_"+id,"notification" to notificationId,"credential" to credential))
                         .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
                         .build()
                     WorkManager.getInstance(context).enqueueUniqueWork("dominion-notification-reply-"+id,ExistingWorkPolicy.KEEP,request)
@@ -56,12 +57,15 @@ class NotificationReplyReceiver: BroadcastReceiver() {
     companion object {
         private const val REPLY="com.dominion.mobile.action.NOTIFICATION_REPLY"
         private const val INPUT="dominion_reply"
-        fun action(context:Context,origin:String,room:String,session:String,id:Int):NotificationCompat.Action {
+        internal fun credentialKey(engine:com.dominion.mobile.data.local.EngineConnection):String =
+            BackgroundJobMonitor.originKey(engine.origin + "\u0000" + engine.ownerToken + "\u0000" +
+                engine.accessClientId.orEmpty() + "\u0000" + engine.accessClientSecret.orEmpty())
+        fun action(context:Context,origin:String,credential:String,room:String,session:String,id:Int):NotificationCompat.Action {
             val intent=Intent(context,NotificationReplyReceiver::class.java).apply {
                 action=REPLY
                 data=Uri.Builder().scheme("dominion-notification").authority("reply")
                     .appendPath(UUID.randomUUID().toString()).build()
-                putExtra("origin",origin);putExtra("room",room);putExtra("session",session);putExtra("notification",id)
+                putExtra("origin",origin);putExtra("credential",credential);putExtra("room",room);putExtra("session",session);putExtra("notification",id)
             }
             val pending=PendingIntent.getBroadcast(context,id,intent,
                 PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_ONE_SHOT)
@@ -92,13 +96,15 @@ class NotificationReplyReceiver: BroadcastReceiver() {
 class NotificationReplyWorker(context:Context,params:WorkerParameters):CoroutineWorker(context,params) {
     override suspend fun doWork():Result {
         val origin=inputData.getString("origin") ?: return Result.failure()
+        val credential=inputData.getString("credential") ?: return Result.failure()
         val room=inputData.getString("room") ?: return Result.failure()
         val session=inputData.getString("session") ?: return Result.failure()
         val nonce=inputData.getString("nonce") ?: return Result.failure()
         val notification=inputData.getInt("notification",0)
         val container=(applicationContext as DominionApplication).container
         val engine=container.engine ?: return Result.failure()
-        if(BackgroundJobMonitor.originKey(engine.origin)!=origin)return Result.failure()
+        if(BackgroundJobMonitor.originKey(engine.origin)!=origin ||
+            NotificationReplyReceiver.credentialKey(engine)!=credential)return Result.failure()
         val repo=container.repository
         val accepted=try { repo.dispatchNotificationReply(room,session,nonce) }
             catch(e:CancellationException){throw e}

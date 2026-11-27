@@ -178,10 +178,12 @@ class BackgroundJobWorker(context: Context, params: WorkerParameters) : Coroutin
         val roomId=inputData.getString(BackgroundJobMonitor.ROOM)
         val origin=inputData.getString(BackgroundJobMonitor.ORIGIN)
         val session=verifiedSession
-        val repo=(applicationContext as DominionApplication).container.repository
-        if(!privateContent && !settings.appLock && roomId!=null && origin!=null && !session.isNullOrBlank() &&
+        val container=(applicationContext as DominionApplication).container
+        val repo=container.repository
+        val engine=container.engine
+        if(!privateContent && engine!=null && !settings.appLock && roomId!=null && origin!=null && !session.isNullOrBlank() &&
             repo.state.value.conversation(roomId)?.sessionId==session) {
-            notificationBuilder.addAction(NotificationReplyReceiver.action(applicationContext,origin,roomId,session,id))
+            notificationBuilder.addAction(NotificationReplyReceiver.action(applicationContext,origin,NotificationReplyReceiver.credentialKey(engine),roomId,session,id))
         }
         notificationBuilder.addAction(0,if(phase.startsWith("approval:")) "승인 내용 검토" else "결과 확인",destination)
         try {

@@ -16,7 +16,7 @@ import com.dominion.mobile.data.OfficeFormat
 import kotlinx.coroutines.*
 
 @Composable
-fun OfficeEditorPanel(format:OfficeFormat,name:String,bytes:ByteArray) {
+fun OfficeEditorPanel(format:OfficeFormat,name:String,bytes:ByteArray,onPicker:(Boolean)->Unit = {}) {
     val context=LocalContext.current
     val scope=rememberCoroutineScope()
     var document by remember(bytes){mutableStateOf<OfficeDocument?>(null)}
@@ -31,6 +31,7 @@ fun OfficeEditorPanel(format:OfficeFormat,name:String,bytes:ByteArray) {
         catch(_:Exception){error="지원되지 않거나 손상된 Office 문서입니다."}
     }
     val save=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(format.mime)) { uri:Uri? ->
+        onPicker(false)
         val payload=exportBytes
         exportBytes=null
         if(uri!=null && payload!=null) {
@@ -85,7 +86,9 @@ fun OfficeEditorPanel(format:OfficeFormat,name:String,bytes:ByteArray) {
                 try {
                     // Each export starts from immutable source, not a previously mutated XML tree.
                     exportBytes=withContext(Dispatchers.IO){OfficeDocument.parse(format,bytes).export(snapshot)}
-                    save.launch(name.substringBeforeLast('.').take(100)+"-edited."+format.extension)
+                    onPicker(true)
+                    try { save.launch(name.substringBeforeLast('.').take(100)+"-edited."+format.extension) }
+                    catch (e:Exception) { onPicker(false);throw e }
                 }catch(e:CancellationException){throw e}
                 catch(_:Exception){error="입력값 또는 문서 형식 검증 실패";exportBytes=null}
                 finally{busy=false}
