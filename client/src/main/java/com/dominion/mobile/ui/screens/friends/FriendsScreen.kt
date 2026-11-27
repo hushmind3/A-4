@@ -69,6 +69,7 @@ fun FriendsScreen(
     val own = state.myCharacter()
     var removeTarget by remember { mutableStateOf<Friend?>(null) }
     var filter by remember { mutableStateOf("") }
+    var serverFriends by remember { mutableStateOf(false) }
     val shown = state.friends.filter { filter.isBlank() ||
         (it.name + " " + it.handle + " " + it.phone.orEmpty() + " " + it.email.orEmpty()).contains(filter, true) }
 
@@ -204,6 +205,8 @@ fun FriendsScreen(
         }
 
         item {
+            SettingsRow(title = "서버 친구 · 직접 메시지", subtitle = "실제 계정 연결·요청·메시지·접수 기록",
+                onClick = { serverFriends = true })
             SectionLabel(tr(lang, "친구 목록", "All friends"), Modifier.padding(horizontal = 20.dp, vertical = 10.dp))
             com.dominion.mobile.ui.components.SearchField(filter, { filter = it.take(200) }, "저장한 이름·번호·아이디 검색")
         }
@@ -243,6 +246,8 @@ fun FriendsScreen(
             }
         }
     }
+
+    if (serverFriends) com.dominion.mobile.ui.components.ServerFriendsDialog(vm, onDismiss = { serverFriends = false })
 
     removeTarget?.let { friend ->
         PrimaryDialog(

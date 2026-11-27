@@ -41,7 +41,10 @@ internal class MobileExtensionRepository(private val api: DominionApi,
         val entry = MobileJournalEntry(MobileIntent.create(account, action, target, text))
         val reserved = update(MobileJournal(retained), entry)
         save(reserved)
-        val result = entry.merge(api.createMobileOperation(entry.intent))
+        val accepted = api.createMobileOperation(entry.intent)
+        // Review-required actions cannot claim a completed mutation before a decision.
+        check(!action.review || accepted.status !in setOf("completed")) { "Unreviewed mutation" }
+        val result = entry.merge(accepted)
         save(update(reserved, result))
         result
     }
@@ -50,7 +53,9 @@ internal class MobileExtensionRepository(private val api: DominionApi,
         val entry = current.entries.single { it.intent.nonce == nonce }
         val kind = MobileAction.entries.single { it.wire == entry.intent.action }
         check(owner(kind.feature) == entry.intent.accountId)
-        val next = entry.merge(api.mobileOperation(nonce))
+        val response = api.mobileOperation(nonce)
+        check(!kind.review || entry.decisionSent || response.status != "completed") { "Unreviewed mutation" }
+        val next = entry.merge(response)
         save(update(current, next))
         next
     }

@@ -24,7 +24,8 @@ data class MobileDirectory(val accountId: String? = null, val peers: List<Mobile
         require(rows.size <= 2000 && rows.all { row ->
             row.id?.let(::validMobileId) == true && row.id != owner &&
                 row.relationship in setOf("friend", "incoming", "outgoing", "blocked") &&
-                !row.displayName.isNullOrBlank() && row.displayName.length <= 200
+                !row.displayName.isNullOrBlank() && row.displayName.length <= 200 &&
+                (row.handle?.length ?: 0) <= 200
         } && rows.distinctBy { it.id }.size == rows.size)
         return rows
     }

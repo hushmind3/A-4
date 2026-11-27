@@ -33,6 +33,7 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
     val context = LocalContext.current
     val connection by vm.connection.collectAsStateWithLifecycle()
     var selected by remember { mutableStateOf<KoreanService?>(null) }
+    var institutionDraft by remember { mutableStateOf<Pair<String, String>?>(null) }
     var scheduleDraft by remember { mutableStateOf<ServiceScheduleDraft?>(null) }
     var query by remember { mutableStateOf("") }
     var skills by remember { mutableStateOf<List<com.dominion.mobile.data.remote.EngineSkillState>?>(null) }
@@ -142,6 +143,12 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
             context.toast("반복 AI 업무 예약을 저장했습니다.")
         })
     }
+    institutionDraft?.let { (serviceId, request) ->
+        com.dominion.mobile.ui.components.MobileOperationsDialog(vm,
+            action = com.dominion.mobile.data.remote.MobileAction.INSTITUTION,
+            title = "기관 업무 인증·신청·결제 검토", target = serviceId, text = request,
+            onDismiss = { institutionDraft = null })
+    }
     selected?.let { service ->
         key(service.id) {
             var region by remember { mutableStateOf("") }
@@ -216,6 +223,10 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
                             vm.createServiceTask(service.title + " · " + workflow.title, agent, request(), service.steps, onOpenChat)
                             selected = null
                         }) { Text("실제 업무 접수") }
+                    OutlinedButton(enabled = ready, onClick = {
+                        institutionDraft = service.id to request()
+                        selected = null
+                    }, modifier = Modifier.fillMaxWidth()) { Text("기관 실제 접수·인증·결제 연동") }
                     if (workflow.repeatable) OutlinedButton(enabled = ready && state.character(agent) != null && request().length <= 3000,
                         onClick = {
                             scheduleDraft = ServiceScheduleDraft(service.title + " · " + workflow.title, agent, request())

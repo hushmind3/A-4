@@ -78,6 +78,7 @@ fun SettingsScreen(
     val own = state.myCharacter()
     val export = rememberDataExport(state, lang)
     var assistantHeld by remember { mutableStateOf(false) }
+    var accountOperations by remember { mutableStateOf(false) }
     val roleManager = if (android.os.Build.VERSION.SDK_INT >= 29)
         context.getSystemService(android.app.role.RoleManager::class.java) else null
     val roleLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
@@ -261,8 +262,8 @@ fun SettingsScreen(
                     onClick = { onNavigate(Routes.CLOUD_ACCOUNT) })
                 Hairline()
                 SettingsRow(title = tr(lang, "계정 삭제", "Delete account"),
-                    subtitle = tr(lang, "서버 계정 삭제 기능 연동 필요", "Server account deletion not connected"),
-                    showChevron = false, onClick = null)
+                    subtitle = tr(lang, "서버 계정 확인 · 삭제 요청 및 처리 상태", "Verify account and track deletion"),
+                    onClick = { accountOperations = true })
             }
             Spacer(Modifier.height(26.dp))
             Text(
@@ -284,6 +285,9 @@ private fun SettingsGroup(content: @Composable () -> Unit) {
     Box(Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(p.card).border(0.5.dp, p.hairline, RoundedCornerShape(20.dp))) {
         Column(content = { content() })
     }
+    if (accountOperations) com.dominion.mobile.ui.components.MobileOperationsDialog(vm,
+        action = com.dominion.mobile.data.remote.MobileAction.ACCOUNT_DELETE,
+        title = "서버 계정 삭제", target = null, onDismiss = { accountOperations = false })
 }
 
 @Composable
