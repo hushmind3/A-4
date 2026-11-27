@@ -160,7 +160,8 @@ class RemoteBackedRepository(
             check(!confirmed?.engineJobId.isNullOrBlank() && !confirmed?.engineSessionId.isNullOrBlank())
             changeSchedules { rows -> rows.map { row ->
                 if (row.id == id && row.pendingDispatchAt == occurrence)
-                    row.copy(pendingDispatchAt = null, lastDispatchedAt = occurrence, dispatchStatus = "본체 접수 확인")
+                    row.copy(pendingDispatchAt = null, lastDispatchedAt = occurrence,
+                        dispatchStatus = if(localExecution)"기기 접수 확인"else"본체 접수 확인")
                 else row
             } }
         } catch (e: kotlinx.coroutines.CancellationException) { throw e }
@@ -189,6 +190,47 @@ class RemoteBackedRepository(
 
     override suspend fun submitTask(id: String) = taskLock.withLock {
         var task = state.value.tasks.firstOrNull { it.id == id } ?: error("Task not found")
+        if(localExecution){
+            if(task.engineJobId!=null){
+                verifyTask(task)
+                return@withLock
+            }
+            require(state.value.character(task.characterId)!=null)
+            val roomId=TaskDispatch.roomId(id)
+            val existing=state.value.conversation(roomId)
+            val session=existing?.sessionId?:java.util.UUID.randomUUID().toString()
+            val nonce=TaskDispatch.messageNonce(id)
+            val prompt=TaskDispatch.prompt(task)
+            check(existing==null||existing.characterId==task.characterId && existing.messages.none{it.id==nonce})
+            val message=Message(nonce,roomId,MessageSender.USER,prompt,
+                kind=com.dominion.mobile.data.model.MessageKind.TASK,status=com.dominion.mobile.data.model.MessageStatus.SENDING,
+                clientMessageId=nonce,jobId="mobile:"+nonce,jobStatus="queued")
+            val linked=task.copy(engineRoomId=roomId,engineSessionId=session,engineMessageId=nonce,
+                engineJobId="mobile:"+nonce,enginePrompt=prompt,
+                engineLanguage=if(state.value.settings.lang==com.dominion.mobile.data.model.Lang.KO)"ko"else"default",
+                engineStatus="queued")
+            update{st->
+                val room=st.conversation(roomId)?:com.dominion.mobile.data.model.Conversation(roomId,task.characterId,
+                    titleOverride=task.title,kind=com.dominion.mobile.data.model.ConversationKind.TASK,sessionId=session)
+                check(room.sessionId==session&&room.messages.none{it.id==nonce})
+                st.copy(tasks=st.tasks.map{if(it.id==id)linked else it},conversations=listOf(room.copy(messages=room.messages+message))+
+                    st.conversations.filterNot{it.id==roomId})
+            }
+            store.saveStateNow(state.value)
+            try{
+                mobile.deliver(roomId,message)
+                verifyTask(linked)
+            }catch(e:CancellationException){throw e}
+            catch(e:Exception){
+                update{st->st.copy(conversations=st.conversations.map{c->if(c.id==roomId)c.copy(messages=c.messages.map{
+                    if(it.id==nonce&&it.status==com.dominion.mobile.data.model.MessageStatus.SENDING)
+                        it.copy(status=com.dominion.mobile.data.model.MessageStatus.FAILED,jobStatus="failed")else it
+                })else c})}
+                verifyTask(linked)
+                throw e
+            }
+            return@withLock
+        }
         if (task.engineJobId != null) {
             verifyTask(task)
             return@withLock
@@ -241,9 +283,14 @@ class RemoteBackedRepository(
         if (task.engineJobId != null) verifyTask(task)
     }
 
+    private suspend fun taskJob(task:com.dominion.mobile.data.model.TaskItem):EngineJob=
+        if(localExecution)mobile.execution(requireNotNull(task.engineRoomId)).jobs.orEmpty()
+            .single{it.id==task.engineJobId}
+        else api.engineJob(requireNotNull(task.engineJobId))
+
     override suspend fun taskReceipt(id: String): TaskReceipt = taskLock.withLock {
         val task = requireNotNull(state.value.tasks.firstOrNull { it.id == id })
-        val job = api.engineJob(requireNotNull(task.engineJobId))
+        val job = taskJob(task)
         val receipt = TaskReceipt.from(task, job)
         saveTaskLink(task.copy(engineStatus = receipt.status))
         receipt
@@ -251,9 +298,15 @@ class RemoteBackedRepository(
 
     override suspend fun taskEvidence(id: String, replyId: String): TaskEvidence = taskLock.withLock {
         val task = requireNotNull(state.value.tasks.firstOrNull { it.id == id })
-        val job = api.engineJob(requireNotNull(task.engineJobId))
+        val job = taskJob(task)
         val receipt = TaskReceipt.from(task, job)
         val session = requireNotNull(task.engineSessionId)
+        if(localExecution){
+            check(receipt.outputs.any{it.messageId==replyId})
+            val run=requireNotNull(job.id)
+            val operations=mobile.execution(requireNotNull(task.engineRoomId)).operations.orEmpty().filter{it.runId==run}
+            return@withLock TaskEvidence.verified(run,session,NativeExecutionIdentity(run,session,job.status,job.status),operations)
+        }
         val runId = TaskEvidence.executionId(task, receipt, replyId, api.sessionTranscript(session))
         val execution = api.nativeExecution(runId)
         check(execution.id == runId && execution.sessionId == session)
@@ -261,7 +314,7 @@ class RemoteBackedRepository(
     }
 
     private suspend fun verifyTask(task: com.dominion.mobile.data.model.TaskItem) {
-        val job = api.engineJob(requireNotNull(task.engineJobId))
+        val job = taskJob(task)
         check(TaskDispatch.matches(task, job)) { "Task receipt mismatch" }
         saveTaskLink(task.copy(engineStatus = requireNotNull(job.status)))
     }

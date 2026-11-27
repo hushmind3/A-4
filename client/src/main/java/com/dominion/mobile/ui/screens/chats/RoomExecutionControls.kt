@@ -98,7 +98,7 @@ fun RoomExecutionControls(vm: AppViewModel, roomId: String,
     val latestPreview by rememberUpdatedState(onPreview)
     LaunchedEffect(roomId, session, lifecycle) {
         latestPreview(emptyList())
-        if (session.isNullOrBlank()) return@LaunchedEffect
+        if (session.isNullOrBlank() || vm.localExecution) return@LaunchedEffect
         val reducer = RoomLiveReducer(roomId, session)
         lifecycle.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             var reconnectMs = 1000L
@@ -158,7 +158,7 @@ fun RoomExecutionControls(vm: AppViewModel, roomId: String,
         Column(Modifier.weight(1f)) {
             Text(if (failure) tr(lang, "실행 상태 조회 실패", "Execution status unavailable")
                 else statusLabel(current?.status), color = p.textPrimary, style = MaterialTheme.typography.labelMedium)
-            if (!failure) Text(if (streamConnected) tr(lang, "실시간 서버 이벤트", "Live server events")
+            if (!failure) Text(if(vm.localExecution)"기기 내장 하네스 · 직접 모델 API"else if (streamConnected) tr(lang, "실시간 서버 이벤트", "Live server events")
                 else tr(lang, "주기적 상태 확인", "Periodic status sync"),
                 color = p.textSecondary, style = MaterialTheme.typography.labelSmall)
             if (approvals.isNotEmpty()) Text(tr(lang, "승인 대기 ", "Pending approvals ") + approvals.size,

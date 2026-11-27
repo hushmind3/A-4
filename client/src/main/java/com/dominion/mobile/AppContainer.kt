@@ -13,9 +13,11 @@ class AppContainer(context: Context) {
     private val app = context.applicationContext
     private val credentials = EncryptedRecordStore(app, "dominion_engine_connection", EngineConnection::class.java)
     val cloudAccount by lazy { com.dominion.mobile.data.remote.CloudAccountRepository(app) }
-    @Volatile var engine: EngineConnection? = runCatching {
-        credentials.load()?.validated()
-    }.getOrNull()
+    /** PC is an optional execution target. Keep saved credentials but never
+     * require a PC to start the primary mobile assistant. */
+    @Volatile var rememberedEngine:EngineConnection?=runCatching{credentials.load()?.validated()}.getOrNull()
+        private set
+    @Volatile var engine: EngineConnection? = null
         private set
     private val stores = mutableMapOf<String, LocalStore>()
     private val scopeStore=EncryptedRecordStore(app,"dominion_engine_scopes",com.dominion.mobile.data.local.EngineScopeRegistry::class.java)
@@ -64,6 +66,7 @@ class AppContainer(context: Context) {
         val scope=resolveScope(connection)
         val next = buildRepository(connection,scope)
         if (connection == null) credentials.clear() else credentials.save(connection)
+        rememberedEngine=connection
         engine = connection
         activeScope=scope
         repository = next

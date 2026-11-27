@@ -345,7 +345,7 @@ fun ChatRoomScreen(
                     )
                     Text(
                         if (state.typingConversationId == conversationId) {
-                            tr(lang, "본체 작업 중…", "Engine working…")
+                            if(vm.localExecution)"기기 AI 작업 중…"else tr(lang, "본체 작업 중…", "Engine working…")
                         } else if (character.online) {
                             tr(lang, "지금 대화 가능", "Available now")
                         } else {
@@ -428,7 +428,7 @@ fun ChatRoomScreen(
                             entry.message.status == MessageStatus.SENT) {
                             val jobLabel = when (entry.message.jobStatus) {
                                 "queued" -> tr(lang, "작업 대기", "Job queued")
-                                "running" -> tr(lang, "본체 실행 중", "Engine running")
+                                "running" -> if(vm.localExecution)"기기 하네스 실행 중"else tr(lang, "본체 실행 중", "Engine running")
                                 "completed" -> tr(lang, "작업 완료", "Job completed")
                                 "failed" -> tr(lang, "작업 실패", "Job failed")
                                 "cancelled" -> tr(lang, "작업 중단", "Job cancelled")

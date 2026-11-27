@@ -204,6 +204,17 @@ class CloudAccountRepository(context: Context) {
             result
         } }
 
+    /** A previously verified inference grant is authorized by the Worker on
+     * every completion. Do not perform redundant status/me/catalog requests per
+     * model step; refresh/selection still check the real account and model list. */
+    suspend fun completeForMobile(model:String,messages:List<CloudChatMessage>):CloudCompletion =
+        withContext(Dispatchers.IO){lock.withLock{
+            val saved=requireNotNull(loadPairing()){"Google account connection required"}
+            val pair=if(saved.verifiedAccountId.isNullOrBlank())approved().first else saved
+            val request=CloudCompletionRequest(model,messages).validated()
+            api.complete("Bearer "+pair.token,request).verified(model)
+        }}
+
     suspend fun registerEngineModel(model:String,connection:com.dominion.mobile.data.local.EngineConnection,
         stillSelected:()->Boolean):String = withContext(Dispatchers.IO) { lock.withLock {
         val (pair,identity)=approved()

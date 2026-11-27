@@ -28,7 +28,7 @@ fun EngineSettingsScreen(onBack: () -> Unit) {
     val lang = LocalLang.current
     val p = LocalDominionPalette.current
     val scope = rememberCoroutineScope()
-    val saved = container.engine
+    val saved = container.engine ?: container.rememberedEngine
     val api = remember(saved) { saved?.let(ApiFactory::create) }
     var origin by remember { mutableStateOf(saved?.origin.orEmpty()) }
     var token by remember { mutableStateOf("") }

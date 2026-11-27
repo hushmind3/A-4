@@ -113,7 +113,7 @@ fun MemoriesScreen(
         )
         Column(Modifier.padding(horizontal = 16.dp)) {
             SearchField(query, { query = it }, tr(lang, "기억 검색", "Search memories"))
-            TextButton(onClick = vm::refreshMemories) { Text(tr(lang, "본체 기억 새로고침", "Refresh engine memories")) }
+            TextButton(onClick = vm::refreshMemories) { Text(if(vm.localExecution)"기기 기억 새로고침"else tr(lang, "본체 기억 새로고침", "Refresh engine memories")) }
             syncStatus?.let { Text(it, color = p.textSecondary, style = MaterialTheme.typography.bodySmall) }
         }
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 30.dp)) {
@@ -166,8 +166,9 @@ fun MemoriesScreen(
                     Spacer(Modifier.height(5.dp))
                     Text(memory.source, style = MaterialTheme.typography.labelSmall, color = p.textTertiary)
                     if (memory.serverBacked != true) {
-                        Text(tr(lang, "기기 보관 · 본체 미동기화", "On device · not synced"), color = p.textSecondary)
-                        TextButton(onClick = { vm.syncMemory(memory.id) }) { Text(tr(lang, "본체 기억으로 저장", "Sync to engine")) }
+                        Text(if(vm.localExecution)if(memory.retrievalEligible==true)"기기 기억 · 검색 대상"else"기기 기억"else
+                            tr(lang, "기기 보관 · 본체 미동기화", "On device · not synced"), color = p.textSecondary)
+                        TextButton(onClick = { vm.syncMemory(memory.id) }) { Text(if(vm.localExecution)"기기 검색에 반영"else tr(lang, "본체 기억으로 저장", "Sync to engine")) }
                     } else {
                         Text(if (memory.retrievalEligible == true) tr(lang, "본체 저장 · 검색 대상", "Engine · eligible for retrieval")
                             else tr(lang, "본체 저장 · 검색 상태 확인 필요", "Engine · check retrieval status"),
