@@ -508,7 +508,7 @@ class AppViewModel(
     }
 
     fun saveSchedule(existingId: String?, title: String, whenText: String, characterId: String,
-        repeat: Repeat, scheduledAt: Long, zoneId: String, onSaved: () -> Unit = {}) {
+        repeat: Repeat, scheduledAt: Long, zoneId: String, workRequest: String? = null, onSaved: () -> Unit = {}) {
         if (title.isBlank() || scheduledAt <= System.currentTimeMillis()) {
             _notice.value = "제목과 미래 날짜·시간을 지정하세요."
             return
@@ -516,9 +516,12 @@ class AppViewModel(
         viewModelScope.launch {
             try {
                 val previous = state.value.schedules.firstOrNull { it.id == existingId }
+                require(previous?.pendingDispatchAt == null) { "Resolve pending work first" }
+                if (!workRequest.isNullOrBlank()) require(state.value.character(characterId) != null && workRequest.length <= 3000)
                 val item = ScheduleItem(previous?.id ?: id("sch"), title.trim(), characterId, whenText,
                     repeat, enabled = true, createdAt = previous?.createdAt ?: System.currentTimeMillis(),
-                    scheduledAt = scheduledAt, timeZone = zoneId, lastNotifiedAt = null)
+                    scheduledAt = scheduledAt, timeZone = zoneId, lastNotifiedAt = null,
+                    workRequest = workRequest?.trim()?.takeIf { it.isNotBlank() })
                 repo.changeSchedules { listOf(item) + it.filterNot { old -> old.id == item.id } }
                 onSaved()
             } catch (cancelled: CancellationException) { throw cancelled }

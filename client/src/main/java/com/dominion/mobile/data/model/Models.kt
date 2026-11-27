@@ -181,7 +181,11 @@ data class ScheduleItem(
     val createdAt: Long = System.currentTimeMillis(),
     val scheduledAt: Long? = null,
     val timeZone: String? = null,
-    val lastNotifiedAt: Long? = null
+    val lastNotifiedAt: Long? = null,
+    val workRequest: String? = null,
+    val lastDispatchedAt: Long? = null,
+    val pendingDispatchAt: Long? = null,
+    val dispatchStatus: String? = null
 )
 
 data class MemoryItem(

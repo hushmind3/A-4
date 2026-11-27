@@ -72,6 +72,7 @@ interface DominionRepository {
     suspend fun inspectEngineSkill(id: String): com.dominion.mobile.data.remote.SkillReview = error("Engine not connected")
     suspend fun changeEngineSkill(review: com.dominion.mobile.data.remote.SkillReview, enabled: Boolean): Unit = error("Engine not connected")
     suspend fun submitTask(id: String): Unit = error("Engine not connected")
+    suspend fun dispatchScheduledTask(id: String, occurrence: Long): Unit = error("Engine not connected")
     suspend fun refreshTask(id: String): Unit = error("Engine not connected")
 
     suspend fun changeSchedules(transform: (List<com.dominion.mobile.data.model.ScheduleItem>) ->

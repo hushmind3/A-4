@@ -33,7 +33,10 @@ object ReminderMonitor {
     }
     fun schedule(context: Context, scope: String, rows: List<ScheduleItem>) {
         val now = System.currentTimeMillis()
-        val next = rows.mapNotNull { ReminderTiming.nextUndelivered(it, now) }.filter { it > now }.minOrNull() ?: return
+        val next = rows.flatMap { item ->
+            listOfNotNull(ReminderTiming.nextUndelivered(item, now),
+                com.dominion.mobile.data.ScheduledDispatch.next(item, now))
+        }.filter { it > now }.minOrNull() ?: return
         val request = OneTimeWorkRequestBuilder<ReminderWorker>()
             .setInitialDelay((next - now).coerceAtLeast(0), TimeUnit.MILLISECONDS)
             .setInputData(workDataOf("scope" to scope))
@@ -52,19 +55,31 @@ class ReminderWorker(context: Context, params: WorkerParameters) : CoroutineWork
             val repo = container.repository
             val now = System.currentTimeMillis()
             for (item in repo.state.value.schedules) {
-                val occurrence = ReminderTiming.due(item, now) ?: continue
+                if (container.repository !== repo || container.reminderScope() != scope) break
+                val dueWork = com.dominion.mobile.data.ScheduledDispatch.due(item, now)
+                if (dueWork != null && scope != "unconfigured") {
+                    try { repo.dispatchScheduledTask(item.id, dueWork) }
+                    catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                    catch (_: Exception) { /* Persisted reservation will be checked on next repair. */ }
+                }
                 if (container.repository !== repo || container.reminderScope() != scope) break
                 val state = repo.state.value
                 val live = state.schedules.firstOrNull { it.id == item.id } ?: continue
-                if (live != item || !state.settings.notifications || !canNotify()) continue
-                if (!post(scope, item, occurrence, state.settings.hideContent || !state.settings.messagePreview)) continue
-                // Record the delivered occurrence; don't overwrite a concurrent edit.
-                repo.changeSchedules { rows ->
-                    rows.map { row ->
-                        if (row != item) row else row.copy(lastNotifiedAt = occurrence,
-                            enabled = row.repeat != Repeat.NONE)
-                    }
+                val occurrence = ReminderTiming.due(live, now)
+                if (occurrence != null && state.settings.notifications && canNotify() &&
+                    post(scope, live, occurrence, state.settings.hideContent || !state.settings.messagePreview)) {
+                    repo.changeSchedules { rows -> rows.map { row ->
+                        if (row != live) row else row.copy(lastNotifiedAt = occurrence,
+                            enabled = row.repeat != Repeat.NONE ||
+                                (!row.workRequest.isNullOrBlank() && row.lastDispatchedAt != occurrence))
+                    } }
                 }
+                // One-shot work is finished once submitted, independent of notification permission.
+                repo.changeSchedules { rows -> rows.map { row ->
+                    if (row.id == item.id && row.enabled && row.repeat == Repeat.NONE &&
+                        !row.workRequest.isNullOrBlank() && row.lastDispatchedAt == row.scheduledAt &&
+                        row.pendingDispatchAt == null) row.copy(enabled = false) else row
+                } }
             }
             if (container.repository === repo) ReminderMonitor.schedule(applicationContext, scope, repo.state.value.schedules)
             Result.success()

@@ -95,6 +95,43 @@ class RemoteBackedRepository(
             confirmed.instructions == review.instructions && (!enabled || confirmed.status == "active"))
     }
 
+    override suspend fun dispatchScheduledTask(id: String, occurrence: Long) {
+        val task = remindersLock.withLock {
+            val item = state.value.schedules.firstOrNull { it.id == id } ?: return
+            check(item.enabled && com.dominion.mobile.data.ScheduledDispatch.due(item, System.currentTimeMillis()) == occurrence)
+            val proposed = com.dominion.mobile.data.ScheduledDispatch.task(item, occurrence)
+            val existing = state.value.tasks.firstOrNull { it.id == proposed.id }
+            check(existing == null || existing.requestDetails == proposed.requestDetails)
+            val reserved = item.copy(pendingDispatchAt = occurrence, dispatchStatus = "접수 확인 중")
+            update { current -> current.copy(
+                schedules = current.schedules.map { if (it.id == id) reserved else it },
+                tasks = if (existing == null) listOf(proposed) + current.tasks else current.tasks) }
+            store.saveStateNow(state.value)
+            existing ?: proposed
+        }
+        // The saved task nonce is stable across network errors and process restarts.
+        try {
+            val live = state.value.schedules.firstOrNull { it.id == id }
+            if (live?.enabled != true || live.pendingDispatchAt != occurrence) return
+            submitTask(task.id)
+            val confirmed = state.value.tasks.firstOrNull { it.id == task.id }
+            check(!confirmed?.engineJobId.isNullOrBlank() && !confirmed?.engineSessionId.isNullOrBlank())
+            changeSchedules { rows -> rows.map { row ->
+                if (row.id == id && row.pendingDispatchAt == occurrence)
+                    row.copy(pendingDispatchAt = null, lastDispatchedAt = occurrence, dispatchStatus = "본체 접수 확인")
+                else row
+            } }
+        } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+        catch (e: Exception) {
+            changeSchedules { rows -> rows.map { row ->
+                if (row.id == id && row.pendingDispatchAt == occurrence)
+                    row.copy(dispatchStatus = "연결·접수 재확인 대기")
+                else row
+            } }
+            throw e
+        }
+    }
+
     private val taskLock = Mutex()
 
     private suspend fun saveTaskLink(item: com.dominion.mobile.data.model.TaskItem) {

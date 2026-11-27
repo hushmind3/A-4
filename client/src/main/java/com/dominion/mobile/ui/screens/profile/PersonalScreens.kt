@@ -614,6 +614,9 @@ fun SchedulesScreen(
                                 context.toast(tr(lang, "캘린더 앱을 열 수 없습니다.", "Calendar app unavailable"))
                         }) { Text(tr(lang, "달력", "Calendar")) }
                     }
+                    if (!schedule.workRequest.isNullOrBlank()) {
+                        Text(schedule.dispatchStatus ?: "AI 예약", color = p.blue, style = MaterialTheme.typography.labelSmall)
+                    }
                     TextButton(onClick = { deleteTarget = schedule.id }) { Text("⋯") }
                     Switch(
                         checked = schedule.enabled && schedule.scheduledAt != null,
@@ -643,8 +646,8 @@ fun SchedulesScreen(
         AddScheduleDialog(
             state = state, existing = editTarget,
             onDismiss = { showAdd = false; editTarget = null },
-            onAdd = { title, whenText, characterId, repeat, due, zone ->
-                vm.saveSchedule(editTarget?.id, title, whenText, characterId, repeat, due, zone) {
+            onAdd = { title, whenText, characterId, repeat, due, zone, request ->
+                vm.saveSchedule(editTarget?.id, title, whenText, characterId, repeat, due, zone, request) {
                     showAdd = false; editTarget = null
                 }
             }
@@ -654,7 +657,7 @@ fun SchedulesScreen(
     deleteTarget?.let { id ->
         PrimaryDialog(
             title = tr(lang, "이 일정을 삭제할까요?", "Delete this schedule?"),
-            body = tr(lang, "알림도 함께 꺼져요.", "Its reminder will be removed too."),
+            body = tr(lang, "향후 예약 접수를 중지합니다. 이미 본체에 전달된 작업은 할 일에서 별도로 확인·중단하세요.", "Stop future submissions; review or cancel already submitted jobs separately."),
             confirmLabel = tr(lang, "삭제", "Delete"),
             onConfirm = { vm.deleteSchedule(id); deleteTarget = null },
             dismissLabel = tr(lang, "취소", "Cancel"),
@@ -669,13 +672,15 @@ private fun AddScheduleDialog(
     state: AppState,
     onDismiss: () -> Unit,
     existing: ScheduleItem?,
-    onAdd: (String, String, String, Repeat, Long, String) -> Unit
+    onAdd: (String, String, String, Repeat, Long, String, String?) -> Unit
 ) {
     val p = LocalDominionPalette.current
     val lang = LocalLang.current
     val context = LocalContext.current
     var title by remember(existing?.id) { mutableStateOf(existing?.title.orEmpty()) }
     var whenText by remember(existing?.id) { mutableStateOf(existing?.whenText.orEmpty()) }
+    var runWork by remember(existing?.id) { mutableStateOf(!existing?.workRequest.isNullOrBlank()) }
+    var workRequest by remember(existing?.id) { mutableStateOf(existing?.workRequest.orEmpty()) }
     var repeat by remember(existing?.id) { mutableStateOf(existing?.repeat ?: Repeat.NONE) }
     val zone = remember(existing?.id) { runCatching { ZoneId.of(existing?.timeZone ?: ZoneId.systemDefault().id) }.getOrDefault(ZoneId.systemDefault()) }
     var due by remember(existing?.id) { mutableStateOf(existing?.let { ReminderTiming.nextUndelivered(it, System.currentTimeMillis()) }
@@ -691,6 +696,18 @@ private fun AddScheduleDialog(
                 AppTextField(title, { title = it }, placeholder = tr(lang, "무엇을 알려줄까요?", "What should we remind you about?"))
                 Spacer(Modifier.height(8.dp))
                 AppTextField(whenText, { whenText = it }, placeholder = tr(lang, "메모 (선택)", "Note (optional)"))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.Checkbox(checked = runWork, onCheckedChange = { runWork = it })
+                    Text(tr(lang, "예약 시간에 AI 업무도 접수", "Submit AI work on schedule"))
+                }
+                if (runWork) {
+                    AppTextField(workRequest, { workRequest = it.take(3000) },
+                        placeholder = "예: 공식 기관의 새 공고를 조사해줘", singleLine = false, maxLines = 3)
+                    Text("휴대폰이 켜지고 본체에 연결될 때 접수합니다. 알림 설정과 별개이며 지연될 수 있습니다.",
+                        style = MaterialTheme.typography.labelSmall)
+                }
+                if (existing?.pendingDispatchAt != null) Text("접수 확인 중인 업무가 있습니다. 할 일에서 상태를 확인하세요.",
+                    color = p.textSecondary)
                 TextButton(onClick = {
                     val local = Instant.ofEpochMilli(due).atZone(zone)
                     DatePickerDialog(context, { _, year, month, day ->
@@ -731,8 +748,10 @@ private fun AddScheduleDialog(
         },
         confirmButton = {
             TextButton(
-                enabled = title.isNotBlank() && due > System.currentTimeMillis(),
-                onClick = { onAdd(title, whenText.ifBlank { ReminderTiming.format(due, zone.id) }, characterId, repeat, due, zone.id) }
+                enabled = title.isNotBlank() && due > System.currentTimeMillis() && existing?.pendingDispatchAt == null &&
+                    (!runWork || (workRequest.isNotBlank() && characterId.isNotBlank())),
+                onClick = { onAdd(title, whenText.ifBlank { ReminderTiming.format(due, zone.id) }, characterId, repeat, due, zone.id,
+                    workRequest.takeIf { runWork }) }
             ) { Text(tr(lang, "예약 저장", "Save reminder"), color = if (title.isNotBlank()) p.blue else p.textDisabled) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(tr(lang, "취소", "Cancel"), color = p.textSecondary) } }
