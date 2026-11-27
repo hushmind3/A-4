@@ -22,7 +22,7 @@ class MobileCoreTest{
   assertEquals("Current device task",bounded.last().content)
   assertTrue(bounded.size<=12)
   CloudCompletionRequest("dominion/free-auto",bounded).validated()
-  assertEquals(3,MobileCore.MAX_READ_STEPS)
+  assertEquals(6,MobileCore.MAX_READ_STEPS)
  }
  @Test fun originalRequestSurvivesToolContextCompaction(){
   val request=CloudChatMessage("user","Find and verify the requested information")
@@ -49,6 +49,14 @@ class MobileCoreTest{
   assertNull(MobileCore.action("""{"tool":"clock","args":{},"extra":1}"""))
   assertTrue(runCatching{MobileCore.validate("shell",JsonObject())}.isFailure)
   assertTrue(runCatching{MobileCore.validate("schedule.create",JsonObject())}.isFailure)
+ }
+ @Test fun terminalStatusDistinguishesVerifiedPartialWork(){
+  assertEquals("failed",MobileCore.terminalStatus(false,false,listOf("failed")))
+  assertEquals("paused",MobileCore.terminalStatus(false,true,listOf("completed")))
+  assertEquals("paused",MobileCore.terminalStatus(false,false,listOf("completed","failed")))
+  assertEquals("completed",MobileCore.terminalStatus(false,false,listOf("failed","completed")))
+  assertEquals("needs_review",MobileCore.terminalStatus(true,false,listOf("completed")))
+  assertTrue(MobileCore.toolLike("""{"tool":"clock","args":{},"extra":1}"""))
  }
  @Test fun validatesActualFutureSchedule(){
   val a=JsonObject().apply{addProperty("title","회의");addProperty("at","2027-01-01T09:00:00+09:00")}

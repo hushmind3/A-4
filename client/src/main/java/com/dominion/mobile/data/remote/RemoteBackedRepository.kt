@@ -676,19 +676,27 @@ class RemoteBackedRepository(
             (if(feedback.isBlank())"" else "\nPrior execution outcome: "+feedback.take(300))+
             "\nReturn same-package dominion-phone-plan/v2 JSON only if safe progress is possible."
         val model=state.value.settings.mobileModel?:"dominion/free-auto"
-        val result=requireNotNull(mobileCloud).completeForMobile(model,
-            listOf(CloudChatMessage("system",system),CloudChatMessage("user",request)),768)
-        check(state.value.conversation(context.roomId)?.sessionId==context.sessionId)
-        val proposed=com.dominion.mobile.data.PhoneNavigationPlan.fromMessage(result.content)?:return null
-        require(proposed.version==2&&proposed.app==context.app&&proposed.steps.size<=4)
-        if(proposed.steps.any{it.action=="send_message"})require(authorizedMessage!=null&&authorizedMessage.recipient in observations)
-        if(proposed.steps.any{it.action=="report_result"})require(context.publicRead&&
-            proposed.steps.single().label in publicResults)
-        if(context.publicRead)require(com.dominion.mobile.data.PhonePublicResult.permits(proposed,context.initialRequest))
-        require(proposed.steps.filter{it.action=="click"}.all{it.label in observations}){
-            "Proposed action was not observed"
+        var correction=""
+        repeat(2){
+            val result=requireNotNull(mobileCloud).completeForMobile(model,
+                listOf(CloudChatMessage("system",system),CloudChatMessage("user",request+correction)),768)
+            check(state.value.conversation(context.roomId)?.sessionId==context.sessionId)
+            val proposed=com.dominion.mobile.data.PhoneNavigationPlan.fromMessage(result.content)
+            if(proposed!=null){
+                val valid=proposed.version==2&&proposed.app==context.app&&proposed.steps.size<=4&&
+                    (proposed.steps.none{it.action=="send_message"}||
+                        authorizedMessage!=null&&authorizedMessage.recipient in observations)&&
+                    (proposed.steps.none{it.action=="report_result"}||
+                        context.publicRead&&proposed.steps.single().label in publicResults)&&
+                    (!context.publicRead||com.dominion.mobile.data.PhonePublicResult.permits(proposed,context.initialRequest))&&
+                    proposed.steps.filter{it.action=="click"}.all{it.label in observations}
+                if(valid)return proposed
+            }else if(!result.content.contains("dominion-phone-plan")&&!result.content.trim().startsWith("{")){
+                return null
+            }
+            correction="\nThe previous proposal was rejected without execution. Use exact observed labels, the same app and approved scope. Return a different valid plan or state that you cannot proceed."
         }
-        return proposed
+        return null
     }
 
     override suspend fun replanPhoneNavigation(context:com.dominion.mobile.data.PhoneReplanContext,
