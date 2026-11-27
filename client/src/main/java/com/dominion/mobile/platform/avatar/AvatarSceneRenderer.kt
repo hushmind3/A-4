@@ -23,7 +23,11 @@ internal class AvatarSceneRenderer(private val ar: Boolean, shape: CharacterShap
     private val originalMesh = AvatarMesh.build(shape)
     private var mesh = originalMesh
     private var vertices = buffer(mesh)
-    private val pendingMesh = AtomicReference<FloatArray?>(null)
+    private data class MeshChange(val base: FloatArray, val mouth: FloatArray?)
+    private val pendingMesh = AtomicReference<MeshChange?>(null)
+    private var mouthVertices: FloatBuffer? = null
+    @Volatile private var previewLevel = 0f
+    fun morphPreview(value: Float) { previewLevel = value.coerceIn(0f, 1f) }
     private val featureMesh = AvatarMesh.build(CharacterShape.BLOB)
     private val featureVertices = buffer(featureMesh)
     @Volatile private var faceMode = "idle"
@@ -61,8 +65,11 @@ internal class AvatarSceneRenderer(private val ar: Boolean, shape: CharacterShap
     private var failure = false
     private var textureSession: Session? = null
 
-    fun replaceMesh(value: FloatArray) { pendingMesh.set(value) }
-    fun restoreMesh() { pendingMesh.set(originalMesh) }
+    fun replaceMesh(value: FloatArray, mouth: FloatArray? = null) {
+        require(mouth == null || mouth.size == value.size)
+        pendingMesh.set(MeshChange(value, mouth))
+    }
+    fun restoreMesh() { pendingMesh.set(MeshChange(originalMesh, null)) }
     fun expression(mode: String) { if (mode in setOf("idle","happy","talk","voice")) faceMode = mode }
     fun setSession(value: Session?) { session = value }
     fun touchDown(px:Float,py:Float) { x=px;y=py }
@@ -82,7 +89,7 @@ internal class AvatarSceneRenderer(private val ar: Boolean, shape: CharacterShap
         try {
             glClearColor(0.07f,0.09f,0.14f,1f)
             modelProgram=program(
-                "uniform mat4 uMvp; uniform mat4 uModel; attribute vec3 aPos; attribute vec3 aNormal; varying float vLight; void main(){vec3 n=normalize(mat3(uModel)*aNormal); vLight=0.32+0.68*max(dot(n,normalize(vec3(0.4,0.8,0.7))),0.0);gl_Position=uMvp*vec4(aPos,1.0);}",
+                "uniform mat4 uMvp; uniform mat4 uModel; uniform float uMorph; attribute vec3 aPos; attribute vec3 aNormal; attribute vec3 aMouthPos; attribute vec3 aMouthNormal; varying float vLight; void main(){vec3 n=normalize(mat3(uModel)*mix(aNormal,aMouthNormal,uMorph)); vLight=0.32+0.68*max(dot(n,normalize(vec3(0.4,0.8,0.7))),0.0);gl_Position=uMvp*vec4(mix(aPos,aMouthPos,uMorph),1.0);}",
                 "precision mediump float; uniform vec3 uColor; varying float vLight; void main(){gl_FragColor=vec4(uColor*vLight,1.0);}")
             if(ar) {
                 cameraProgram=program(
@@ -109,9 +116,10 @@ internal class AvatarSceneRenderer(private val ar: Boolean, shape: CharacterShap
         if(failure || modelProgram==0)return
         try {
             pendingMesh.getAndSet(null)?.let {
-                mesh = it
-                vertices = buffer(it)
-                imported = it !== originalMesh
+                mesh = it.base
+                vertices = buffer(it.base)
+                mouthVertices = it.mouth?.let(::buffer)
+                imported = it.base !== originalMesh
             }
             if(resetRequested) {
                 resetRequested=false
@@ -166,7 +174,8 @@ internal class AvatarSceneRenderer(private val ar: Boolean, shape: CharacterShap
             }
             Matrix.multiplyMM(mv,0,view,0,model,0)
             Matrix.multiplyMM(mvp,0,projection,0,mv,0)
-            drawMesh(vertices, mesh.size/6, model, mvp, color)
+            drawMesh(vertices, mesh.size/6, model, mvp, color, mouthVertices,
+                if (faceMode == "voice") voiceLevel else previewLevel)
             if (!imported) drawFace()
         } catch (_:Exception) {
             failure=true;report("그래픽 또는 AR 추적 오류 · 화면을 다시 여세요.")
@@ -212,7 +221,8 @@ internal class AvatarSceneRenderer(private val ar: Boolean, shape: CharacterShap
         faceDepths[2]?.let { feature(0f,-0.30f,it,if(faceMode=="happy") 0.23f else 0.14f,mouth) }
     }
 
-    private fun drawMesh(vertices:FloatBuffer, count:Int, model:FloatArray, mvp:FloatArray, color:Int) {
+    private fun drawMesh(vertices:FloatBuffer, count:Int, model:FloatArray, mvp:FloatArray, color:Int,
+        mouth: FloatBuffer? = null, weight: Float = 0f) {
         glEnable(GL_DEPTH_TEST)
         glUseProgram(modelProgram)
         glUniformMatrix4fv(glGetUniformLocation(modelProgram,"uMvp"),1,false,mvp,0)
@@ -223,8 +233,16 @@ internal class AvatarSceneRenderer(private val ar: Boolean, shape: CharacterShap
         glEnableVertexAttribArray(p);glEnableVertexAttribArray(n)
         vertices.position(0);glVertexAttribPointer(p,3,GL_FLOAT,false,24,vertices)
         vertices.position(3);glVertexAttribPointer(n,3,GL_FLOAT,false,24,vertices)
+        val mp = glGetAttribLocation(modelProgram, "aMouthPos")
+        val mn = glGetAttribLocation(modelProgram, "aMouthNormal")
+        val target = mouth ?: vertices
+        glUniform1f(glGetUniformLocation(modelProgram, "uMorph"), if (mouth == null) 0f else weight)
+        glEnableVertexAttribArray(mp); glEnableVertexAttribArray(mn)
+        target.position(0); glVertexAttribPointer(mp,3,GL_FLOAT,false,24,target)
+        target.position(3); glVertexAttribPointer(mn,3,GL_FLOAT,false,24,target)
         glDrawArrays(GL_TRIANGLES,0,count)
         glDisableVertexAttribArray(p);glDisableVertexAttribArray(n)
+        glDisableVertexAttribArray(mp);glDisableVertexAttribArray(mn)
     }
 
     private fun shader(type:Int,source:String):Int {

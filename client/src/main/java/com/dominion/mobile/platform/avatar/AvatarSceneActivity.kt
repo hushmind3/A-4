@@ -41,6 +41,18 @@ class AvatarSceneActivity : ComponentActivity() {
     private var imported by mutableStateOf(false)
     private var expression by mutableStateOf("idle")
     private var savedModel by mutableStateOf(false)
+    private var hasMouth by mutableStateOf(false)
+    private var mouthPreview by mutableFloatStateOf(0f)
+    private fun showScene(scene: AvatarModelStore.Scene) {
+        renderer.replaceMesh(scene.mesh, scene.mouth)
+        mouthPreview = 0f
+        renderer.morphPreview(0f)
+        imported = true
+        hasMouth = scene.mouth != null
+        savedModel = true
+        modelStatus = "저장된 OBJ · " + scene.mesh.size / 18 + "개 삼각형" +
+            if (hasMouth) " · 입 모양 연결됨" else ""
+    }
     private var modelStatus by mutableStateOf("")
     private var speaking by mutableStateOf(false)
     private var speechStatus by mutableStateOf("")
@@ -75,13 +87,9 @@ class AvatarSceneActivity : ComponentActivity() {
         importing = true
         lifecycleScope.launch {
             try {
-                val mesh = withContext(Dispatchers.IO) { modelStore.load(modelKey) }
-                savedModel = mesh != null
-                if (mesh != null) {
-                    renderer.replaceMesh(mesh)
-                    imported = true
-                    modelStatus = "저장된 OBJ · " + mesh.size / 18 + "개 삼각형"
-                }
+                val scene = withContext(Dispatchers.IO) { modelStore.loadScene(modelKey) }
+                savedModel = scene != null
+                if (scene != null) showScene(scene)
             } catch (e: CancellationException) { throw e }
             catch (_: Exception) { modelStatus = "저장 모델 읽기 실패 · 기존 파일은 유지됩니다." }
             finally { importing = false }
@@ -106,13 +114,38 @@ class AvatarSceneActivity : ComponentActivity() {
                             output.toByteArray()
                         }
                         modelStore.save(modelKey, bytes)
+                        requireNotNull(modelStore.loadScene(modelKey))
                     }
-                    renderer.replaceMesh(mesh)
-                    imported = true
-                    savedModel = true
-                    modelStatus = "OBJ 모델 저장 완료 · " + mesh.size / 18 + "개 삼각형"
+                    showScene(mesh)
                 } catch (e: CancellationException) { throw e }
                 catch (_: Exception) { modelStatus = "OBJ 저장 실패 · 5MB 이하 삼각형 메시 파일을 선택하세요. 기존 모델은 유지됩니다." }
+                finally { importing = false }
+            }
+        }
+    }
+    private val mouthPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null && !importing && imported) {
+            importing = true
+            lifecycleScope.launch {
+                try {
+                    val scene = withContext(Dispatchers.IO) {
+                        require(uri.scheme == "content")
+                        val bytes = requireNotNull(contentResolver.openInputStream(uri)).use { input ->
+                            val output = java.io.ByteArrayOutputStream()
+                            val chunk = ByteArray(8192)
+                            while (true) {
+                                val n = input.read(chunk)
+                                if (n < 0) break
+                                require(output.size() + n <= ObjAvatarMesh.MAX_BYTES)
+                                output.write(chunk, 0, n)
+                            }
+                            output.toByteArray()
+                        }
+                        modelStore.saveMouth(modelKey, bytes)
+                    }
+                    showScene(scene)
+                } catch (e: CancellationException) { throw e }
+                catch (_: Exception) { modelStatus = "입 모양 연결 실패 · 원본과 동일한 정점·삼각형 순서의 OBJ가 필요합니다." }
                 finally { importing = false }
             }
         }
@@ -170,7 +203,7 @@ class AvatarSceneActivity : ComponentActivity() {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                             TextButton(enabled = !importing, onClick = { modelPicker.launch(arrayOf("*/*")) }) { Text("OBJ 가져오기·저장") }
                             TextButton(enabled = imported && !importing, onClick = {
-                                renderer.restoreMesh(); imported = false
+                                renderer.restoreMesh(); imported = false; hasMouth = false
                                 modelStatus = "기본 모델 표시 중 · 저장된 OBJ는 유지됩니다."
                             }) { Text("기본 모델") }
                             if (savedModel && !imported) TextButton(enabled = !importing,
@@ -183,7 +216,20 @@ class AvatarSceneActivity : ComponentActivity() {
                                 }, label = { Text(title) })
                             }
                         }
-                        if (!imported) TextButton(onClick = { previewSpeech() }) {
+                        if (imported) {
+                            TextButton(enabled = !importing && !speaking, onClick = {
+                                mouthPicker.launch(arrayOf("*/*"))
+                            }) { Text("입 벌린 OBJ 연결") }
+                            if (hasMouth) {
+                                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+                                    Text("입 모양", modifier = Modifier.padding(top = 12.dp))
+                                    Slider(value = mouthPreview, onValueChange = {
+                                        mouthPreview = it; renderer.morphPreview(it)
+                                    }, enabled = !speaking, modifier = Modifier.weight(1f))
+                                }
+                            }
+                        }
+                        if (!imported || hasMouth) TextButton(enabled = !importing, onClick = { previewSpeech() }) {
                             Text(if (speaking) "음성 중단" else "본체 음성으로 말하기")
                         }
                         if (speechStatus.isNotBlank()) Text(speechStatus,

@@ -17,7 +17,33 @@ object ObjAvatarMesh {
         fun cross(other:Vec)=Vec(y*other.z-z*other.y,z*other.x-x*other.z,x*other.y-y*other.x)
     }
     private data class Ref(val vertex:Int,val normal:Int?)
-    fun parse(text:String):FloatArray {
+    private data class Geometry(val vertices: List<Vec>, val normals: List<Vec>, val faces: List<List<Ref>>)
+    private data class Normalization(val center: Vec, val scale: Double)
+    data class Morph(val base: FloatArray, val open: FloatArray)
+
+    fun parse(text: String): FloatArray {
+        val geometry = geometry(text)
+        return render(geometry, normalization(geometry), false)
+    }
+
+    /** Match vertex/face indices exactly and normalize both meshes with the base bounds. */
+    fun morph(baseText: String, openText: String): Morph {
+        val base = geometry(baseText)
+        val open = geometry(openText)
+        require(base.vertices.size == open.vertices.size && base.faces.size == open.faces.size)
+        require(base.faces.indices.all { i ->
+            base.faces[i].map { it.vertex } == open.faces[i].map { it.vertex }
+        }) { "OBJ morph topology differs" }
+        val transform = normalization(base)
+        val a = render(base, transform, true)
+        val b = render(open, transform, true)
+        require(a.size == b.size && !a.contentEquals(b))
+        // Keep model-scale errors or arbitrarily displaced geometry from becoming animations.
+        require(a.indices.filter { it % 6 < 3 }.all { kotlin.math.abs(a[it] - b[it]) <= 2f })
+        return Morph(a, b)
+    }
+
+    private fun geometry(text:String):Geometry {
         require(text.length in 1..MAX_BYTES)
         val vertices=ArrayList<Vec>()
         val normals=ArrayList<Vec>()
@@ -55,19 +81,33 @@ object ObjAvatarMesh {
             }
         }
         require(vertices.isNotEmpty()&&faces.isNotEmpty())
+        return Geometry(vertices, normals, faces)
+    }
+
+    private fun normalization(geometry: Geometry): Normalization {
+        val (vertices, _, faces) = geometry
         val used=faces.flatMap { f->f.map { vertices[it.vertex] } }
         val lo=Vec(used.minOf { it.x },used.minOf { it.y },used.minOf { it.z })
         val hi=Vec(used.maxOf { it.x },used.maxOf { it.y },used.maxOf { it.z })
         val scale=maxOf(hi.x-lo.x,hi.y-lo.y,hi.z-lo.z)
         require(scale.isFinite()&&scale>1e-12)
         val center=Vec((hi.x+lo.x)/2,(hi.y+lo.y)/2,(hi.z+lo.z)/2)
+        return Normalization(center, scale)
+    }
+
+    private fun render(geometry: Geometry, transform: Normalization, strict: Boolean): FloatArray {
+        val (vertices, normals, faces) = geometry
+        val (center, scale) = transform
         val result=FloatArray(faces.size*18)
         var at=0
         for(face in faces){
             val a=vertices[face[0].vertex];val b=vertices[face[1].vertex];val c=vertices[face[2].vertex]
             val n=(b-a).cross(c-a)
             val l=sqrt(n.x*n.x+n.y*n.y+n.z*n.z)
-            if(!l.isFinite()||l<=1e-12)continue
+            if(!l.isFinite()||l<=1e-12) {
+                require(!strict) { "Degenerate triangle in morph" }
+                continue
+            }
             val faceNormal=n.unit()
             for(ref in face){
                 val p=vertices[ref.vertex]-center

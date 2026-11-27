@@ -14,16 +14,44 @@ internal class AvatarModelStore(private val root: File) {
         return AtomicFile(File(File(root, "avatar_models"), "$key.obj"))
     }
 
+    data class Scene(val mesh: FloatArray, val mouth: FloatArray? = null)
+    private fun bytes(key: String): ByteArray? =
+        try { file(key).openRead().use(::boundedRead) }
+        catch (_: FileNotFoundException) { null }
+    private fun mouthKey(key: String, base: ByteArray): String =
+        Companion.key("mouth:" + key, MessageDigest.getInstance("SHA-256").digest(base)
+            .joinToString("") { "%02x".format(it.toInt() and 255) })
+
     fun load(key: String): FloatArray? = synchronized(lock) {
-        val bytes = try { file(key).openRead().use(::boundedRead) }
-        catch (_: FileNotFoundException) { return@synchronized null }
-        ObjAvatarMesh.parse(bytes.toString(Charsets.UTF_8))
+        bytes(key)?.let { ObjAvatarMesh.parse(it.toString(Charsets.UTF_8)) }
+    }
+
+    fun loadScene(key: String): Scene? = synchronized(lock) {
+        val base = bytes(key) ?: return@synchronized null
+        val neutral = ObjAvatarMesh.parse(base.toString(Charsets.UTF_8))
+        val target = bytes(mouthKey(key, base)) ?: return@synchronized Scene(neutral)
+        val morph = runCatching { ObjAvatarMesh.morph(base.toString(Charsets.UTF_8),
+            target.toString(Charsets.UTF_8)) }.getOrNull()
+        if (morph == null) Scene(neutral) else Scene(morph.base, morph.open)
+    }
+
+    fun saveMouth(key: String, target: ByteArray): Scene = synchronized(lock) {
+        require(target.size in 1..ObjAvatarMesh.MAX_BYTES)
+        val base = requireNotNull(bytes(key))
+        val morph = ObjAvatarMesh.morph(base.toString(Charsets.UTF_8), target.toString(Charsets.UTF_8))
+        write(mouthKey(key, base), target)
+        Scene(morph.base, morph.open)
     }
 
     fun save(key: String, bytes: ByteArray): FloatArray = synchronized(lock) {
         require(bytes.size in 1..ObjAvatarMesh.MAX_BYTES)
         // Parse before replacing the previous valid model.
         val mesh = ObjAvatarMesh.parse(bytes.toString(Charsets.UTF_8))
+        write(key, bytes)
+        mesh
+    }
+
+    private fun write(key: String, bytes: ByteArray) {
         val target = file(key)
         val directory = requireNotNull(target.baseFile.parentFile)
         check(directory.isDirectory || directory.mkdirs())
@@ -41,7 +69,6 @@ internal class AvatarModelStore(private val root: File) {
             throw failure
         }
         check(target.openRead().use(::boundedRead).contentEquals(bytes)) { "OBJ persistence not verified" }
-        mesh
     }
 
     private fun boundedRead(input: InputStream): ByteArray {
