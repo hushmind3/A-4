@@ -87,6 +87,24 @@ fun ProfileScreen(
         }
 
         item {
+            Row(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=8.dp),
+                horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                listOf(
+                    Triple("한 일",Routes.TASKS,Glyph.TASK),
+                    Triple("예약",Routes.SCHEDULES,Glyph.CALENDAR),
+                    Triple("기억",Routes.MEMORIES,Glyph.MEMORY)
+                ).forEach{(label,route,glyph)->
+                    Row(Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).background(p.card)
+                        .clickable{onNavigate(route)}.padding(horizontal=12.dp,vertical=10.dp),
+                        verticalAlignment=Alignment.CenterVertically){
+                        GlyphIcon(glyph,p.textSecondary,size=16.dp)
+                        Spacer(Modifier.width(7.dp))
+                        Text(label,style=MaterialTheme.typography.labelMedium,color=p.textPrimary)
+                    }
+                }
+            }
+        }
+        item {
             Box(
                 Modifier
                     .padding(horizontal = 16.dp)
