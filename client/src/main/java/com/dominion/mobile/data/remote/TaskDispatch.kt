@@ -14,6 +14,39 @@ object TaskDispatch {
         task.steps.forEach { append("\n- ").append(it.text) }
     }.take(32000)
 
+    /** Mirror only account-scoped server receipts into the task room, not model claims.
+     * Stable message IDs make repeated polling and process restarts idempotent. */
+    fun cloudRoom(task: TaskItem, job: EngineJob, existing: com.dominion.mobile.data.model.Conversation?): com.dominion.mobile.data.model.Conversation {
+        check(matches(task,job) && task.engineJobId?.startsWith("cloud:")==true)
+        val roomId=requireNotNull(task.engineRoomId)
+        val session=requireNotNull(task.engineSessionId)
+        val messageId=requireNotNull(task.engineMessageId)
+        val room=existing?:com.dominion.mobile.data.model.Conversation(roomId,task.characterId,
+            titleOverride=task.title,kind=com.dominion.mobile.data.model.ConversationKind.TASK,sessionId=session)
+        check(room.id==roomId && room.sessionId==session && room.characterId==task.characterId)
+        val old=room.messages.firstOrNull{it.id==messageId}
+        check(old==null||old.jobId==job.id)
+        val request=(old?:com.dominion.mobile.data.model.Message(messageId,roomId,
+            com.dominion.mobile.data.model.MessageSender.USER,requireNotNull(task.enginePrompt),
+            kind=com.dominion.mobile.data.model.MessageKind.TASK,createdAt=task.createdAt,
+            clientMessageId=messageId,jobId=job.id)).copy(jobStatus=job.status)
+        var rows=if(old==null)listOf(request)+room.messages else room.messages.map{if(it.id==messageId)request else it}
+        if(job.status=="done"){
+            val output=job.result?.outputs.orEmpty().singleOrNull()
+            if(output!=null){
+                val replyId=requireNotNull(output.messageId)
+                val text=requireNotNull(output.content)
+                check(text.isNotBlank())
+                val previous=rows.firstOrNull{it.id==replyId}
+                check(previous==null||previous.replyTo==messageId&&previous.jobId==job.id&&previous.text==text)
+                if(previous==null)rows=rows+com.dominion.mobile.data.model.Message(replyId,roomId,
+                    com.dominion.mobile.data.model.MessageSender.ASSISTANT,text,replyTo=messageId,
+                    jobId=job.id,authorAgentId=task.characterId,jobStatus="done")
+            }
+        }
+        return if(rows==room.messages)room else room.copy(messages=rows,updatedAt=System.currentTimeMillis())
+    }
+
     fun matches(task: TaskItem, job: EngineJob): Boolean =
         !task.engineJobId.isNullOrBlank() && job.id == task.engineJobId &&
         !task.engineSessionId.isNullOrBlank() && job.sessionId == task.engineSessionId &&

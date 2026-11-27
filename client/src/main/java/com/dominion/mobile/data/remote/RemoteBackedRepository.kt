@@ -222,8 +222,15 @@ class RemoteBackedRepository(
         if(localExecution){
             if(task.engineJobId==null || task.engineJobId?.startsWith("cloud:")==true){
                 val cloud=requireNotNull(mobileCloud){"DOMINION Cloud account required"}
-                val prompt=TaskDispatch.prompt(task).take(3500)
+                // Save the exact request before transmission; a lost response must
+                // reuse the same UUID and prompt rather than submit different work.
+                val prompt=task.enginePrompt?:TaskDispatch.prompt(task).take(3500)
                 val clientId=TaskDispatch.messageNonce(id)
+                if(task.engineJobId==null){
+                    task=task.copy(enginePrompt=prompt,engineRoomId=TaskDispatch.roomId(id),
+                        engineStatus="submitting",engineLanguage=if(state.value.settings.lang==com.dominion.mobile.data.model.Lang.KO)"ko"else"default")
+                    saveTaskLink(task)
+                }
                 val result=try {
                     if(task.engineJobId==null) cloud.submitCloudTask(prompt,clientId)
                     else cloud.cloudTask(requireNotNull(task.engineJobId).removePrefix("cloud:"))
@@ -241,7 +248,7 @@ class RemoteBackedRepository(
                         engineLanguage=if(state.value.settings.lang==com.dominion.mobile.data.model.Lang.KO)"ko"else"default",
                         engineStatus=result.status
                     )
-                    saveTaskLink(linked)
+                    saveCloudReceipt(linked,cloudEngineJob(linked,result))
                     return@withLock
                 }
             }
@@ -345,17 +352,41 @@ class RemoteBackedRepository(
         if (task.engineJobId != null) verifyTask(task)
     }
 
+    private fun cloudEngineJob(task:com.dominion.mobile.data.model.TaskItem,result:CloudTask):EngineJob {
+        val raw=requireNotNull(task.engineJobId).removePrefix("cloud:")
+        require(result.id==raw)
+        val content=result.result?.takeIf{result.status=="done"}
+        return EngineJob(task.engineJobId,result.status,task.engineSessionId,
+            EngineJobInput(task.engineRoomId,task.enginePrompt,task.engineMessageId),
+            result=NativeJobResult(task.engineRoomId,task.engineSessionId,result.status,
+                content?.let{listOf(NativeJobOutput(task.characterId,"DOMINION Cloud",it,"cloud-reply:"+raw,
+                    result.evidence?.size,result.evidence?.let{rows->com.google.gson.Gson().toJsonTree(rows)}))}.orEmpty(),
+                result.error,result.evidence))
+    }
+
+    private suspend fun saveCloudReceipt(task:com.dominion.mobile.data.model.TaskItem,job:EngineJob){
+        check(TaskDispatch.matches(task,job))
+        update{st->
+            val current=st.tasks.single{it.id==task.id}
+            check(current.engineJobId==null||current.engineJobId==job.id)
+            val existing=st.conversation(requireNotNull(task.engineRoomId))
+            // Do not overwrite a room the user reset after the old job finished.
+            val room=if(existing!=null&&existing.sessionId!=task.engineSessionId) null
+                else TaskDispatch.cloudRoom(task,job,existing)
+            st.copy(tasks=st.tasks.map{if(it.id==task.id)it.copy(engineRoomId=task.engineRoomId,
+                engineSessionId=task.engineSessionId,engineMessageId=task.engineMessageId,
+                engineJobId=job.id,enginePrompt=task.enginePrompt,engineLanguage=task.engineLanguage,
+                engineStatus=job.status)else it},
+                conversations=if(room==null)st.conversations else if(existing==null)listOf(room)+st.conversations
+                    else st.conversations.map{if(it.id==room.id)room else it})
+        }
+        store.saveStateNow(state.value)
+    }
+
     private suspend fun taskJob(task:com.dominion.mobile.data.model.TaskItem):EngineJob=
         if(localExecution&&task.engineJobId?.startsWith("cloud:")==true){
             val raw=requireNotNull(task.engineJobId).removePrefix("cloud:")
-            val result=requireNotNull(mobileCloud).cloudTask(raw)
-            val content=result.result?.takeIf{result.status=="done"}
-            EngineJob(task.engineJobId,result.status,task.engineSessionId,
-                EngineJobInput(task.engineRoomId,task.enginePrompt,task.engineMessageId),
-                result=result.let{job->NativeJobResult(task.engineRoomId,task.engineSessionId,
-                    job.status,content?.let{listOf(NativeJobOutput(task.characterId,
-                        "DOMINION Cloud",it,"cloud-reply:"+raw,job.evidence?.size,
-                         job.evidence?.let{rows->com.google.gson.Gson().toJsonTree(rows)}))}.orEmpty(),job.error,job.evidence)})
+            cloudEngineJob(task,requireNotNull(mobileCloud).cloudTask(raw))
         }else if(localExecution)mobile.execution(requireNotNull(task.engineRoomId)).jobs.orEmpty()
             .single{it.id==task.engineJobId}
         else api.engineJob(requireNotNull(task.engineJobId))
@@ -364,7 +395,8 @@ class RemoteBackedRepository(
         val task = requireNotNull(state.value.tasks.firstOrNull { it.id == id })
         val job = taskJob(task)
         val receipt = TaskReceipt.from(task, job)
-        saveTaskLink(task.copy(engineStatus = receipt.status))
+        if(task.engineJobId?.startsWith("cloud:")==true)saveCloudReceipt(task,job)
+        else saveTaskLink(task.copy(engineStatus = receipt.status))
         receipt
     }
 
@@ -395,7 +427,8 @@ class RemoteBackedRepository(
     private suspend fun verifyTask(task: com.dominion.mobile.data.model.TaskItem) {
         val job = taskJob(task)
         check(TaskDispatch.matches(task, job)) { "Task receipt mismatch" }
-        saveTaskLink(task.copy(engineStatus = requireNotNull(job.status)))
+        if(task.engineJobId?.startsWith("cloud:")==true)saveCloudReceipt(task,job)
+        else saveTaskLink(task.copy(engineStatus = requireNotNull(job.status)))
     }
 
     private val memoryLock = Mutex()
@@ -745,7 +778,18 @@ class RemoteBackedRepository(
     override suspend fun engineTools(): List<EngineTool> = if(localExecution)mobile.tools else api.engineTools()
 
     override suspend fun roomExecution(roomId: String): RoomExecution = coroutineScope {
-        if(localExecution)return@coroutineScope mobile.execution(roomId)
+        if(localExecution){
+            val task=state.value.tasks.firstOrNull{it.engineRoomId==roomId&&it.engineJobId?.startsWith("cloud:")==true &&
+                it.engineSessionId==state.value.conversation(roomId)?.sessionId}
+            if(task==null)return@coroutineScope mobile.execution(roomId)
+            val job=taskLock.withLock {
+                val latest=state.value.tasks.single{it.id==task.id}
+                taskJob(latest).also{saveCloudReceipt(latest,it)}
+            }
+            val device=mobile.execution(roomId)
+            return@coroutineScope device.copy(status=if(device.status=="running"||device.status=="needs_review")device.status else job.status,
+                jobs=(listOf(job)+device.jobs.orEmpty()).distinctBy{it.id})
+        }
         val snapshot = api.roomExecution(roomId)
         require(snapshot.room?.id == roomId)
         val session = requireNotNull(snapshot.sessionId).also { require(it.isNotBlank()) }
@@ -779,6 +823,21 @@ class RemoteBackedRepository(
     }
 
     override suspend fun cancelJob(roomId: String, jobId: String): EngineJob {
+        if(localExecution&&jobId.startsWith("cloud:"))return taskLock.withLock{
+            val task=state.value.tasks.single{it.engineRoomId==roomId&&it.engineJobId==jobId}
+            val cloud=requireNotNull(mobileCloud)
+            val raw=jobId.removePrefix("cloud:")
+            val current=cloud.cloudTask(raw)
+            if(current.status in setOf("queued","running")){
+                try{cloud.cancelCloudTask(raw)}
+                catch(e:retrofit2.HttpException){if(e.code()!=409)throw e}
+            }
+            // A completion may win the race with cancellation. Display the actual
+            // terminal server receipt rather than optimistically reporting cancelled.
+            val latest=cloudEngineJob(task,cloud.cloudTask(raw))
+            saveCloudReceipt(task,latest)
+            latest
+        }
         if(localExecution)return mobile.cancel(roomId,jobId)
         val current = roomExecution(roomId)
         val job = current.jobs.orEmpty().firstOrNull { it.id == jobId }
@@ -1041,6 +1100,8 @@ class RemoteBackedRepository(
                 "Resolve pending messages before reset"
             }
             if(localExecution){
+                check(state.value.tasks.none{it.engineRoomId==id&&it.engineJobId?.startsWith("cloud:")==true&&
+                    it.engineStatus in setOf("queued","running")}){"Cancel active cloud work before resetting its room"}
                 check(state.value.mobileActions.orEmpty().none{it.roomId==id&&it.status=="pending"})
                 val draft=if(restoreLastRequest)local.messages.lastOrNull{it.sender==MessageSender.USER}?.text?:error("No previous request")else ""
                 update{current->current.copy(conversations=current.conversations.map{if(it.id==id)it.copy(messages=emptyList(),

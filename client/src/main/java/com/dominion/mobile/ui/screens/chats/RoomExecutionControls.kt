@@ -142,7 +142,7 @@ fun RoomExecutionControls(vm: AppViewModel, roomId: String,
     fun statusLabel(status: String?) = when (status) {
         "queued" -> tr(lang, "대기", "Queued")
         "running" -> tr(lang, "실행 중", "Running")
-        "completed" -> tr(lang, "완료", "Completed")
+        "completed", "done" -> tr(lang, "완료", "Completed")
         "failed" -> tr(lang, "실패", "Failed")
         "cancelled" -> tr(lang, "중단됨", "Cancelled")
         "needs_review" -> tr(lang, "검토 필요", "Needs review")

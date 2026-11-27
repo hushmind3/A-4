@@ -342,7 +342,7 @@ fun TasksScreen(
     deleteTarget?.let { id ->
         PrimaryDialog(
             title = tr(lang, "이 할 일을 삭제할까요?", "Delete this task?"),
-            body = tr(lang, "기기 체크리스트만 삭제합니다. 본체에서 실행 중인 작업은 작업 대화에서 중단할 수 있습니다.", "Delete the device checklist only. Cancel running engine work in its chat."),
+            body = tr(lang, "기기 체크리스트만 삭제합니다. 실행 중인 클라우드 작업은 결과 화면에서 먼저 중단하세요.", "Delete the device checklist only. Cancel active cloud work in its receipt first."),
             confirmLabel = tr(lang, "삭제", "Delete"),
             onConfirm = { vm.deleteTask(id); deleteTarget = null },
             dismissLabel = tr(lang, "취소", "Cancel"),
@@ -403,7 +403,7 @@ private fun TaskCard(
                 "submitting" -> tr(lang, "접수 확인 필요", "Submission needs verification")
                 "queued" -> tr(lang, "작업 대기", "Queued")
                 "running" -> tr(lang, "실행 중", "Running")
-                "completed" -> tr(lang, "본체 작업 완료", "Engine completed")
+                "completed", "done" -> tr(lang, "AI 작업 완료", "AI completed")
                 "failed" -> tr(lang, "본체 작업 실패", "Engine failed")
                 "cancelled" -> tr(lang, "작업 중단", "Cancelled")
                 else -> status
@@ -417,7 +417,7 @@ private fun TaskCard(
                     else if (task.engineRoomId != null) tr(lang, "접수 재확인", "Recheck submission")
                     else tr(lang, "AI에게 맡기기", "Assign to AI"))
             }
-            if (task.engineRoomId != null) TextButton(onClick = onOpenChat) { Text(tr(lang, "작업 대화 열기", "Open job chat")) }
+            if (task.engineRoomId != null && state.conversation(task.engineRoomId)!=null) TextButton(onClick = onOpenChat) { Text(tr(lang, "작업 대화 열기", "Open job chat")) }
         }
         if (task.engineJobId != null) TextButton(onClick = onReceipt) {
             Text(tr(lang, "실제 실행 결과·근거", "Execution result and evidence"))

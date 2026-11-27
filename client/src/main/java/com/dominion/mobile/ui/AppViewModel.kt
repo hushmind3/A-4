@@ -550,12 +550,19 @@ class AppViewModel(
         viewModelScope.launch {
             try {
                 repo.submitTask(taskId)
-                _notice.value = "본체 작업 접수와 상태 조회를 확인했습니다."
+                _notice.value = "AI 작업 접수와 상태를 확인했습니다."
                 state.value.tasks.firstOrNull { it.id == taskId }?.engineRoomId?.let(onAccepted)
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { _notice.value = "접수 결과를 확인하지 못했습니다. 같은 할 일에서 다시 확인하세요." }
             finally { _taskBusy.value = _taskBusy.value - taskId }
         }
+    }
+
+    suspend fun cancelCloudTask(id:String) {
+        val task=state.value.tasks.single{it.id==id}
+        val job=requireNotNull(task.engineJobId)
+        require(job.startsWith("cloud:"))
+        repo.cancelJob(requireNotNull(task.engineRoomId),job)
     }
 
     suspend fun taskReceipt(id: String) = repo.taskReceipt(id)
@@ -587,8 +594,14 @@ class AppViewModel(
         })
     }
 
-    fun deleteTask(taskId: String) = mutate { s ->
-        s.copy(tasks = s.tasks.filterNot { it.id == taskId })
+    fun deleteTask(taskId: String) {
+        val task=state.value.tasks.firstOrNull{it.id==taskId}?:return
+        if(taskId in _taskBusy.value || task.engineStatus=="submitting" ||
+            task.engineJobId?.startsWith("cloud:")==true&&task.engineStatus in setOf("queued","running")){
+            _notice.value="실행 중인 작업은 먼저 상태를 확인하고 중단해 주세요."
+            return
+        }
+        mutate{it.copy(tasks=it.tasks.filterNot{row->row.id==taskId})}
     }
 
     fun saveSchedule(existingId: String?, title: String, whenText: String, characterId: String,

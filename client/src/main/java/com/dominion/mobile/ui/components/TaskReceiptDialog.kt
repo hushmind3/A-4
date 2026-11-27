@@ -24,6 +24,8 @@ fun TaskReceiptDialog(vm: AppViewModel, id: String, onDismiss: () -> Unit) {
     var evidence by remember(id) { mutableStateOf<TaskEvidence?>(null) }
     var evidenceBusy by remember(id) { mutableStateOf(false) }
     var evidenceError by remember(id) { mutableStateOf(false) }
+    var cancelConfirm by remember(id){mutableStateOf(false)}
+    var cancelling by remember(id){mutableStateOf(false)}
     LaunchedEffect(id, revision) {
         refreshing = true
         failed = false
@@ -45,6 +47,11 @@ fun TaskReceiptDialog(vm: AppViewModel, id: String, onDismiss: () -> Unit) {
                     val mobileJob=record.jobId.startsWith("mobile:")
                     val location=if(cloudJob)"클라우드"else if(mobileJob)"휴대폰"else"PC"
                     Text(location+" 작업 ID: " + record.jobId, style = MaterialTheme.typography.labelSmall)
+                    if(cloudJob&&record.status in setOf("queued","running")){
+                        OutlinedButton(enabled=!refreshing&&!failed&&!cancelling,onClick={cancelConfirm=true}){
+                            Text("서버 작업 중단")
+                        }
+                    }
                     record.reason?.let { Text("종료 사유: " + it) }
                     record.error?.let { SelectionContainer { Text(it) } }
                     if (record.outputs.isEmpty()) Text("아직 저장된 AI 작업 결과가 없습니다.")
@@ -99,6 +106,19 @@ fun TaskReceiptDialog(vm: AppViewModel, id: String, onDismiss: () -> Unit) {
         },
         confirmButton = { TextButton(enabled = !refreshing, onClick = { revision++ }) { Text("다시 조회") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } })
+    if(cancelConfirm)AlertDialog(onDismissRequest={cancelConfirm=false},
+        title={Text("클라우드 작업을 중단할까요?")},
+        text={Text("실행 중인 서버 작업을 취소합니다. 이미 완료되었다면 서버의 최종 상태를 표시합니다.")},
+        confirmButton={TextButton(onClick={
+            cancelConfirm=false;cancelling=true
+            scope.launch {
+                try { vm.cancelCloudTask(id) }
+                catch(e:CancellationException){throw e}
+                catch(_:Exception){failed=true}
+                finally{cancelling=false;revision++}
+            }
+        }){Text("작업 중단")}},
+        dismissButton={TextButton(onClick={cancelConfirm=false}){Text("계속 실행")}})
     evidence?.let { record ->
         AlertDialog(onDismissRequest = { evidence = null },
             title = { Text("도구 실행 기록") },
