@@ -158,18 +158,17 @@ fun RoomExecutionControls(vm: AppViewModel, roomId: String,
         Column(Modifier.weight(1f)) {
             Text(if (failure) tr(lang, "실행 상태 조회 실패", "Execution status unavailable")
                 else statusLabel(current?.status), color = p.textPrimary, style = MaterialTheme.typography.labelMedium)
-            if (!failure) Text(if(vm.localExecution)"기기 내장 하네스 · 직접 모델 API"else if (streamConnected) tr(lang, "실시간 서버 이벤트", "Live server events")
-                else tr(lang, "주기적 상태 확인", "Periodic status sync"),
-                color = p.textSecondary, style = MaterialTheme.typography.labelSmall)
+            if (!failure && current?.status=="running")Text(tr(lang,"요청한 일을 처리하고 있어요","Working on your request"),
+                color=p.textSecondary,style=MaterialTheme.typography.labelSmall)
             if (approvals.isNotEmpty()) Text(tr(lang, "승인 대기 ", "Pending approvals ") + approvals.size,
                 color = p.blue, style = MaterialTheme.typography.labelSmall)
         }
         TextButton(onClick = { open = true; scope.launch { refresh() } }) {
-            Text(tr(lang, "작업·도구 실행", "Jobs and tools"))
+            Text(tr(lang, "작업 확인", "Task status"))
         }
     }
     if (open) AppBottomSheet(onDismiss = { open = false }) {
-        SheetTitle(tr(lang, "실제 작업과 도구 실행", "Engine execution"))
+        SheetTitle(tr(lang, "작업 결과 및 승인", "Results and approvals"))
         Column(Modifier.fillMaxWidth().heightIn(max = 520.dp).verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(if (failure) tr(lang, "연결 실패 · 표시된 정보는 이전 조회 결과입니다.", "Connection failed · last retrieved data")
@@ -204,7 +203,7 @@ fun RoomExecutionControls(vm: AppViewModel, roomId: String,
                 }
                 HorizontalDivider()
             }
-            Text(tr(lang, "도구 실행 결과", "Tool execution records"), style = MaterialTheme.typography.titleMedium)
+            Text(tr(lang, "작업 처리 결과", "Action results"), style = MaterialTheme.typography.titleMedium)
             if (current?.operations.orEmpty().isEmpty()) Text(tr(lang, "기록된 실행 없음", "No recorded operations"))
             current?.operations.orEmpty().forEach { operation ->
                 Text((operation.tool ?: "Tool") + " · " + statusLabel(operation.status), style = MaterialTheme.typography.titleSmall)

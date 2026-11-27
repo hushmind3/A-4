@@ -143,10 +143,8 @@ fun SettingsScreen(
                 SettingsRow(title = tr(lang, "초기 개인 설정", "Initial personalization"),
                     onClick = { onNavigate(Routes.ONBOARDING) })
             }
-            SectionLabel(tr(lang, "실행 서버", "Execution server"), Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+            SectionLabel(tr(lang, "AI 비서", "AI assistant"), Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
             SettingsGroup {
-                SettingsRow(title = tr(lang, "본체 연결 및 모델·도구", "Engine, models and tools"), onClick = { onNavigate(Routes.ENGINE_SETTINGS) })
-                Hairline()
                 SettingsRow(title = tr(lang, "기본 디지털 비서", "Default digital assistant"),
                     subtitle = if (assistantHeld) tr(lang, "시스템에서 선택됨", "Selected by system")
                         else tr(lang, "Android 기본 비서 선택", "Choose Android assistant"),
@@ -164,7 +162,7 @@ fun SettingsScreen(
             SectionLabel("DOMINION Cloud", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
             SettingsGroup {
                 SettingsRow(
-                    title = tr(lang, "공통 계정 연결", "Connect shared account"),
+                    title = tr(lang, "계정 및 AI 모델", "Account and AI model"),
                     subtitle = tr(lang, "Google 로그인 · 무료 모델 및 이용 한도", "Google sign-in · Free models and quota"),
                     leading = { GlyphIcon(Glyph.GLOBE, p.textPrimary, size = 18.dp) },
                     onClick = { onNavigate(Routes.CLOUD_ACCOUNT) }

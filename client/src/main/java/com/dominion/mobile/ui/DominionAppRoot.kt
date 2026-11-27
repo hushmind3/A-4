@@ -59,7 +59,6 @@ import com.dominion.mobile.ui.screens.profile.TasksScreen
 import com.dominion.mobile.ui.screens.profile.VaultScreen
 import com.dominion.mobile.ui.screens.settings.AccountScreen
 import com.dominion.mobile.ui.screens.settings.CloudAccountScreen
-import com.dominion.mobile.ui.screens.settings.EngineSettingsScreen
 import com.dominion.mobile.ui.screens.settings.AppearanceScreen
 import com.dominion.mobile.ui.screens.settings.BlockedUsersScreen
 import com.dominion.mobile.ui.screens.settings.EditProfileScreen
@@ -152,7 +151,7 @@ fun DominionAppRoot(vm: AppViewModel) {
         LaunchedEffect(quickEntry, locked, state.conversations) {
             val voice = quickEntry ?: return@LaunchedEffect
             if (locked) return@LaunchedEffect
-            val room = state.conversation("assistant")
+            val room = state.conversation("mobile-assistant") ?: state.conversation("assistant") ?: state.conversations.firstOrNull()
             if (!voice && room != null) nav.navigate(Routes.chat(room.id)) { launchSingleTop = true }
             else nav.navigate(Routes.QUICK_ASSISTANT) { launchSingleTop = true }
             vm.consumeQuickEntry()
@@ -171,7 +170,7 @@ fun DominionAppRoot(vm: AppViewModel) {
             composable(Routes.QUICK_ASSISTANT) {
                 if (!locked) com.dominion.mobile.ui.screens.profile.QuickAssistantScreen(state, vm,
                     onBack = { nav.popBackStack() }, onChat = { nav.navigate(Routes.chat(it)) { launchSingleTop = true } },
-                    onSettings = { nav.navigate(Routes.ENGINE_SETTINGS) })
+                    onSettings = { nav.navigate(Routes.CLOUD_ACCOUNT) })
             }
             composable(Routes.ONBOARDING) {
                 com.dominion.mobile.ui.screens.onboarding.OnboardingScreen(
@@ -184,8 +183,7 @@ fun DominionAppRoot(vm: AppViewModel) {
                     onBack = { nav.popBackStack() }, onOpenChat = { nav.navigate(Routes.chat(it)) },
                     onTasks = { nav.navigate(Routes.TASKS) },
                     onAgenda = { nav.navigate(Routes.DEVICE_AGENDA) },
-                    onDeviceActions = { nav.navigate(Routes.DEVICE_ACTIONS) },
-                    onEngineSettings = { nav.navigate(Routes.ENGINE_SETTINGS) })
+                    onDeviceActions = { nav.navigate(Routes.DEVICE_ACTIONS) })
             }
             composable(Routes.MAIN) {
                 MainScreen(state = state, vm = vm, onNavigate = { nav.navigate(it) })
@@ -310,11 +308,12 @@ fun DominionAppRoot(vm: AppViewModel) {
                     onNavigate = { nav.navigate(it) }
                 )
             }
+            // Legacy saved navigation paths must never open infrastructure controls.
             composable(Routes.ENGINE_SETTINGS) {
-                EngineSettingsScreen(onBack = { nav.popBackStack() })
+                CloudAccountScreen(vm, onBack = { nav.popBackStack() })
             }
             composable(Routes.CLOUD_ACCOUNT) {
-                CloudAccountScreen(onBack = { nav.popBackStack() }, onEngineSettings = { nav.navigate(Routes.ENGINE_SETTINGS) })
+                CloudAccountScreen(vm, onBack = { nav.popBackStack() })
             }
             composable(Routes.ACCOUNT) {
                 AccountScreen(

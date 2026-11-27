@@ -22,15 +22,15 @@ fun QuickAssistantScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
     val rooms = state.conversations.filter { state.character(it.characterId) != null }
     val suggested = com.dominion.mobile.data.NextActions.build(state, System.currentTimeMillis())
         .firstOrNull { it.roomId != null && state.conversation(it.roomId) != null }
-    var selected by remember { mutableStateOf(rooms.firstOrNull { it.id == "assistant" }?.id.orEmpty()) }
+    var selected by remember { mutableStateOf((rooms.firstOrNull { it.id == "mobile-assistant" || it.id=="assistant" }?:rooms.firstOrNull())?.id.orEmpty()) }
     var voice by remember { mutableStateOf<String?>(null) }
     var draft by remember { mutableStateOf("") }
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding().background(p.screen)) {
         ScreenTopBar(title = "빠른 AI 비서", onBack = onBack)
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("본체 연결: " + connection.name, color = p.textSecondary)
+            Text("필요한 일을 비서에게 요청하세요.", color = p.textSecondary)
             Text("대화방을 선택하고 음성 대화를 시작하거나 요청을 작성하세요. 시스템 호출의 화면·문자 정보는 자동 수집하지 않습니다.")
-            if (rooms.isEmpty()) OutlinedButton(onClick = onSettings) { Text("본체 연결") }
+            if (rooms.isEmpty()) OutlinedButton(onClick = onSettings) { Text("계정 연결") }
             suggested?.let { action ->
                 TextButton(onClick = { selected = requireNotNull(action.roomId) }) {
                     Text("추천 대화 · " + action.title)
@@ -48,8 +48,8 @@ fun QuickAssistantScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
             }
         }
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(modifier = Modifier.fillMaxWidth(), enabled = state.conversation(selected) != null && state.call == null,
-                onClick = { voice = selected }) { Text("본체 음성 대화") }
+            if(!vm.localExecution)Button(modifier = Modifier.fillMaxWidth(), enabled = state.conversation(selected) != null && state.call == null,
+                onClick = { voice = selected }) { Text("음성 대화") }
             OutlinedButton(modifier = Modifier.fillMaxWidth(), enabled = state.conversation(selected) != null,
                 onClick = {
                     val room = state.conversation(selected) ?: return@OutlinedButton

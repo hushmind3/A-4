@@ -359,8 +359,9 @@ fun ChatRoomScreen(
                 }
             }
             GlyphButton(Glyph.PHONE, onClick = {
-                if (vm.startCall(conversationId, false)) onStartCall(false)
-                else context.toast(tr(lang, "음성 통화는 연결된 서버에서 사용할 수 있어요", "Voice calls require a connected server"))
+                if(vm.localExecution) startSpeechInput()
+                else if (vm.startCall(conversationId, false)) onStartCall(false)
+                else context.toast(tr(lang, "음성 통화를 시작할 수 없습니다.", "Unable to start voice call"))
             })
             IconButton(onClick = { showMenu = true }) {
                 Icon(Icons.Filled.MoreVert, "More", tint = p.textPrimary, modifier = Modifier.size(21.dp))
@@ -584,12 +585,12 @@ fun ChatRoomScreen(
     if (voiceChoice) {
         AppBottomSheet(onDismiss = { voiceChoice = false }) {
             SheetTitle(tr(lang, "음성 입력", "Voice input"))
-            SheetRow(tr(lang, "연속 음성 대화 · 본체 연결", "Continuous voice conversation"), Glyph.MIC) {
+            if(!vm.localExecution)SheetRow(tr(lang, "연속 음성 대화", "Continuous voice conversation"), Glyph.MIC) {
                 voiceChoice = false
                 if (state.call == null) voiceConversation = true
                 else context.toast(tr(lang, "통화 종료 후 사용하세요.", "End the call first."))
             }
-            SheetRow(tr(lang, "본체 Whisper 음성 인식", "Engine Whisper recognition"), Glyph.MIC) {
+            if(!vm.localExecution)SheetRow(tr(lang, "고급 음성 인식", "Advanced speech recognition"), Glyph.MIC) {
                 voiceChoice = false
                 if (state.call == null) voiceInput = true
                 else context.toast(tr(lang, "통화 종료 후 녹음하세요.", "End the call before recording."))
@@ -663,9 +664,10 @@ fun ChatRoomScreen(
     if (showMenu) {
         AppBottomSheet(onDismiss = { showMenu = false }) {
             SheetTitle(conversation.title(state.characters), character.tagline)
-            SheetRow("백그라운드 AI 음성 비서", Glyph.MIC) { showMenu=false;backgroundVoice=true }
-            SheetRow("실행 모델 선택 · 로컬/Cloudflare", Glyph.SPARK) { showMenu=false;showModels=true }
-            SheetRow("실시간 본체 AI 통화", Glyph.PHONE) { showMenu = false; realtimeChoice = true }
+            if(!vm.localExecution) {
+                SheetRow("백그라운드 AI 음성 비서", Glyph.MIC) { showMenu=false;backgroundVoice=true }
+                SheetRow("실시간 AI 통화", Glyph.PHONE) { showMenu = false; realtimeChoice = true }
+            }
             SheetRow(tr(lang, "대화방 정보", "Room info"), Glyph.PERSON) { showMenu = false; onRoomInfo() }
             SheetRow(tr(lang, "대화 검색", "Search chat"), Glyph.SEARCH) { showMenu = false; onSearch() }
             SheetRow(
@@ -788,7 +790,7 @@ fun ChatRoomScreen(
                 }
             }
             if (message.text.isNotBlank()) {
-                SheetRow(tr(lang, "본체 음성으로 읽기", "Read with engine voice"), Glyph.SPEAKER) {
+                if(!vm.localExecution)SheetRow(tr(lang, "음성으로 읽기", "Read aloud"), Glyph.SPEAKER) {
                     messageMenu = null
                     if (state.call == null) speakText = message.text
                     else context.toast(tr(lang, "통화 종료 후 읽을 수 있습니다.", "End the call first."))

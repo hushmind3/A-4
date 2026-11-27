@@ -73,16 +73,6 @@ fun ConnectionsScreen(
     val lang = LocalLang.current
     var filter by remember { mutableIntStateOf(0) }
     var query by remember { mutableStateOf("") }
-    var registeredTools by remember { mutableStateOf<List<com.dominion.mobile.data.remote.EngineTool>?>(null) }
-    var toolError by remember { mutableStateOf(false) }
-    var selectedTool by remember { mutableStateOf<com.dominion.mobile.data.remote.EngineTool?>(null) }
-    val scope = androidx.compose.runtime.rememberCoroutineScope()
-    suspend fun loadTools() {
-        try { registeredTools = vm.engineTools(); toolError = false }
-        catch (e: kotlinx.coroutines.CancellationException) { throw e }
-        catch (_: Exception) { toolError = true }
-    }
-    androidx.compose.runtime.LaunchedEffect(Unit) { loadTools() }
     val categories = listOf(tr(lang, "전체", "All"), tr(lang, "연결됨", "Connected"), tr(lang, "기본 도구", "Built-in"))
     val filtered = when (filter) {
         1 -> state.connections.filter { it.connected && !it.builtIn }
@@ -93,7 +83,7 @@ fun ConnectionsScreen(
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().background(p.screen)) {
         ScreenTopBar(
             title = tr(lang, "연결", "Connections"),
-            subtitle = tr(lang, "도미니온이 사용할 수 있는 도구를 관리해요", "Choose the tools your Dominion can use"),
+            subtitle = tr(lang, "비서와 함께 사용할 서비스", "Services for your assistant"),
             onBack = onBack
         )
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 34.dp)) {
@@ -112,7 +102,7 @@ fun ConnectionsScreen(
                         Column {
                             Text(tr(lang, "도구 목록과 연결 상태", "Tool catalog and connection status"), style = MaterialTheme.typography.titleSmall, color = p.textPrimary)
                             Text(
-                                tr(lang, "실제 연결과 권한은 본체에서 확인합니다.", "Verify connections and permissions on the engine."),
+                                tr(lang, "지원되는 서비스와 권한을 확인하세요.", "Review available services and permissions."),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = p.textTertiary
                             )
@@ -136,23 +126,6 @@ fun ConnectionsScreen(
                     }
                 }
             }
-            item {
-                SectionLabel(tr(lang, "본체 등록 도구", "Registered engine tools"), Modifier.padding(horizontal = 20.dp, vertical = 10.dp))
-                Column(Modifier.padding(horizontal = 16.dp)) {
-                    Text(if (toolError) tr(lang, "본체 조회 실패 · 등록 상태 확인 필요", "Engine unavailable")
-                        else if (registeredTools == null) tr(lang, "조회 중", "Loading")
-                        else tr(lang, "등록된 도구 ", "Registered tools ") + registeredTools.orEmpty().size,
-                        color = p.textTertiary, style = MaterialTheme.typography.bodySmall)
-                    androidx.compose.material3.TextButton(onClick = { scope.launch { loadTools() } }) { Text(tr(lang, "실제 도구 다시 조회", "Refresh tools")) }
-                    registeredTools.orEmpty().filter { query.isBlank() || it.name.contains(query, true) ||
-                        it.description.orEmpty().contains(query, true) }.forEach { tool ->
-                        SettingsRow(title = tool.name,
-                            subtitle = if (tool.approval) tr(lang, "승인 필요", "Approval required") else tr(lang, "본체 등록됨", "Registered"),
-                            onClick = { selectedTool = tool })
-                    }
-                }
-            }
-            item { ServiceConnectionPanel(vm) }
             item { SectionLabel(tr(lang, "도구", "Tools"), Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) }
             item {
                 LazyVerticalGrid(
@@ -203,8 +176,8 @@ fun ConnectionsScreen(
                 Text(
                     tr(
                         lang,
-                        "이 목록은 지원 예정 도구를 포함합니다. 실제 인증 상태는 본체에서 확인하세요.",
-                        "This catalog includes planned tools. Verify actual authorization on the engine."
+                        "이 목록은 지원 예정 서비스도 포함합니다.",
+                        "This catalog includes planned services."
                     ),
                     style = MaterialTheme.typography.labelSmall,
                     color = p.textTertiary,
@@ -213,21 +186,6 @@ fun ConnectionsScreen(
             }
         }
     }
-    selectedTool?.let { tool ->
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { selectedTool = null },
-            title = { Text(tool.name) },
-            text = {
-                Column(Modifier.heightIn(max = 360.dp).verticalScroll(androidx.compose.foundation.rememberScrollState())) {
-                    Text(tool.description.orEmpty())
-                    Text(tr(lang, "대화에서 요청하면 본체가 적합한 도구를 선택합니다. 등록 여부는 방·모델 권한이나 서비스 인증을 보장하지 않습니다.",
-                        "Request tasks in chat. The engine selects tools; registration does not guarantee room permission or service authorization."))
-                    Text(tool.parameters?.toString().orEmpty(), style = MaterialTheme.typography.bodySmall)
-                }
-            },
-            confirmButton = { androidx.compose.material3.TextButton(onClick = { selectedTool = null }) { Text(tr(lang, "닫기", "Close")) } })
-    }
-
 }
 
 @Composable
@@ -320,7 +278,7 @@ fun ConnectionDetailScreen(
                     )
                 }
             }
-            Column(Modifier.padding(horizontal = 16.dp)) {
+            if(!vm.localExecution)Column(Modifier.padding(horizontal = 16.dp)) {
                 SectionLabel(tr(lang, "기존 권한 항목 (참고)", "Requested permissions (reference)"))
                 Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(p.card).border(0.5.dp, p.hairline, RoundedCornerShape(18.dp))) {
                     Column {
@@ -363,11 +321,13 @@ fun ConnectionDetailScreen(
                 }
             }
             Spacer(Modifier.height(12.dp))
-            ServiceConnectionPanel(vm, connection)
+            if(!vm.localExecution) ServiceConnectionPanel(vm, connection)
+            else Text(tr(lang,"이 서비스의 직접 계정 연결은 아직 지원되지 않습니다.","Direct account connection is not yet supported."),
+                modifier=Modifier.padding(16.dp),style=MaterialTheme.typography.bodySmall)
             Column(Modifier.padding(16.dp)) {
                 if (connection.builtIn) {
                     Text(
-                        tr(lang, "기본 도구의 실행 가능 여부는 본체 설정에서 확인하세요.", "Check engine settings for actual tool availability."),
+                        tr(lang, "요청에 맞는 기능을 비서가 선택합니다.", "The assistant chooses available actions."),
                         style = MaterialTheme.typography.bodySmall,
                         color = p.textTertiary
                     )
