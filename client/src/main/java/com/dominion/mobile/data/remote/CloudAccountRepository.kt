@@ -63,6 +63,9 @@ data class CloudVoiceCapabilities(val stt:Boolean=false, val tts_en:Boolean=fals
 data class CloudTranscript(val text:String,val language:String,val remaining:Int)
 private data class CloudSpeechText(val text:String,val language:String)
 private data class CloudTaskRequest(val client_id:String,val prompt:String)
+data class CloudToolCapabilities(val tools:List<String> = emptyList(),val direct_tools:Boolean=false)
+data class CloudDirectObservation(val tool:String,val status:String,val source:String,
+    val observed_at:Long,val observation:String)
 data class CloudToolReceipt(val step:Int,val tool:String,val status:String,
     val observed_at:Long,val source:String,val observation:String)
 data class CloudTask(val id:String,val status:String,val steps:Int=0,
@@ -76,7 +79,7 @@ data class CloudTask(val id:String,val status:String,val steps:Int=0,
         require(result==null||result.length<=5000)
         evidence?.let { rows ->
             require(rows.size<=5 && rows.map{it.step}.distinct().size==rows.size)
-            require(rows.all{it.step in 1..steps && it.tool in setOf("clock","web.read","web.search","browser.read") &&
+            require(rows.all{it.step in 1..steps && it.tool in setOf("clock","web.read","web.search","browser.read","browser.links") &&
                 it.status in setOf("ok","failed") && it.observed_at>0 &&
                 it.source.length<=1000 && it.observation.length<=4000})
         }
@@ -91,6 +94,9 @@ private interface CloudApi {
     @GET("v1/models") suspend fun models(@Header("Authorization") auth: String): CloudModels
     @POST("v1/chat/completions") suspend fun complete(@Header("Authorization") auth:String,
         @Body request:CloudCompletionRequest):CloudCompletionResponse
+    @GET("v1/agent/jobs/capabilities") suspend fun agentCapabilities(@Header("Authorization") auth:String):CloudToolCapabilities
+    @POST("v1/agent/jobs/tools") suspend fun runAgentTool(@Header("Authorization") auth:String,
+        @Body body:com.google.gson.JsonObject):CloudDirectObservation
     @POST("v1/agent/jobs") suspend fun startCloudJob(@Header("Authorization") auth:String,
         @Body body:CloudTaskRequest):CloudTask
     @GET("v1/agent/jobs/{id}") suspend fun cloudJob(@Header("Authorization") auth:String,
@@ -289,6 +295,32 @@ class CloudAccountRepository(context: Context) {
             val pair=if(savedAccountId()==null)approved().first
                 else requireNotNull(loadPairing()){"DOMINION Cloud login required"}
             api.cancelCloudJob("Bearer "+pair.token,id).checked(id)
+        }
+    }
+
+    suspend fun directToolNames():Set<String> = withContext(Dispatchers.IO){
+        lock.withLock{
+            val pair=if(savedAccountId()==null)approved().first
+                else requireNotNull(loadPairing())
+            val caps=try{api.agentCapabilities("Bearer "+pair.token)}
+                catch(e:retrofit2.HttpException){if(e.code() in setOf(404,503))return@withLock emptySet<String>() else throw e}
+            if(caps.direct_tools)caps.tools.toSet().intersect(setOf("web.search","browser.read","browser.links"))
+            else emptySet()
+        }
+    }
+
+    suspend fun directTool(tool:String,args:com.google.gson.JsonObject):String=withContext(Dispatchers.IO){
+        require(tool in setOf("web.search","browser.read","browser.links"))
+        val body=com.google.gson.JsonObject().apply{addProperty("tool",tool);add("args",args)}
+        lock.withLock{
+            val pair=if(savedAccountId()==null)approved().first
+                else requireNotNull(loadPairing())
+            val result=api.runAgentTool("Bearer "+pair.token,body)
+            require(result.tool==tool && result.status in setOf("ok","failed") &&
+                result.source==(if(tool=="web.search")args["source"].asString else args["url"].asString) &&
+                result.observed_at>0 && result.observation.length in 1..4000)
+            check(result.status=="ok"){result.observation}
+            result.observation
         }
     }
 

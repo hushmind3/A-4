@@ -787,7 +787,7 @@ class RemoteBackedRepository(
         if (endpoint == null) kotlinx.coroutines.flow.emptyFlow()
         else roomEventSignals(api, roomId, sessionId, roomEventCursor)
 
-    override suspend fun engineTools(): List<EngineTool> = if(localExecution)mobile.tools else api.engineTools()
+    override suspend fun engineTools(): List<EngineTool> = if(localExecution)mobile.availableTools() else api.engineTools()
 
     override suspend fun roomExecution(roomId: String): RoomExecution = coroutineScope {
         if(localExecution){

@@ -29,13 +29,13 @@ export function decision(text){
   if(!a||typeof a!=='object'||Array.isArray(a))return null;
   if(Object.keys(a).length===1&&typeof a.final==='string'&&a.final.trim()&&a.final.length<=5000)
     return {kind:'final',content:a.final.trim()};
-  if(Object.keys(a).sort().join(',')!=='args,tool'||!a.args||typeof a.args!=='object')return null;
+  if(Object.keys(a).sort().join(',')!=='args,tool'||!a.args||typeof a.args!=='object'||Array.isArray(a.args))return null;
   if(a.tool==='clock'&&Object.keys(a.args).length===0)return {kind:'clock'};
   if(a.tool==='web.search'&&Object.keys(a.args).sort().join(',')==='query,source'&&
     ['wiki-ko','wiki-en','github'].includes(a.args.source)&&typeof a.args.query==='string'&&
     a.args.query.trim().length>=2&&a.args.query.length<=160&&!/[\x00-\x1f\x7f]/.test(a.args.query))
     return {kind:'web.search',source:a.args.source,query:a.args.query.trim()};
-  if(['web.read','browser.read'].includes(a.tool)&&Object.keys(a.args).length===1&&safeSite(a.args.url))
+  if(['web.read','browser.read','browser.links'].includes(a.tool)&&Object.keys(a.args).length===1&&safeSite(a.args.url))
     return {kind:a.tool,url:a.args.url};
   return null;
 }
@@ -105,18 +105,26 @@ export async function renderPublicPage(op,env){
   // Match the exact HTTPS origin; do not permit cross-origin redirects or
   // third-party requests. The pattern syntax follows Browser Run Quick Actions.
   const originPattern='/^https:\\/\\/'+url.hostname.replaceAll('.','\\.')+'(?:\\/|$)/';
-  const response=await env.BROWSER.quickAction('markdown',{
+  const links=op.kind==='browser.links';
+  const response=await env.BROWSER.quickAction(links?'links':'markdown',{
+    ...(links?{visibleLinksOnly:true,excludeExternalLinks:true}:{}),
     url:url.href,allowRequestPattern:[originPattern],
     rejectResourceTypes:['image','font','media'],
     gotoOptions:{waitUntil:'networkidle2',timeout:12000}
   });
   const raw=await boundedText(response,120000);
   let data;try{data=JSON.parse(raw)}catch{throw Error('Invalid browser response')}
-  if(data?.success!==true||typeof data.result!=='string'||!data.result.trim())throw Error('No rendered content');
+  if(data?.success!==true)throw Error('No rendered content');
+  if(links){
+    if(!Array.isArray(data.result))throw Error('Invalid link response');
+    const found=[...new Set(data.result.filter(x=>safeSite(x)&&new URL(x).origin===url.origin))].slice(0,12);
+    return 'Visible same-origin links from '+url.href+' (discovery only): '+JSON.stringify(found).slice(0,2700);
+  }
+  if(typeof data.result!=='string'||!data.result.trim())throw Error('No rendered content');
   return 'Browser-rendered public page '+url.href+': '+data.result.trim().slice(0,2800);
 }
 export async function observation(op,fetcher=fetch,env={}){
-  if(op.kind==='browser.read')return renderPublicPage(op,env);
+  if(['browser.read','browser.links'].includes(op.kind))return renderPublicPage(op,env);
   if(op.kind==='clock')return 'Current UTC: '+new Date().toISOString();
   if(op.kind==='web.search'){
     const github=op.source==='github';
@@ -153,8 +161,29 @@ export async function jobRoute(request,env,user,ctx,infer){
   if(!app(user))return failure('Mobile inference grant required',403);
   if(!env.AGENT_ENCRYPTION_KEY)return failure('Cloud jobs not configured',503);
   const path=new URL(request.url).pathname;
+  const tools=['clock','web.read','web.search',...(browserReady(env)?['browser.read','browser.links']:[])];
   if(path==='/v1/agent/jobs/capabilities'&&request.method==='GET')
-    return reply({tools:['clock','web.read','web.search',...(browserReady(env)?['browser.read']:[])],max_steps:maxSteps,read_only:true});
+    return reply({tools,max_steps:maxSteps,read_only:true,direct_tools:true});
+  // The foreground chat harness uses the same validated tools as durable jobs.
+  if(path==='/v1/agent/jobs/tools'&&request.method==='POST'){
+    if(Number(request.headers.get('content-length'))>4096)return failure('Oversized tool request',413);
+    const raw=await request.text();
+    if(raw.length>4096)return failure('Oversized tool request',413);
+    const op=decision(raw);
+    if(!op||op.kind==='final'||!tools.includes(op.kind))return failure('Unsupported tool request',400);
+    const key=user.id+':cloud-direct-tools:'+new Date().toISOString().slice(0,10);
+    const quota=await env.DB.prepare('INSERT INTO free_quota(account_day,used) VALUES(?,1) ON CONFLICT(account_day) DO UPDATE SET used=used+1 WHERE used<? RETURNING used')
+      .bind(key,40).first();
+    if(!quota)return failure('Daily tool quota exhausted',429);
+    try{
+      const observed=await observation(op,fetch,env);
+      return reply({tool:op.kind,status:'ok',source:op.url??op.source??'UTC',
+        observed_at:now(),observation:observed.slice(0,4000)});
+    }catch{
+      return reply({tool:op.kind,status:'failed',source:op.url??op.source??'UTC',
+        observed_at:now(),observation:'No evidence retrieved. Try another public source.'});
+    }
+  }
   if(path==='/v1/agent/jobs'&&request.method==='POST'){
     if(Number(request.headers.get('content-length'))>5500)return failure('Oversized task',413);
     const raw=await request.text();if(raw.length>5500)return failure('Oversized task',413);
@@ -241,7 +270,7 @@ export async function runJob(env,id,infer,{leaseSeconds=90}={}){
     const state={messages:checkpointMessages(saved?.messages||[],prompt),
       evidence:Array.isArray(saved?.evidence)?saved.evidence.slice(0,maxSteps):[]};
     const messages=state.messages.map(m=>({...m}));
-    if(browserReady(env))messages[0].content+=' For JavaScript-heavy pages you may use {"tool":"browser.read","args":{"url":"https://..."}} for a fresh public read on an allowed host. No logins, clicking or form submission.';
+    if(browserReady(env))messages[0].content+=' For JavaScript-heavy pages you may use {"tool":"browser.read","args":{"url":"https://..."}} for a fresh public read on an allowed host, or {"tool":"browser.links","args":{"url":"https://..."}} to discover visible same-origin navigation links. Read a discovered URL to verify its content. No logins, clicking or form submission.';
     if(row.steps===maxSteps-1)messages[0].content+=' This is the final model step. Return final JSON with available evidence and limitations, not another tool.';
     const answer=await infer(messages,{id:row.account_id,scope:'app',capability:'inference'});
     const step=decision(answer);
