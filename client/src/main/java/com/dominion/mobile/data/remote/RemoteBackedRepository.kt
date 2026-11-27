@@ -165,13 +165,17 @@ class RemoteBackedRepository(
             submitTask(task.id)
             val confirmed = state.value.tasks.firstOrNull { it.id == task.id }
             check(!confirmed?.engineJobId.isNullOrBlank() && !confirmed?.engineSessionId.isNullOrBlank())
-            if(localExecution)check(confirmed?.engineStatus in setOf("completed","needs_review")){
-                "Local scheduled AI task is not completed or waiting for approval"
-            }
+            if(localExecution)check(
+                (confirmed?.engineJobId?.startsWith("cloud:")==true &&
+                    confirmed.engineStatus in setOf("queued","running","done")) ||
+                (confirmed?.engineJobId?.startsWith("mobile:")==true &&
+                    confirmed.engineStatus in setOf("completed","needs_review"))
+            ){"Scheduled AI task was not accepted by the selected executor"}
             changeSchedules { rows -> rows.map { row ->
                 if (row.id == id && row.pendingDispatchAt == occurrence)
                     row.copy(pendingDispatchAt = null, lastDispatchedAt = occurrence,
-                        dispatchStatus = if(localExecution)"기기 접수 확인"else"본체 접수 확인")
+                        dispatchStatus = if(confirmed?.engineJobId?.startsWith("cloud:")==true)
+                            "클라우드 접수 확인" else if(localExecution)"기기 접수 확인" else "본체 접수 확인")
                 else row
             } }
         } catch (e: kotlinx.coroutines.CancellationException) { throw e }
