@@ -72,6 +72,15 @@
         </activity>
 
         <provider
+            android:name=".platform.attachments.CameraFileProvider"
+            android:authorities="${applicationId}.camera"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/camera_capture_paths" />
+        </provider>
+
+        <provider
             android:name=".platform.attachments.ArchiveFileProvider"
             android:authorities="${applicationId}.archive"
             android:exported="false"

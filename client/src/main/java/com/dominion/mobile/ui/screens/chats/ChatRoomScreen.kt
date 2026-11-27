@@ -53,6 +53,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
+import com.dominion.mobile.platform.attachments.CameraCapture
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -176,6 +180,44 @@ fun ChatRoomScreen(
     }
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let(::prepareAttachment)
+    }
+    var pendingPhoto by rememberSaveable(conversationId) { mutableStateOf<String?>(null) }
+    var photoSession by rememberSaveable(conversationId) { mutableStateOf<String?>(null) }
+    val fullCamera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { saved ->
+        val key = pendingPhoto
+        val expectedSession = photoSession
+        pendingPhoto = null
+        photoSession = null
+        if (key != null) {
+            if (!saved || vm.state.value.conversation(conversationId)?.sessionId != expectedSession) {
+                CameraCapture.discard(context, key)
+            } else {
+                attachmentBusy = true
+                scope.launch {
+                    try {
+                        selectedAttachment = CameraCapture.read(context.applicationContext, key)
+                    } catch (e: CancellationException) { throw e }
+                    catch (_: Exception) { context.toast(tr(lang, "촬영 파일 읽기 실패", "Could not read captured photo")) }
+                    finally { CameraCapture.discard(context, key); attachmentBusy = false }
+                }
+            }
+        }
+    }
+    fun launchFullCamera() {
+        if (attachmentBusy || pendingPhoto != null) return
+        runCatching {
+            val capture = CameraCapture.create(context)
+            pendingPhoto = capture.key
+            photoSession = vm.state.value.conversation(conversationId)?.sessionId
+            fullCamera.launch(capture.uri)
+        }.onFailure {
+            pendingPhoto?.let { CameraCapture.discard(context, it) }
+            pendingPhoto = null; photoSession = null
+            context.toast(tr(lang, "카메라 앱을 열 수 없습니다.", "Camera unavailable"))
+        }
+    }
+    val fullCameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) launchFullCamera() else context.toast(tr(lang, "카메라 권한이 필요합니다.", "Camera permission required"))
     }
     val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap ->
         if (bitmap != null && !attachmentBusy) {
@@ -393,9 +435,23 @@ fun ChatRoomScreen(
         }
 
         selectedAttachment?.let { attachment ->
+            val thumbnail by androidx.compose.runtime.produceState<android.graphics.Bitmap?>(null, attachment) {
+                value = if (attachment.mimeType.startsWith("image/")) withContext(Dispatchers.IO) {
+                    CameraCapture.thumbnail(attachment.bytes)
+                } else null
+            }
             Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically) {
-                GlyphIcon(Glyph.FILE, p.blue, size = 18.dp)
+                if (thumbnail != null) Image(requireNotNull(thumbnail).asImageBitmap(), contentDescription = attachment.name,
+                    modifier = Modifier.size(52.dp).clip(RoundedCornerShape(8.dp)),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                else GlyphIcon(Glyph.FILE, p.blue, size = 18.dp)
+                if (attachment.mimeType.startsWith("image/")) androidx.compose.material3.TextButton(
+                    enabled = !attachmentBusy && draft.isBlank(),
+                    onClick = {
+                        draft = tr(lang, "이 사진의 내용을 확인하고 설명해줘.", "Examine and describe this photo.")
+                        vm.setDraft(conversationId, draft)
+                    }) { Text(tr(lang, "사진 분석", "Analyze")) }
                 Text(attachment.name, modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
                     color = p.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 androidx.compose.material3.TextButton(enabled = !attachmentBusy, onClick = { selectedAttachment = null }) {
@@ -519,7 +575,15 @@ fun ChatRoomScreen(
                     context.toast(tr(lang, "사진 선택기를 열 수 없습니다.", "Photo picker unavailable"))
                 }
             }
-            SheetRow(tr(lang, "카메라 (미리보기)", "Camera preview"), Glyph.CAMERA) {
+            SheetRow(tr(lang, "카메라 촬영 · 원본 첨부", "Camera · full-size photo"), Glyph.CAMERA) {
+                showAttach = false
+                if (!attachmentBusy && pendingPhoto == null) {
+                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
+                        launchFullCamera()
+                    else fullCameraPermission.launch(Manifest.permission.CAMERA)
+                }
+            }
+            SheetRow(tr(lang, "카메라 (빠른 미리보기)", "Camera preview"), Glyph.CAMERA) {
                 showAttach = false
                 if (!attachmentBusy) {
                     if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
