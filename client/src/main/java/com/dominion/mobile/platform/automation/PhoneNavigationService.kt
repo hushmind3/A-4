@@ -26,6 +26,7 @@ import com.dominion.mobile.platform.DeviceActions
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import okhttp3.HttpUrl.Companion.toHttpUrl
 
 /**
  * Explicit foreground, finite device navigation. No event inspection outside an approved
@@ -119,11 +120,14 @@ class PhoneNavigationService : AccessibilityService() {
         getSystemService(PowerManager::class.java).isInteractive &&
             !getSystemService(KeyguardManager::class.java).isKeyguardLocked
 
-    private fun begin(plan: PhoneNavigationPlan, reviewedBatch: Boolean, replan:PhoneReplanContext?,delegatedRead:Boolean): Boolean {
+    private fun begin(plan: PhoneNavigationPlan, reviewedBatch: Boolean, replan:PhoneReplanContext?,delegatedRead:Boolean,
+        vision:com.dominion.mobile.data.remote.MobileVisionConfig?): Boolean {
         if (work?.isActive == true || !unlocked() || !PhoneNavigationPlan.valid(plan) ||
             !DeviceActions.isLaunchable(this, plan.app) ||
             (reviewedBatch && !PhoneNavigationPlan.permitsReviewedBatch(plan)) ||
             (delegatedRead&&(reviewedBatch||replan==null||plan.version!=2)) ||
+            (vision!=null&&(replan?.publicRead!=true||Build.VERSION.SDK_INT<34||
+                (application as com.dominion.mobile.DominionApplication).container.engine!=null)) ||
             (replan!=null && (reviewedBatch || plan.version!=2 || plan.app!=replan.app ||
                 (Build.VERSION.SDK_INT<34 &&
                 (application as com.dominion.mobile.DominionApplication).container.engine!=null)))) return false
@@ -145,6 +149,7 @@ class PhoneNavigationService : AccessibilityService() {
             var transactionAttempted=false
             var transactionVerified=false
             var resultVerified=false
+            var visionVerified=false
             var privateVerified=false
             var approvedResults=emptyList<String>()
             var feedback=""
@@ -515,6 +520,50 @@ class PhoneNavigationService : AccessibilityService() {
                                 catch(_:Exception){emptyList()}
                             controls=(found.map{it.label}+controls).distinct().take(24)
                         }
+                        if(vision!=null&&recorded&&replan.publicRead&&Build.VERSION.SDK_INT>=34&&
+                            (controls.isEmpty()||feedback.startsWith("Failed click"))){
+                            val shot=captureWindow(plan.app)
+                            val recognized=com.dominion.mobile.platform.attachments.DeviceImageText.recognize(shot.png)
+                            check(!com.dominion.mobile.data.PhonePublicResult.sensitive(recognized.lines())){"개인 화면의 이미지 전송 금지"}
+                            approveStep(PhoneNavigationStep("외부 이미지 모델에 화면 전송",
+                                vision.endpoint.toHttpUrl().host,"현재 화면 전체를 전송합니다. 개인정보가 없을 때만 승인하세요."),plan.app,1,1)
+                            validRoom()
+                            val fresh=captureWindow(plan.app)
+                            check(fresh.digest==shot.digest&&fresh.windowId==shot.windowId&&fresh.bounds==shot.bounds){"승인 화면 변경"}
+                            val decision=try{com.dominion.mobile.data.remote.MobileVisionProvider.analyze(vision,
+                                replan.initialRequest.take(4000),shot.png)}
+                            catch(e:CancellationException){throw e}
+                            catch(_:Exception){null}
+                            validRoom()
+                            if(decision?.action=="result"){
+                                val resultPlan=PhoneNavigationPlan(plan.app,listOf(PhoneNavigationStep("report_result",decision.label)),2)
+                                if(budget.admit(shot.digest,resultPlan,plan.app)){
+                                    approveStep(PhoneNavigationStep("이미지 해석 결과 직접 확인",decision.label,
+                                        "실제 화면 내용과 일치할 때만 저장"),plan.app,1,1)
+                                    validRoom()
+                                    val after=captureWindow(plan.app)
+                                    check(after.digest==shot.digest&&after.windowId==shot.windowId&&after.bounds==shot.bounds)
+                                    verified.add("사용자가 화면에서 확인한 이미지 해석: "+decision.label)
+                                    visionVerified=true;resultVerified=true;endStatus="completed";completed++
+                                    _status.value="이미지 해석 결과 · 사용자 화면 확인 완료"
+                                    break
+                                }
+                            }else if(decision?.action=="tap"){
+                                val x=requireNotNull(decision.x);val y=requireNotNull(decision.y)
+                                val command=VisualGesture(shot.digest,x,y)
+                                val gesturePlan=PhoneNavigationPlan(plan.app,listOf(
+                                    PhoneNavigationStep("tap_point",decision.label,shot.digest+":"+x+":"+y),
+                                    PhoneNavigationStep("visual_inspect","화면")),2)
+                                if(budget.admit(shot.digest,gesturePlan,plan.app)){
+                                    if(approveVisualModelTarget(shot,decision.label,command,::validRoom)){
+                                        completed++;feedback=""
+                                    }else feedback="Visual target changed or could not be verified; no gesture executed."
+                                    activePlan=PhoneNavigationPlan(plan.app,listOf(PhoneNavigationStep("inspect","화면")),2)
+                                    delay(400)
+                                    continue
+                                }
+                            }
+                        }
                         if(controls.isEmpty()&&approvedResults.isEmpty()){
                             _status.value="읽을 수 있는 조작 버튼 없음 · 실행 "+completed+"단계"
                             break
@@ -564,6 +613,7 @@ class PhoneNavigationService : AccessibilityService() {
                         (if(privateVerified)"\n선택한 항목의 실제 화면 수치만 기기에 저장했습니다. 외부 모델에 전송하지 않았습니다."
                          else if(transactionVerified)"\n실제 앱의 새 완료 문구를 확인했습니다. 공급자 영수증·변경 조건은 별도 확인할 수 있습니다."
                          else if(transactionAttempted)"\n거래 요청 이후 완료 근거 없음. 중복 실행하지 마세요."
+                         else if(visionVerified)"\n이미지 모델의 결과 후보를 사용자가 현재 화면에서 직접 확인했습니다. 거래는 수행하지 않았습니다."
                          else if(resultVerified)"\n실제 화면에 있는 조회 결과만 기록했습니다. 거래·예약·결제는 수행하지 않았습니다."
                          else if(endStatus=="completed")"\n기기 화면에서 새 메시지를 확인했습니다. 서버 수신·읽음은 확인하지 않았습니다."
                          else "\n최종 외부 결과는 확인되지 않았습니다. 발송을 시도했다면 재발송 전에 직접 확인하세요.")
@@ -650,6 +700,50 @@ class PhoneNavigationService : AccessibilityService() {
         }
         check(checkedWindow(pkg) == (id to bounds))
         return VisualFrame(pkg, id, bounds, bytes, VisualGesture.digest(bytes))
+    }
+
+    /** Show the exact proposed touch as a non-interactive marker. A model
+     * coordinate is never itself permission to click. */
+    @androidx.annotation.RequiresApi(34)
+    private suspend fun approveVisualModelTarget(frame:VisualFrame,label:String,command:VisualGesture,validRoom:()->Unit):Boolean{
+        require(label in com.dominion.mobile.data.remote.MobileVisionDecision.safeRoles)
+        val initial=captureWindow(frame.packageName)
+        if(initial.digest!=frame.digest||initial.windowId!=frame.windowId||initial.bounds!=frame.bounds)return false
+        val x=frame.bounds.left+frame.bounds.width()*command.x/1000
+        val y=frame.bounds.top+frame.bounds.height()*command.y/1000
+        val overlay=Rect();stopView?.getGlobalVisibleRect(overlay)
+        if(overlay.contains(x,y))return false
+        val size=(36*resources.displayMetrics.density).toInt().coerceAtLeast(24)
+        val marker=object:android.view.View(this){
+            override fun onDraw(canvas:android.graphics.Canvas){
+                super.onDraw(canvas)
+                val paint=android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply{
+                    color=android.graphics.Color.RED;style=android.graphics.Paint.Style.STROKE;strokeWidth=4f
+                }
+                val center=width/2f
+                canvas.drawCircle(center,height/2f,center-3f,paint)
+                canvas.drawLine(center-8,height/2f,center+8,height/2f,paint)
+                canvas.drawLine(center,height/2f-8,center,height/2f+8,paint)
+            }
+        }
+        val manager=getSystemService(WindowManager::class.java)
+        manager.addView(marker,WindowManager.LayoutParams(size,size,WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,PixelFormat.TRANSLUCENT).apply{
+            gravity=Gravity.TOP or Gravity.START
+            this.x=x-size/2;this.y=y-size/2
+        })
+        try{
+            delay(120)
+            val pos=IntArray(2);marker.getLocationOnScreen(pos)
+            if(kotlin.math.abs(pos[0]+size/2-x)>8||kotlin.math.abs(pos[1]+size/2-y)>8)return false
+            approveStep(PhoneNavigationStep("이미지 모델 제안 위치 확인",label,
+                "빨간 표시가 실제 탐색 버튼일 때만 터치 승인"),frame.packageName,1,1)
+        }finally{runCatching{manager.removeViewImmediate(marker)}}
+        validRoom()
+        val fresh=captureWindow(frame.packageName)
+        if(fresh.digest!=frame.digest||fresh.windowId!=frame.windowId||fresh.bounds!=frame.bounds)return false
+        return performVisualGesture(fresh,command)
     }
 
     @androidx.annotation.RequiresApi(34)
@@ -931,8 +1025,9 @@ class PhoneNavigationService : AccessibilityService() {
         private val _status = MutableStateFlow("")
         val status = _status.asStateFlow()
         fun start(plan: PhoneNavigationPlan, reviewedBatch: Boolean = false,
-            replan:PhoneReplanContext?=null,delegatedRead:Boolean=false): Boolean =
-            instance?.begin(plan, reviewedBatch,replan,delegatedRead) ?: false
+            replan:PhoneReplanContext?=null,delegatedRead:Boolean=false,
+            vision:com.dominion.mobile.data.remote.MobileVisionConfig?=null): Boolean =
+            instance?.begin(plan, reviewedBatch,replan,delegatedRead,vision) ?: false
         fun stop() { instance?.work?.cancel() }
         suspend fun stopErrand(room:String,session:String):Boolean=withContext(Dispatchers.Main.immediate){
             val service=instance?:return@withContext false

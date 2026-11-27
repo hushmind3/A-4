@@ -37,6 +37,18 @@ fun PhoneNavigationDialog(plan: PhoneNavigationPlan, onDismiss: () -> Unit,
     var automaticReplan by remember(plan) { mutableStateOf(preferReplan&&replanContext!=null) }
     var delegatedRead by remember(plan){mutableStateOf(false)}
     var started by remember(plan) { mutableStateOf(false) }
+    val container=(context.applicationContext as com.dominion.mobile.DominionApplication).container
+    val account=container.cloudAccount.savedAccountId()
+    val visionSettings=remember(account){account?.let{com.dominion.mobile.data.remote.MobileVisionSettings(context,it)}}
+    val savedVision=remember(visionSettings){runCatching{visionSettings?.load()}.getOrNull()}
+    var enableVision by remember(plan){mutableStateOf(false)}
+    var visionEndpoint by remember{mutableStateOf(savedVision?.endpoint.orEmpty())}
+    var visionModel by remember{mutableStateOf(savedVision?.model.orEmpty())}
+    var visionToken by remember{mutableStateOf(savedVision?.token.orEmpty())}
+    val visionAllowed=replanContext?.publicRead==true&&container.engine==null&&android.os.Build.VERSION.SDK_INT>=34&&visionSettings!=null
+    val visionConfig=if(enableVision&&visionAllowed)runCatching{
+        com.dominion.mobile.data.remote.MobileVisionConfig(visionEndpoint,visionModel,visionToken).checked()
+    }.getOrNull()else null
     var error by remember { mutableStateOf("") }
     val installed = remember(plan.app) {
         com.dominion.mobile.platform.DeviceActions.launchableApps(context).firstOrNull { it.packageName == plan.app }
@@ -75,6 +87,20 @@ fun PhoneNavigationDialog(plan: PhoneNavigationPlan, onDismiss: () -> Unit,
                         }
                         if(delegatedRead)Text("원래 요청의 검색어와 정해진 탐색 버튼만 자동 실행합니다. 다른 버튼과 화면 정보 전송은 별도 승인합니다.",
                             style=MaterialTheme.typography.bodySmall)
+                    }
+                }
+                if(visionAllowed&&automaticReplan){
+                    Row{
+                        Checkbox(enableVision,{enableVision=it;approved=false},enabled=!started)
+                        Text("이미지 모델 기반 탐색 보조",Modifier.padding(top=12.dp))
+                    }
+                    if(enableVision){
+                        Text("접근성·문자 인식이 실패하면 승인한 실제 화면을 지정 모델로 전송합니다. 결제·발송에는 사용하지 않습니다. 설정은 계정별 기기 암호화 저장됩니다.")
+                        OutlinedTextField(visionEndpoint,{visionEndpoint=it;approved=false},enabled=!started,
+                            label={Text("HTTPS .../chat/completions")},singleLine=true)
+                        OutlinedTextField(visionModel,{visionModel=it;approved=false},enabled=!started,label={Text("이미지 지원 모델 ID")},singleLine=true)
+                        OutlinedTextField(visionToken,{visionToken=it;approved=false},enabled=!started,label={Text("API 키 (필요 시)")},
+                            visualTransformation=androidx.compose.ui.text.input.PasswordVisualTransformation(),singleLine=true)
                     }
                 }
                 if (PhoneNavigationPlan.permitsReviewedBatch(plan)) Row {
@@ -158,9 +184,15 @@ fun PhoneNavigationDialog(plan: PhoneNavigationPlan, onDismiss: () -> Unit,
                 if (error.isNotBlank()) Text(error,color=MaterialTheme.colorScheme.error)
             }
         },
-        confirmButton = { TextButton(enabled = connected && approved && !started && installed != null,onClick = {
-            started = PhoneNavigationService.start(plan, reviewedBatch,if(automaticReplan)replanContext else null,delegatedRead&&automaticReplan)
-            if (!started) error = "이미 조작 중이거나 기기가 잠겨 있습니다."
+        confirmButton = { TextButton(enabled = connected && approved && !started && installed != null&&
+            (!enableVision||!automaticReplan||visionConfig!=null),onClick = {
+            try{
+                val selectedVision=visionConfig?.takeIf{automaticReplan}
+                if(selectedVision!=null)requireNotNull(visionSettings).save(selectedVision)
+                started = PhoneNavigationService.start(plan, reviewedBatch,if(automaticReplan)replanContext else null,
+                    delegatedRead&&automaticReplan,selectedVision)
+                if (!started) error = "이미 조작 중이거나 기기가 잠겨 있습니다."
+            }catch(_:Exception){error="이미지 모델 설정 또는 실행 권한을 확인하세요."}
         }) { Text("기기에서 실행") } },
         dismissButton = { TextButton(onClick = { if (started) PhoneNavigationService.stop(); onDismiss() }) { Text("닫기") } })
 }
