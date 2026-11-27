@@ -29,7 +29,8 @@ import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * Explicit foreground, finite device navigation. No event inspection outside an approved
- * run, no screen contents leave the device, and no generic gestures or system actions.
+ * run, approved semantic labels may reach the selected cloud model; image bytes do not,
+ * and no generic system actions execute without explicit steps.
  */
 class PhoneNavigationService : AccessibilityService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)

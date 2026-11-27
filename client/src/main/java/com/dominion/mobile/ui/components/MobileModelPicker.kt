@@ -31,7 +31,7 @@ fun MobileModelPicker(vm:AppViewModel,onDismiss:()->Unit){
     }
     AlertDialog(onDismissRequest=onDismiss,title={Text("모바일 실행 모델")},text={
         Column(Modifier.heightIn(max=360.dp).verticalScroll(rememberScrollState())){
-            Text("모바일 내장 하네스가 Cloudflare 모델을 직접 사용합니다. PC 연결 불필요.")
+            Text("모바일 비서는 DOMINION Cloud 계정의 AI 모델을 사용합니다. PC 설치가 필요하지 않습니다.")
             if(loading)LinearProgressIndicator(Modifier.fillMaxWidth())
             if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
             models.forEach{m->Row{RadioButton(selected==m.id,{selected=m.id});Text(m.name,Modifier.padding(top=12.dp))}}

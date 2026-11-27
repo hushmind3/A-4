@@ -1,10 +1,43 @@
-# Mobile-first execution
-A-4 now uses a local Kotlin harness when no explicit PC execution target is selected.
-The existing UI, Korean services, character preferences, Room database, approvals and reminder scheduler are reused.
-Cloudflare inference uses the existing scoped free-model session directly. PC tokens are not required or sent.
-The bounded mobile core ports Korean bigram/BM25 retrieval ideas and round budgets from branch1 0ebc2d16.
-It is NOT the full Rust SDK or a native Rust binary; versioned parity and mobile-native bindings are a later phase.
-One model decision, at most one authorized tool, at most one final inference. Local reads use real state, and writes require explicit approval and persist real device records.
-Available: text, current time, local persona memory search/save, local schedule list/create, official Korean portal catalog, approved dialer/SMS draft/map/official URL/installed-app launches, local task and scheduled task receipts. Intent launch does not establish that a call, SMS, external submission or app task succeeded.
-Not yet available in independent mode: live web search, autonomous multi-step app navigation, full voice/video pipeline, large attachment processing, uninterrupted multi-hour AI tasks, shared memory sync, independent external provider selection. Android scheduled work is subject to OS scheduling. New launches default to the mobile runtime; the saved PC connection is available for explicit selection. PC and phone scopes are currently separate, not simultaneous per-turn routing. No fake tool results.
-PC relay remains optional; automatic PC takeover removed. Explicit mode switch keeps PC binding separate. Existing cloud Worker unchanged by this change.
+# A-4 mobile-first assistant runtime
+
+The Android native app is an independent assistant. No PC installation, port
+forwarding, or desktop DOMINION server is required for default assistant usage.
+DOMINION Cloud provides the account, Google login, model API, and account-specific
+free inference quota. A PC with local models is an OPTIONAL execution node.
+
+## Real Android execution
+
+- Kotlin MobileHarness: multi-step read-only tool calling, local memory retrieval,
+  durable observations, validated user-approved writes and app launch.
+  Up to 3 read tools per turn; each write or launch currently stops for approval.
+- Tools: time, battery, local schedules/memory, Korean portal catalog,
+  installed app list, and approved dialer, SMS/email draft, calendar draft,
+  maps, browser link, installed-app launch and local schedule/memory writes.
+- Scoped native accessibility navigation with per-action confirmation. Mobile
+  cloud replan receives only approved accessible control labels, not image
+  screenshots. Image-based coordinate replan requires a separately connected
+  multimodal capability.
+- User-selected attachment bytes encrypted on the phone using Android Keystore
+  backed authenticated file storage. Text documents may be sent to the language
+  model. Selected photos can be read by bundled Korean/Latin on-device OCR;
+  ONLY recognized text is passed to text inference. This is not full visual AI.
+- Device speech recognition, Cloud model chat, and Android TTS in explicit turns.
+  It is not a full-duplex realtime phone or video call.
+- WorkManager drives scheduled notifications and bounded AI submissions with no
+  desktop gate; background execution follows OS network/energy constraints.
+- Account-scoped local databases are derived from the Google-linked DOMINION
+  account. App pairing tokens and file vault are encrypted. Room conversation
+  rows are not yet encrypted as a whole SQLite database.
+
+## Missing, in progress, or requiring real-device verification
+
+- Full DOMINION Rust harness parity, long-range autonomous plan/verify/retry,
+  recovery of running jobs after process termination, and post-approval steps
+- Independent realtime voice/video calls with interruption and AI participant
+- General visual screen understanding and multimodal model file support
+- Per-account opt-in cross-device memory sync and arbitrary cloud provider routing
+- End-to-end test for login -> device operations -> restart -> verified result
+
+Do not regress to PC-as-gateway. Do not represent draft intents, OCR or model
+text as completion of an external transaction. This replaces the obsolete
+single-tool description from the original mobile-first implementation.

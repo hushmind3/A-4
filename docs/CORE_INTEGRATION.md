@@ -1,15 +1,21 @@
-# Mobile core integration status
+# DOMINION Cloud and mobile agent integration
 
-The mobile runtime is the primary execution environment; see [MOBILE_FIRST.md](MOBILE_FIRST.md).
-Google authentication and Cloudflare model inference use the existing scoped app session.
-A free inference credential is not a PC owner credential.
+DOMINION Cloud is the account and inference gateway. Per-account quota enforcement
+already exists in the Worker and is not a desktop-server requirement. Worker
+operator keys stay on the backend; Android stores scoped pairing credentials
+using Android Keystore AES-GCM.
 
-Optional PC-specific work can use the existing scoped WebSocket relay or an explicitly
-configured owner-authenticated HTTPS endpoint. See [GOOGLE_PC_LINK.md](GOOGLE_PC_LINK.md).
-Native transcript synchronization, SSE on supported direct endpoints, credential-scoped
-job monitoring, and the existing PC-dependent voice adapter remain available in PC mode.
-No dedicated inbound bridge is required. Model-only PC inference is a separate feature
-and is not implemented by the optional remote-work relay.
+The native phone executes Android tools, local memories, approved navigation
+actions, and scheduled work. Its Kotlin mobile harness is a partial port of
+selected DOMINION concepts, NOT the complete Rust SDK or hosted agent executor.
+The optional PC engine keeps separate authentication/session handling.
 
-Independent realtime voice/video, external inference providers, cross-device memory sync,
-and verified background push still need their own implementation and integration tests.
+Implemented in mobile mode: cloud text inference, mobile encrypted attachments,
+text document content, Korean/Latin image OCR, approved phone UI semantic
+replanning, local schedules and memory, short device tasks, and turn-based voice.
+
+Still missing: independent realtime audio/video AI participant, durable cloud
+background orchestration, richer visual image/video model support, synchronized
+private memories and generic provider switching. Migrating to Google Cloud or
+another host requires changing cloud account and API service contracts, not
+installing the desktop application.
