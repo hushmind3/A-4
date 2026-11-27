@@ -309,6 +309,10 @@ class RemoteBackedRepository(
 
     private val roomEventCursor = java.util.concurrent.ConcurrentHashMap<Pair<String, String>, Long>()
 
+    override fun roomLiveUpdates(reducer: RoomLiveReducer): kotlinx.coroutines.flow.Flow<RoomLiveUpdate> =
+        if (endpoint == null) kotlinx.coroutines.flow.emptyFlow()
+        else com.dominion.mobile.data.remote.roomLiveUpdates(api, reducer)
+
     override fun roomSignals(roomId: String, sessionId: String): kotlinx.coroutines.flow.Flow<Unit> =
         if (endpoint == null) kotlinx.coroutines.flow.emptyFlow()
         else roomEventSignals(api, roomId, sessionId, roomEventCursor)

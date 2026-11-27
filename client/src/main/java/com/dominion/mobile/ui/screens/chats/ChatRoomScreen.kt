@@ -130,6 +130,15 @@ fun ChatRoomScreen(
 
     LaunchedEffect(conversationId) { vm.refreshConversation(conversationId) }
 
+    var liveTurns by remember(conversationId, conversation.sessionId) {
+        mutableStateOf<List<com.dominion.mobile.data.remote.LiveTurn>>(emptyList())
+    }
+    val visibleTurns = liveTurns.filter { turn ->
+        conversation.messages.any { message ->
+            message.sender == MessageSender.USER && message.id == turn.sourceMessageId &&
+                message.jobStatus in setOf("queued", "running")
+        }
+    }
     var draft by remember(conversationId, conversation.sessionId) { mutableStateOf(conversation.draft) }
     var showAttach by remember { mutableStateOf(false) }
     var voiceInput by remember(conversationId, conversation.sessionId) { mutableStateOf(false) }
@@ -351,7 +360,7 @@ fun ChatRoomScreen(
             }
         }
 
-        RoomExecutionControls(vm, conversationId)
+        RoomExecutionControls(vm, conversationId, onPreview = { liveTurns = it })
 
         LazyColumn(
             state = listState,
@@ -432,8 +441,29 @@ fun ChatRoomScreen(
                             )
                         }
                     }
-                    ChatEntry.Typing -> TypingBubble(character)
+                    ChatEntry.Typing -> if (visibleTurns.isEmpty()) TypingBubble(character)
                 }
+            }
+            items(visibleTurns.size) { index ->
+                val turn = visibleTurns[index]
+                Column(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
+                    Text((state.character(turn.agentId.orEmpty())?.name ?: character.name) +
+                        " · " + tr(lang, "생성 중 · 미확정", "Generating · provisional"),
+                        color = p.textSecondary, style = MaterialTheme.typography.labelSmall)
+                    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(p.cardSoft).padding(12.dp)) {
+                        Text(turn.text.ifBlank {
+                            turn.tool?.let { tr(lang, "도구 실행: ", "Running tool: ") + it }
+                                ?: tr(lang, "응답 준비 중", "Preparing response")
+                        }, color = p.textPrimary)
+                    }
+                }
+            }
+        }
+        LaunchedEffect(visibleTurns.map { it.turnId to it.text.length }, entries.size) {
+            if (visibleTurns.isNotEmpty()) {
+                val total = entries.size + visibleTurns.size
+                if (total > 0 && listState.firstVisibleItemIndex >= (entries.size - 6).coerceAtLeast(0))
+                    listState.scrollToItem(total - 1)
             }
         }
 

@@ -35,7 +35,8 @@ import kotlinx.coroutines.sync.withLock
 
 /** Reuses the server's durable room, job, approval and operation records. */
 @Composable
-fun RoomExecutionControls(vm: AppViewModel, roomId: String) {
+fun RoomExecutionControls(vm: AppViewModel, roomId: String,
+    onPreview: (List<LiveTurn>) -> Unit = {}) {
     val lang = LocalLang.current
     val p = LocalDominionPalette.current
     val scope = rememberCoroutineScope()
@@ -94,26 +95,46 @@ fun RoomExecutionControls(vm: AppViewModel, roomId: String) {
         }
     }
     val session = snapshot?.sessionId
+    val latestPreview by rememberUpdatedState(onPreview)
     LaunchedEffect(roomId, session, lifecycle) {
+        latestPreview(emptyList())
         if (session.isNullOrBlank()) return@LaunchedEffect
+        val reducer = RoomLiveReducer(roomId, session)
         lifecycle.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             var reconnectMs = 1000L
+            var observedVersion = -1L
+            val invalidations = kotlinx.coroutines.channels.Channel<Unit>(kotlinx.coroutines.channels.Channel.CONFLATED)
+            val refreshJob = launch {
+                for (ignored in invalidations) {
+                    refresh()
+                    delay(250)
+                }
+            }
             try {
                 while (true) {
                     try {
-                        vm.roomSignals(roomId, session).collect {
-                            streamConnected = true
+                        vm.roomLiveUpdates(reducer).collect { update ->
+                            streamConnected = update.connected
                             reconnectMs = 1000L
-                            refresh()
-                            delay(250L) // coalesce a burst of committed events
+                            latestPreview(update.turns)
+                            if (observedVersion != update.refreshVersion) {
+                                observedVersion = update.refreshVersion
+                                invalidations.trySend(Unit)
+                            }
                         }
                     } catch (e: CancellationException) { throw e }
                     catch (_: Exception) { /* polling remains active */ }
                     streamConnected = false
+                    latestPreview(emptyList())
                     delay(reconnectMs)
                     reconnectMs = (reconnectMs * 2).coerceAtMost(30000L)
                 }
-            } finally { streamConnected = false }
+            } finally {
+                streamConnected = false
+                latestPreview(emptyList())
+                refreshJob.cancel()
+                invalidations.close()
+            }
         }
     }
     val current = snapshot

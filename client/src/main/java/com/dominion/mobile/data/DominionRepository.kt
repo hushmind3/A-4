@@ -34,6 +34,8 @@ interface DominionRepository {
 
     suspend fun createConversation(title: String, characterId: String): String = error("Execution server not connected")
 
+    fun roomLiveUpdates(reducer: com.dominion.mobile.data.remote.RoomLiveReducer):
+        kotlinx.coroutines.flow.Flow<com.dominion.mobile.data.remote.RoomLiveUpdate> = kotlinx.coroutines.flow.emptyFlow()
     fun roomSignals(roomId: String, sessionId: String): kotlinx.coroutines.flow.Flow<Unit> =
         kotlinx.coroutines.flow.emptyFlow()
     suspend fun engineTools(): List<com.dominion.mobile.data.remote.EngineTool> = error("Engine not connected")

@@ -168,6 +168,7 @@ class AppViewModel(
     suspend fun engineTools() = repo.engineTools()
     suspend fun roomExecution(roomId: String) = repo.roomExecution(roomId)
     fun roomSignals(roomId: String, sessionId: String) = repo.roomSignals(roomId, sessionId)
+    fun roomLiveUpdates(reducer: com.dominion.mobile.data.remote.RoomLiveReducer) = repo.roomLiveUpdates(reducer)
     suspend fun decideApproval(roomId: String, approval: com.dominion.mobile.data.remote.EngineApproval,
         allow: Boolean) = repo.decideApproval(roomId, approval, allow)
     suspend fun cancelJob(roomId: String, jobId: String) = repo.cancelJob(roomId, jobId)

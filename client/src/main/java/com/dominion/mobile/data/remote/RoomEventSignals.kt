@@ -11,10 +11,10 @@ import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.launch
 import java.util.concurrent.ConcurrentHashMap
 
-private fun JsonObject.string(name: String): String? =
+internal fun JsonObject.string(name: String): String? =
     get(name)?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString
 
-private fun JsonObject.obj(name: String): JsonObject? =
+internal fun JsonObject.obj(name: String): JsonObject? =
     get(name)?.takeIf { it.isJsonObject }?.asJsonObject
 
 /** Never display global event payloads: they merely invalidate verified room reads. */
