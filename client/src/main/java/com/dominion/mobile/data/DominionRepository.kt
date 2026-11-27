@@ -16,6 +16,10 @@ interface DominionRepository {
     suspend fun deliverMessage(conversationId: String, message: Message): Message = error("Execution server not connected")
     suspend fun submitAssistantVoice(roomId:String,session:String,nonce:String,text:String):Message =
         error("Execution server not connected")
+    /** Approved semantic controls on the handset. This path never requires a PC or screenshot. */
+    suspend fun replanPhoneControls(context:com.dominion.mobile.data.PhoneReplanContext,
+        controls:List<String>):com.dominion.mobile.data.PhoneNavigationPlan? =
+        error("Phone controls replanning unavailable")
     suspend fun replanPhoneNavigation(context:com.dominion.mobile.data.PhoneReplanContext,
         digest:String,png:ByteArray,width:Int,height:Int):com.dominion.mobile.data.PhoneNavigationPlan? =
         error("Execution server not connected")

@@ -49,12 +49,15 @@ fun PhoneNavigationDialog(plan: PhoneNavigationPlan, onDismiss: () -> Unit,
                 Text(plan.app, style = MaterialTheme.typography.labelSmall)
                 if (installed == null) Text("이 기기에서 실행할 수 있는 앱을 확인하지 못했습니다.", color = MaterialTheme.colorScheme.error)
                 Text("기본은 각 단계 화면 위 승인입니다. 전체 제한은 5분이며 다른 앱·잠금 화면·대상 불일치 시 중단합니다.")
-                if(replanContext!=null && plan.version==2 && android.os.Build.VERSION.SDK_INT>=34) {
+                if(replanContext!=null && plan.version==2 &&
+                    ((context.applicationContext as com.dominion.mobile.DominionApplication).container.engine==null ||
+                    android.os.Build.VERSION.SDK_INT>=34)) {
                     Row {
                         Checkbox(automaticReplan,{automaticReplan=it;approved=false},enabled=!started)
-                        Text("본체와 자동 재계획 (최대 6회)",modifier=Modifier.padding(top=12.dp))
+                        Text(if((context.applicationContext as com.dominion.mobile.DominionApplication).container.engine==null)
+                            "모바일 AI 재계획 (최대 6회)" else "본체와 자동 재계획 (최대 6회)",modifier=Modifier.padding(top=12.dp))
                     }
-                    if(automaticReplan)Text("현재 앱 안에서만 이어갑니다. 화면 전송과 실제 조작은 각각 화면 위 버튼에서 확인합니다.",
+                    if(automaticReplan)Text("현재 앱만 탐색하며 단계별 승인을 받습니다. 모바일 모드에서는 화면 이미지 대신 조작 버튼 문구만 확인 후 전송합니다.",
                         style=MaterialTheme.typography.bodySmall)
                 }
                 if (PhoneNavigationPlan.permitsReviewedBatch(plan)) Row {
@@ -109,7 +112,9 @@ fun PhoneNavigationDialog(plan: PhoneNavigationPlan, onDismiss: () -> Unit,
                         bitmap = preview.asImageBitmap(), contentDescription = "대상 앱의 실제 화면",
                         modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp))
                     Text("대상 창 캡처 · " + frame.digest.take(12), style = MaterialTheme.typography.labelSmall)
-                    if (onVisualResult != null) TextButton(enabled = !sharing, onClick = {
+                    if (onVisualResult != null &&
+                        (context.applicationContext as com.dominion.mobile.DominionApplication).container.engine!=null)
+                        TextButton(enabled = !sharing, onClick = {
                         sharing = true
                         scope.launch {
                             try { onVisualResult(frame); PhoneNavigationService.clearObserved(); onDismiss() }

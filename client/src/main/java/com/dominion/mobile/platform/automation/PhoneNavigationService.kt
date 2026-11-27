@@ -121,7 +121,9 @@ class PhoneNavigationService : AccessibilityService() {
         if (work?.isActive == true || !unlocked() || !PhoneNavigationPlan.valid(plan) ||
             !DeviceActions.isLaunchable(this, plan.app) ||
             (reviewedBatch && !PhoneNavigationPlan.permitsReviewedBatch(plan)) ||
-            (replan!=null && (reviewedBatch || plan.version!=2 || plan.app!=replan.app || Build.VERSION.SDK_INT<34))) return false
+            (replan!=null && (reviewedBatch || plan.version!=2 || plan.app!=replan.app ||
+                (Build.VERSION.SDK_INT<34 &&
+                (application as com.dominion.mobile.DominionApplication).container.engine!=null)))) return false
         // Limit the dynamically configured accessibility event scope to the reviewed app.
         val originalPackages = serviceInfo.packageNames
         val configured = serviceInfo
@@ -153,13 +155,14 @@ class PhoneNavigationService : AccessibilityService() {
                     val repo=container.repository
                     val budget=PhoneReplanBudget()
                     fun validRoom() {
-                        if(replan!=null)check(engine!=null && container.engine===engine && container.repository===repo &&
+                        if(replan!=null)check(container.engine===engine && container.repository===repo &&
                             repo.state.value.conversation(replan.roomId)?.sessionId==replan.sessionId)
                     }
                     var activePlan=plan
                     while(true) {
                     validRoom()
                     var nextFrame:VisualFrame?=null
+                    var needsSemanticReplan=false
                     var localCompleted=0
                     for (step in activePlan.steps) {
                         validRoom()
@@ -183,7 +186,7 @@ class PhoneNavigationService : AccessibilityService() {
                                 val gesture = requireNotNull(VisualGesture.parse(step.action,step.value))
                                 if (gesture.frame != frame.digest) {
                                     _visual.value = frame
-                                    if(replan!=null){nextFrame=frame;break}
+                                    if(replan!=null){nextFrame=frame;needsSemanticReplan=true;break}
                                     error("Screen changed; replan")
                                 }
                                 check(performVisualGesture(frame,gesture))
@@ -204,18 +207,33 @@ class PhoneNavigationService : AccessibilityService() {
                             if (!success) delay(180)
                         }
                         if(!success && replan!=null) {
-                            // A failed target is not an action success. Request an explicitly
-                            // approved new observation instead of blindly retrying a gesture.
-                            approveStep(PhoneNavigationStep("visual_inspect","실패 화면 캡처"),plan.app,localCompleted+1,activePlan.steps.size)
-                            nextFrame=captureWindow(plan.app);_visual.value=nextFrame
+                            // A failed target is not success: require a fresh observation.
+                            if(engine==null){
+                                approveStep(PhoneNavigationStep("inspect","실패한 앱 화면 조작 요소 관찰"),
+                                    plan.app,localCompleted+1,activePlan.steps.size)
+                                val view=requireNotNull(rootInActiveWindow)
+                                try{check(view.packageName?.toString()==plan.app)
+                                    apply(view,plan.app,PhoneNavigationStep("inspect","화면"))
+                                }finally{view.recycle()}
+                                needsSemanticReplan=true
+                            }else{
+                                approveStep(PhoneNavigationStep("visual_inspect","실패 화면 캡처"),
+                                    plan.app,localCompleted+1,activePlan.steps.size)
+                                nextFrame=captureWindow(plan.app);_visual.value=nextFrame
+                            }
                             break
                         }
                         check(success) { "Expected unique accessible control missing" }
                         completed++;localCompleted++
+                        if(engine==null && replan!=null && step.action=="inspect")
+                            needsSemanticReplan=true
                         delay(500)
                     }
                     val frame=nextFrame
-                    if(replan==null || frame==null) {
+                    val mobileReplan=engine==null && replan!=null &&
+                        (needsSemanticReplan || frame!=null || activePlan.steps.last().action=="inspect" ||
+                            activePlan.steps.last().action=="visual_inspect")
+                    if(replan==null || (frame==null && !mobileReplan)) {
                         _status.value="기기 실행 확인 · 누적 "+completed+"단계 · "+
                             if(activePlan.steps.last().action=="expect")"마지막 화면 문구 확인" else "화면 관찰 완료"
                         break
@@ -224,27 +242,49 @@ class PhoneNavigationService : AccessibilityService() {
                         _status.value="재계획 한도 도달 · 실행 "+completed+"단계 · 결과 확인 필요"
                         break
                     }
-                    // Future frames may contain private data. Each transmission is separately
-                    // approved on the target app; the owner may stop at any point.
-                    approveStep(PhoneNavigationStep("visual_inspect","현재 화면을 본체에 전달하고 재계획"),plan.app,1,1)
-                    validRoom()
-                    check(checkedWindow(plan.app)==(frame.windowId to frame.bounds))
-                    _status.value="본체 화면 분석·재계획 대기"
-                    stepLabel?.text="본체 분석 중 · 중지 가능"
-                    val proposal=coroutineScope {
-                        val guard=launch {
-                            while(isActive){validRoom();checkedWindow(plan.app);delay(300)}
+                    // Every observation shared with a model needs a fresh visible approval.
+                    val proposal:PhoneNavigationPlan?
+                    val evidence:String
+                    if(mobileReplan){
+                        approveStep(PhoneNavigationStep("inspect",
+                            "현재 앱의 조작 버튼 문구만 클라우드 AI에 전달하고 재계획"),plan.app,1,1)
+                        validRoom()
+                        val view=requireNotNull(rootInActiveWindow)
+                        try{check(view.packageName?.toString()==plan.app)
+                            apply(view,plan.app,PhoneNavigationStep("inspect","화면"))
+                        }finally{view.recycle()}
+                        val controls=_observed.value?.takeIf{it.packageName==plan.app}?.labels.orEmpty()
+                        if(controls.isEmpty()){
+                            _status.value="읽을 수 있는 조작 버튼 없음 · 실행 "+completed+"단계"
+                            break
                         }
-                        try {
-                            repo.replanPhoneNavigation(replan,frame.digest,frame.png,frame.bounds.width(),frame.bounds.height())
-                        }finally{guard.cancelAndJoin()}
+                        evidence=VisualGesture.digest(controls.joinToString("\n").toByteArray())
+                        _status.value="모바일 클라우드에서 다음 조작 판단 중"
+                        proposal=repo.replanPhoneControls(replan,controls)
+                    }else{
+                        val shot=requireNotNull(frame)
+                        approveStep(PhoneNavigationStep("visual_inspect",
+                            "현재 화면을 본체에 전달하고 재계획"),plan.app,1,1)
+                        validRoom()
+                        check(checkedWindow(plan.app)==(shot.windowId to shot.bounds))
+                        _status.value="본체 화면 분석·재계획 대기"
+                        evidence=shot.digest
+                        proposal=coroutineScope {
+                            val guard=launch {
+                                while(isActive){validRoom();checkedWindow(plan.app);delay(300)}
+                            }
+                            try{
+                                repo.replanPhoneNavigation(replan,shot.digest,shot.png,
+                                    shot.bounds.width(),shot.bounds.height())
+                            }finally{guard.cancelAndJoin()}
+                        }
                     }
                     validRoom()
-                    if(proposal==null) {
-                        _status.value="본체 답변 수신 · 대화에서 결과 확인 필요 · 실행 "+completed+"단계"
+                    if(proposal==null){
+                        _status.value="다음 실행 계획 없음 · 확인된 "+completed+"단계"
                         break
                     }
-                    check(budget.admit(frame.digest,proposal,plan.app)){"Repeated or out-of-scope plan"}
+                    check(budget.admit(evidence,proposal,plan.app)){"Repeated or out-of-scope plan"}
                     activePlan=proposal
                     }
                 }
