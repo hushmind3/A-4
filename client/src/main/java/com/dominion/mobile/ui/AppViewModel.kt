@@ -559,6 +559,17 @@ class AppViewModel(
         dispatchTask(task.id, onAccepted)
     }
 
+    fun linkTaskWorkflow(ids:List<String>){
+        viewModelScope.launch{
+            try{
+                repo.linkTaskWorkflow(ids)
+                _notice.value="연계 업무 등록 · 선행 실행 근거 확인 후 다음 비서에게 전달"
+                repo.advanceTaskWorkflows()
+            }catch(e:CancellationException){throw e}
+            catch(_:Exception){_notice.value="연계 업무를 확인하세요. 접수된 단계는 할 일에 저장됩니다."}
+        }
+    }
+
     fun dispatchTask(taskId: String, onAccepted: (String) -> Unit = {}) {
         if (taskId in _taskBusy.value) return
         _taskBusy.value = _taskBusy.value + taskId
@@ -584,6 +595,9 @@ class AppViewModel(
     suspend fun taskEvidence(id: String, replyId: String) = repo.taskEvidence(id, replyId)
 
     suspend fun refreshDispatchedTasks() {
+        try{repo.advanceTaskWorkflows()}
+        catch(e:CancellationException){throw e}
+        catch(_:Exception){}
         state.value.tasks.filter { it.engineJobId != null }.forEach { task ->
             try { repo.refreshTask(task.id) }
             catch (cancelled: CancellationException) { throw cancelled }
@@ -611,6 +625,10 @@ class AppViewModel(
 
     fun deleteTask(taskId: String) {
         val task=state.value.tasks.firstOrNull{it.id==taskId}?:return
+        if(task.workflowId!=null&&state.value.tasks.any{it.workflowId==task.workflowId&&it.workflowState in setOf("ready","waiting","running")}){
+            _notice.value="연계 실행 중인 업무는 삭제할 수 없습니다."
+            return
+        }
         if(taskId in _taskBusy.value || task.engineStatus in setOf("submitting","cloud_submitting") ||
             (task.engineJobId?.startsWith("cloud:")==true||task.phonePackage!=null)&&task.engineStatus in setOf("queued","running")){
             _notice.value="실행 중인 작업은 먼저 상태를 확인하고 중단해 주세요."

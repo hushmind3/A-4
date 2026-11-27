@@ -264,6 +264,7 @@ fun TasksScreen(
     val lang = LocalLang.current
     var filter by remember { mutableIntStateOf(0) }
     var showAdd by remember { mutableStateOf(false) }
+    var showWorkflow by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<String?>(null) }
     val busyTasks by vm.taskBusy.collectAsStateWithLifecycle()
     var receiptTarget by remember { mutableStateOf<String?>(null) }
@@ -295,6 +296,9 @@ fun TasksScreen(
                 FilterChipItem(tabs[index], filter == index, onClick = { filter = index })
             }
         }
+        if(vm.localExecution)TextButton(onClick={showWorkflow=true},modifier=Modifier.padding(horizontal=16.dp)){
+            Text("비서 연계 업무 · 실행 순서 설정")
+        }
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 30.dp, top = 10.dp)) {
             items(filtered, key = { it.id }) { task ->
                 TaskCard(
@@ -323,6 +327,28 @@ fun TasksScreen(
         }
     }
 
+    if(showWorkflow){
+        var selected by remember{mutableStateOf<List<String>>(emptyList())}
+        val eligible=state.tasks.filter(com.dominion.mobile.data.TaskHandoff::eligible)
+        AlertDialog(onDismissRequest={showWorkflow=false},title={Text("비서 연계 업무")},
+            text={
+                Column{
+                    Text("실행할 순서대로 2~4개 할 일을 선택하세요. 각 할 일에 지정된 비서가 담당합니다. 선행 업무의 실제 실행 근거가 있어야 다음 단계가 열립니다.")
+                    LazyColumn(modifier=Modifier.height(260.dp)){
+                        items(eligible,key={it.id}){task->
+                            val index=selected.indexOf(task.id)
+                            TextButton(onClick={
+                                selected=if(index>=0)selected.filterNot{it==task.id}
+                                    else if(selected.size<4)selected+task.id else selected
+                            }){Text((if(index>=0)"${index+1}. " else "＋ ")+task.title+" · "+(state.character(task.characterId)?.name?:""))}
+                        }
+                    }
+                    Text("앱 조작·주문·발송은 해당 단계에서 별도 승인합니다.")
+                }
+            },
+            confirmButton={TextButton(enabled=selected.size in 2..4,onClick={vm.linkTaskWorkflow(selected);showWorkflow=false}){Text("연계 실행 등록")}},
+            dismissButton={TextButton(onClick={showWorkflow=false}){Text("취소")}})
+    }
     receiptTarget?.let { id ->
         com.dominion.mobile.ui.components.TaskReceiptDialog(vm, id,
             onDismiss = { receiptTarget = null })
@@ -398,6 +424,16 @@ private fun TaskCard(
         Spacer(Modifier.height(8.dp))
         Text(tr(lang, "체크리스트는 직접 관리 · AI 실행은 본체 상태로 표시", "Manual checklist · engine execution status shown separately"),
             style = MaterialTheme.typography.labelSmall, color = p.textTertiary)
+        task.workflowState?.let{status->
+            Text("연계 업무 · "+when(status){
+                "waiting"->"선행 작업 근거 대기"
+                "ready"->"다음 단계 실행 가능"
+                "running"->"실행 중"
+                "verified"->"근거 확인 · 다음 단계 전달"
+                "blocked"->"실행 근거 부족 · 연계 중단"
+                else->status
+            },style=MaterialTheme.typography.labelSmall,color=p.textSecondary)
+        }
         task.engineStatus?.let { status ->
             val label = when (status) {
                 "submitting", "cloud_submitting" -> tr(lang, "접수 확인 필요", "Submission needs verification")
@@ -411,7 +447,7 @@ private fun TaskCard(
             Text(label + " · " + tr(lang, "마지막 조회 상태", "Last known status"), color = p.textSecondary)
         }
         Row {
-            TextButton(enabled = !busy, onClick = onDispatch) {
+            TextButton(enabled = !busy&&task.workflowState !in setOf("waiting","blocked","verified"), onClick = onDispatch) {
                 Text(if (busy) tr(lang, "확인 중…", "Checking…")
                     else if (task.engineJobId != null) tr(lang, "상태 확인", "Check status")
                     else if (task.engineRoomId != null) tr(lang, "접수 재확인", "Recheck submission")

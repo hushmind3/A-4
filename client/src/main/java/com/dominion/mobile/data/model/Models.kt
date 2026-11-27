@@ -163,7 +163,11 @@ data class TaskItem(
     val phonePackage: String? = null,
     val kakaoMessage: com.dominion.mobile.data.KakaoMessageRequest? = null,
     val phonePublicRead:Boolean=false,
-    val phoneTransaction:com.dominion.mobile.data.PhoneTransactionRequest?=null
+    val phoneTransaction:com.dominion.mobile.data.PhoneTransactionRequest?=null,
+    val workflowId:String?=null,
+    val workflowAfter:String?=null,
+    val workflowState:String?=null,
+    val workflowEvidence:String?=null
 ) {
     val progress: Float
         get() = if (steps.isEmpty()) (if (done) 1f else 0f)

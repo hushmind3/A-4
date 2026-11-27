@@ -76,6 +76,11 @@ class CloudJobWorker(context:Context,parameters:WorkerParameters):CoroutineWorke
             }catch(e:CancellationException){throw e}
             catch(_:Exception){transientFailure=true}
         }
+        if(container.repository===repo&&container.engine==null&&container.cloudAccount.savedAccountId()==account){
+            try{repo.advanceTaskWorkflows()}
+            catch(e:CancellationException){throw e}
+            catch(_:Exception){transientFailure=true}
+        }
         return if(transientFailure)Result.retry() else Result.success()
     }
 
