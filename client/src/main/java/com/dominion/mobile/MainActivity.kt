@@ -41,6 +41,17 @@ class MainActivity : ComponentActivity() {
                 ready = true
                 handleIntent(intent)
                 setContent { DominionAppRoot(viewModel) }
+                val container=(application as DominionApplication).container
+                if(container.engine==null)launch {
+                    try {
+                        val candidate=kotlinx.coroutines.withTimeoutOrNull(20_000L){
+                            container.cloudAccount.restoreLinkedEngine()
+                        }
+                        if(candidate!=null && container.engine==null &&
+                            container.repository.state.value.call==null)applyEngine(candidate)
+                    }catch(cancelled:CancellationException){throw cancelled}
+                    catch(_:Exception){/* Disconnected state and manual retry remain available. */}
+                }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { setContent { Text("Local database could not be opened. Restart to retry.") } }
         }

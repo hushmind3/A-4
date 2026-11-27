@@ -76,13 +76,18 @@ data class CloudAccountSnapshot(
     val expiresAt: Long = 0,
     val accountId: String? = null,
     val billing: CloudBilling? = null,
-    val models: List<CloudModel> = emptyList()
+    val models: List<CloudModel> = emptyList(),
+    val linkedEngineOrigin:String?=null,
+    val autoReconnect:Boolean=false
 )
 
 class CloudAccountRepository(context: Context) {
     private val appContext = context.applicationContext
     private val store = EncryptedRecordStore(appContext, "dominion_cloud_session", CloudPairing::class.java)
     private val lock = Mutex()
+    private val engineLinks=EncryptedRecordStore(appContext,"dominion_cloud_engine_links",CloudEngineLinks::class.java)
+    private fun links()=engineLinks.load()?:CloudEngineLinks()
+    private fun saveLinks(value:CloudEngineLinks)=engineLinks.save(value)
     private val api = Retrofit.Builder().baseUrl("$CLOUD_ORIGIN/")
         .client(OkHttpClient.Builder().followRedirects(false).followSslRedirects(false)
             .retryOnConnectionFailure(false).connectTimeout(15,TimeUnit.SECONDS)
@@ -127,9 +132,11 @@ class CloudAccountRepository(context: Context) {
                     require(pair.verifiedAccountId == null || pair.verifiedAccountId == identity.account_id)
                     val billing = api.billing(auth).verifiedFor(identity.account_id)
                     if (pair.verifiedAccountId == null) store.save(pair.copy(verifiedAccountId = identity.account_id))
+                    val link=links().forAccount(identity.account_id)
                     CloudAccountSnapshot(pair.id, status = "approved", expiresAt = status.expires_at,
                         accountId = identity.account_id, billing = billing,
-                        models = api.models(auth).data.filter { it.free })
+                        models = api.models(auth).data.filter { it.free },
+                        linkedEngineOrigin=link?.connection?.origin,autoReconnect=link?.autoReconnect==true)
                 }
                 "revoked", "expired" -> {
                     store.clear()
@@ -151,6 +158,40 @@ class CloudAccountRepository(context: Context) {
         if(pair.verifiedAccountId==null)store.save(pair.copy(verifiedAccountId=identity.account_id))
         return pair to identity
     }
+
+    /** Local association of existing owner credentials with an approved cloud account. */
+    suspend fun bindEngine(connection:com.dominion.mobile.data.local.EngineConnection,
+        stillSelected:()->Boolean) = withContext(Dispatchers.IO) { lock.withLock {
+        val account=approved().second.account_id
+        check(stillSelected())
+        val probe=probeEngine(ApiFactory.create(connection))
+        check(probe.authenticated==ProbeState.OK && probe.rooms==ProbeState.OK)
+        check(stillSelected() && approved().second.account_id==account)
+        saveLinks(links().bind(account,connection))
+    } }
+
+    suspend fun restoreLinkedEngine(automatic:Boolean=true):com.dominion.mobile.data.local.EngineConnection? =
+        withContext(Dispatchers.IO) { lock.withLock {
+            if(loadPairing()==null)return@withLock null
+            val account=approved().second.account_id
+            val link=links().forAccount(account)?:return@withLock null
+            if(automatic && !link.autoReconnect)return@withLock null
+            val raw=link.connection
+            val connection=com.dominion.mobile.data.local.EngineConnection.parse(raw.origin,raw.ownerToken,
+                raw.accessClientId,raw.accessClientSecret)
+            val result=probeEngine(ApiFactory.create(connection))
+            check(result.authenticated==ProbeState.OK && result.rooms==ProbeState.OK)
+            check(approved().second.account_id==account)
+            if(!automatic)saveLinks(links().bind(account,connection))
+            connection
+        } }
+
+    suspend fun pauseEngineReconnect(connection:com.dominion.mobile.data.local.EngineConnection) =
+        withContext(Dispatchers.IO) { lock.withLock { saveLinks(links().pause(connection)) } }
+
+    suspend fun unlinkEngine()=withContext(Dispatchers.IO) { lock.withLock {
+        saveLinks(links().forget(approved().second.account_id))
+    } }
 
     suspend fun complete(model:String,messages:List<CloudChatMessage>):CloudCompletion =
         withContext(Dispatchers.IO) { lock.withLock {

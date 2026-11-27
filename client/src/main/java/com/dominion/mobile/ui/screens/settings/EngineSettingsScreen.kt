@@ -130,7 +130,10 @@ fun EngineSettingsScreen(onBack: () -> Unit) {
                 (context as MainActivity).applyEngine(candidate)
             } }) { Text(tr(lang, "확인 후 연결", "Verify and connect")) }
             if (api != null) {
-                OutlinedButton(enabled = !busy, onClick = { action { (context as MainActivity).applyEngine(null) } }) {
+                OutlinedButton(enabled = !busy, onClick = { action {
+                    saved?.let{container.cloudAccount.pauseEngineReconnect(it)}
+                    (context as MainActivity).applyEngine(null)
+                } }) {
                     Text(tr(lang, "본체 연결 해제", "Disconnect engine"))
                 }
                 HorizontalDivider()

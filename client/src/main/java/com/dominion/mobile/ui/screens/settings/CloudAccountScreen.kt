@@ -49,6 +49,23 @@ fun CloudAccountScreen(onBack: () -> Unit, onEngineSettings: () -> Unit) {
     var resultInfo by remember { mutableStateOf("") }
     var registerReview by remember { mutableStateOf(false) }
     var registered by remember { mutableStateOf("") }
+    var engineReview by remember{mutableStateOf(false)}
+    var restoredAccount by remember{mutableStateOf<String?>(null)}
+    LaunchedEffect(snapshot?.accountId,snapshot?.autoReconnect,snapshot?.status) {
+        val current=snapshot ?: return@LaunchedEffect
+        if(current.status!="approved" || !current.autoReconnect || current.accountId==null ||
+            container.engine!=null || restoredAccount==current.accountId)return@LaunchedEffect
+        restoredAccount=current.accountId
+        busy=true
+        try {
+            val candidate=repo.restoreLinkedEngine()
+            if(candidate!=null && container.engine==null && container.repository.state.value.call==null) {
+                (context as com.dominion.mobile.MainActivity).applyEngine(candidate)
+            }
+        }catch(e:CancellationException){throw e}
+        catch(_:Exception){error=true}
+        finally{busy=false}
+    }
     LaunchedEffect(snapshot?.accountId,snapshot?.pairingId) {
         history=emptyList();resultInfo="";registered="";ask=""
     }
@@ -98,6 +115,20 @@ fun CloudAccountScreen(onBack: () -> Unit, onEngineSettings: () -> Unit) {
         }
     }
 
+    if(engineReview) {
+        val engine=container.engine
+        AlertDialog(onDismissRequest={engineReview=false},title={Text("Google 계정에 본체 연결 기억")},text={
+            Text("본체: "+(engine?.origin?:"미설정")+"\n이 기기의 암호화 저장소에만 연결을 기억합니다. "+
+                "같은 Google 계정으로 다시 로그인하면 저장된 본체 인증을 확인하고 자동 복원합니다. "+
+                "본체 관리자 토큰이나 Cloudflare Access 비밀키는 클라우드에 업로드하지 않습니다.")
+        },confirmButton={TextButton(enabled=engine!=null&&!busy,onClick={
+            engineReview=false
+            if(engine!=null)runAction({
+                repo.bindEngine(engine){container.engine===engine}
+                repo.refresh()
+            })
+        }){Text("이 본체 기억")}},dismissButton={TextButton(onClick={engineReview=false}){Text("취소")}})
+    }
     if(registerReview) {
         val engine=container.engine
         AlertDialog(onDismissRequest={registerReview=false},title={Text("본체에 무료 모델 연결")},text={
@@ -164,6 +195,29 @@ fun CloudAccountScreen(onBack: () -> Unit, onEngineSettings: () -> Unit) {
                         }
                         Text(tr(lang, "오늘 무료 모델 잔여 요청: ", "Free requests remaining today: ") +
                             "${it.free_daily_remaining} / ${it.free_daily_limit}")
+                    }
+                    Text("Google 계정의 본체 연결",style=MaterialTheme.typography.titleMedium)
+                    if(current.linkedEngineOrigin!=null){
+                        Text("이 기기에 기억한 본체: "+current.linkedEngineOrigin)
+                        Text(if(current.autoReconnect)"자동 복원 켜짐" else "자동 복원 일시 중지")
+                        if(container.engine==null)Button(enabled=!busy,onClick={
+                            busy=true;error=false
+                            scope.launch{
+                                try{
+                                    val candidate=repo.restoreLinkedEngine(automatic=false)
+                                    if(candidate!=null && container.engine==null)
+                                        (context as com.dominion.mobile.MainActivity).applyEngine(candidate)
+                                }catch(e:CancellationException){throw e}
+                                catch(_:Exception){error=true}
+                                finally{busy=false}
+                            }
+                        }){Text("기억한 본체에 연결")}
+                        OutlinedButton(enabled=!busy,onClick={runAction({repo.unlinkEngine();repo.refresh()})}){
+                            Text("이 계정의 본체 기억 해제")
+                        }
+                    }else Text("처음에는 본체의 HTTPS 주소와 기존 접근 권한을 설정한 후 한 번 기억해야 합니다.")
+                    if(container.engine!=null)OutlinedButton(enabled=!busy,onClick={engineReview=true}){
+                        Text("현재 본체를 이 Google 계정에 기억")
                     }
                     Text(tr(lang,"Cloudflare 무료 모델","Cloudflare free models"),style=MaterialTheme.typography.titleMedium)
                     current.models.forEach { model ->
