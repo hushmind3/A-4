@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -47,9 +48,9 @@ fun MobileVoiceConversationDialog(vm:AppViewModel,roomId:String,onDismiss:()->Un
     var checked by remember{mutableStateOf(false)}
     var continuous by remember(roomId){mutableStateOf(false)}
     var nextTurn by remember(roomId){mutableIntStateOf(0)}
-    val originalAccount=remember(roomId){cloud.savedAccountId()}
+    var originalAccount by remember(roomId){mutableStateOf(cloud.savedAccountId())}
     fun sessionValid()=vm.state.value.conversation(roomId)?.sessionId==originalSession &&
-        !originalSession.isNullOrBlank() && cloud.savedAccountId()==originalAccount
+        !originalSession.isNullOrBlank() && originalAccount!=null && cloud.savedAccountId()==originalAccount
     var voiceCapabilities by remember{mutableStateOf<com.dominion.mobile.data.remote.CloudVoiceCapabilities?>(null)}
 
     fun record(){
@@ -89,6 +90,7 @@ fun MobileVoiceConversationDialog(vm:AppViewModel,roomId:String,onDismiss:()->Un
     LaunchedEffect(roomId){
         try{
             voiceCapabilities=cloud.mobileVoiceCapabilities()
+            if(originalAccount==null)originalAccount=cloud.savedAccountId()
             checked=true
         }catch(cancelled:CancellationException){throw cancelled}
         catch(_:Exception){phase="클라우드 연결을 확인해 주세요";checked=true}
@@ -99,7 +101,8 @@ fun MobileVoiceConversationDialog(vm:AppViewModel,roomId:String,onDismiss:()->Un
         if(nextTurn>0&&continuous&&!recording&&waiting==null&&sessionValid()&&
             ContextCompat.checkSelfPermission(context,Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED)record()
     }
-    LaunchedEffect(room?.sessionId, state.settings.lang){
+    LaunchedEffect(room?.sessionId, state.settings.lang, checked, cloud.savedAccountId()){
+        if(!checked)return@LaunchedEffect
         if(!sessionValid()||(if(state.settings.lang==Lang.KO)"ko" else "en")!=language){
             continuous=false;stopRecording.set(true);recordingJob?.cancel();speakingJob?.cancel();waiting=null
             phase="대화방 또는 계정 변경으로 음성 대화 중지"
@@ -188,7 +191,7 @@ fun MobileVoiceConversationDialog(vm:AppViewModel,roomId:String,onDismiss:()->Un
         confirmButton={
             if(recording)TextButton(onClick={stopRecording.set(true);phase="발화 마무리 중"}){Text("발화 끝내기")}
             else TextButton(
-                enabled=waiting==null && room?.sessionId==originalSession && voiceCapabilities?.stt==true,
+                enabled=waiting==null && sessionValid() && voiceCapabilities?.stt==true,
                 onClick={
                     if(ContextCompat.checkSelfPermission(context,Manifest.permission.RECORD_AUDIO)==
                         PackageManager.PERMISSION_GRANTED)record()
@@ -198,7 +201,7 @@ fun MobileVoiceConversationDialog(vm:AppViewModel,roomId:String,onDismiss:()->Un
         dismissButton={
             Row{
                 if(speakingJob?.isActive==true)TextButton(onClick={
-                    continuous=false;speakingJob?.cancel();speakingJob=null;phase="음성 재생 중단"
+                    continuous=false;speakingJob?.cancel();phase="음성 재생 중단"
                 }){Text("읽기 중단")}
                 TextButton(onClick={
                     stopRecording.set(true)
