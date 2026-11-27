@@ -26,6 +26,8 @@
         android:name="android.hardware.camera"
         android:required="false" />
 
+    <uses-feature android:name="android.hardware.camera.ar" android:required="false" />
+
     <queries>
         <package android:name="com.kakao.talk" />
         <package android:name="com.nhn.android.nmap" />
@@ -43,6 +45,9 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Dominion">
 
+        <meta-data android:name="com.google.ar.core" android:value="optional" />
+        <activity android:name=".platform.avatar.AvatarSceneActivity"
+            android:exported="false" android:screenOrientation="portrait" />
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|uiMode"

@@ -126,6 +126,14 @@ fun CharacterScreen(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 AssistantAvatar(Color(character.color), character.shape, size = 104.dp, level = character.level, breathing = true, photo = character.avatarPhoto)
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    androidx.compose.material3.TextButton(onClick = {
+                        com.dominion.mobile.platform.avatar.AvatarSceneActivity.open(context, character, false)
+                    }) { Text("3D 보기") }
+                    androidx.compose.material3.TextButton(enabled = state.call == null, onClick = {
+                        com.dominion.mobile.platform.avatar.AvatarSceneActivity.open(context, character, true)
+                    }) { Text("AR 공간 배치") }
+                }
                 Spacer(Modifier.height(12.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(character.name, style = MaterialTheme.typography.headlineMedium, color = p.textPrimary)
