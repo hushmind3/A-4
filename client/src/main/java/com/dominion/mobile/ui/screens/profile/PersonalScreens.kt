@@ -266,6 +266,7 @@ fun TasksScreen(
     var filter by remember { mutableIntStateOf(0) }
     var showAdd by remember { mutableStateOf(false) }
     var showWorkflow by remember { mutableStateOf(false) }
+    var showAutoWorkflow by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<String?>(null) }
     val busyTasks by vm.taskBusy.collectAsStateWithLifecycle()
     var receiptTarget by remember { mutableStateOf<String?>(null) }
@@ -297,6 +298,9 @@ fun TasksScreen(
             items(tabs.size) { index ->
                 FilterChipItem(tabs[index], filter == index, onClick = { filter = index })
             }
+        }
+        if(vm.localExecution)TextButton(onClick={showAutoWorkflow=true},modifier=Modifier.padding(horizontal=16.dp)){
+            Text("AI에게 복합 업무 맡기기")
         }
         if(vm.localExecution)TextButton(onClick={showWorkflow=true},modifier=Modifier.padding(horizontal=16.dp)){
             Text("비서 연계 업무 · 실행 순서 설정")
@@ -330,6 +334,43 @@ fun TasksScreen(
         }
     }
 
+    if(showAutoWorkflow){
+        val scope=androidx.compose.runtime.rememberCoroutineScope()
+        var goal by remember{mutableStateOf("")}
+        var preview by remember{mutableStateOf<com.dominion.mobile.data.ErrandWorkflowDraft?>(null)}
+        var busy by remember{mutableStateOf(false)}
+        var error by remember{mutableStateOf("")}
+        AlertDialog(onDismissRequest={if(!busy)showAutoWorkflow=false},title={Text("복합 업무 자동 분해")},
+            text={Column{
+                AppTextField(goal,{goal=it.take(1500);preview=null},label="전체 업무 목표",singleLine=false,maxLines=4)
+                Text("AI가 공개 정보 조사와 앱 검색 단계를 배정합니다. 요청 내용은 기존 AI에 전송됩니다. 결제·발송·예약 확정은 별도 업무로 승인해야 합니다.")
+                TextButton(enabled=!busy&&goal.trim().length>=3,onClick={
+                    scope.launch{
+                        busy=true;error=""
+                        try{preview=vm.planErrandWorkflow(goal)}
+                        catch(e:kotlinx.coroutines.CancellationException){throw e}
+                        catch(_:Exception){error="계획을 만들지 못했습니다. 요청 또는 연결을 확인하세요."}
+                        finally{busy=false}
+                    }
+                }){Text(if(busy)"업무 분해 중" else "실행 계획 생성")}
+                preview?.let{draft->
+                    LazyColumn(modifier=Modifier.height(230.dp)){
+                        itemsIndexed(draft.stages){index,stage->
+                            Column(Modifier.padding(vertical=6.dp)){
+                                Text("${index+1}. "+stage.title,style=MaterialTheme.typography.titleSmall)
+                                Text((state.character(stage.agentId)?.name?:stage.agentId)+" · "+(stage.app?:"백그라운드 공개 조사"))
+                                Text(stage.request,style=MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+                if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
+            }},
+            confirmButton={TextButton(enabled=!busy&&preview!=null,onClick={
+                vm.acceptErrandWorkflow(requireNotNull(preview));showAutoWorkflow=false
+            }){Text("검토한 단계 실행 등록")}},
+            dismissButton={TextButton(enabled=!busy,onClick={showAutoWorkflow=false}){Text("닫기")}})
+    }
     if(showWorkflow){
         var selected by remember{mutableStateOf<List<String>>(emptyList())}
         val eligible=state.tasks.filter(com.dominion.mobile.data.TaskHandoff::eligible)

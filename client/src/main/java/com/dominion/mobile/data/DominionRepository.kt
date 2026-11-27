@@ -125,6 +125,8 @@ interface DominionRepository {
     suspend fun recordMessageReply(pkg:String,title:String,body:String,at:Long):Boolean = false
     suspend fun confirmMessageReply(id:String,observedAt:Long):Unit = error("Reply review unavailable")
     suspend fun draftMessageReply(id:String,observedAt:Long,goal:String):String = error("Reply drafting unavailable")
+    suspend fun planErrandWorkflow(goal:String):ErrandWorkflowDraft = error("Workflow planner unavailable")
+    suspend fun acceptErrandWorkflow(draft:ErrandWorkflowDraft):Unit = error("Workflow planner unavailable")
     suspend fun linkTaskWorkflow(ids:List<String>):Unit = error("Workflow unavailable")
     suspend fun advanceTaskWorkflows():Unit = Unit
     suspend fun submitTask(id: String): Unit = error("Engine not connected")
