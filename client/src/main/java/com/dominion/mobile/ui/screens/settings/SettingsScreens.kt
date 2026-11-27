@@ -277,6 +277,9 @@ fun SettingsScreen(
         }
     }
 
+    if (accountOperations) com.dominion.mobile.ui.components.MobileOperationsDialog(vm,
+        action = com.dominion.mobile.data.remote.MobileAction.ACCOUNT_DELETE,
+        title = "서버 계정 삭제", target = null, onDismiss = { accountOperations = false })
 }
 
 @Composable
@@ -285,9 +288,6 @@ private fun SettingsGroup(content: @Composable () -> Unit) {
     Box(Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(p.card).border(0.5.dp, p.hairline, RoundedCornerShape(20.dp))) {
         Column(content = { content() })
     }
-    if (accountOperations) com.dominion.mobile.ui.components.MobileOperationsDialog(vm,
-        action = com.dominion.mobile.data.remote.MobileAction.ACCOUNT_DELETE,
-        title = "서버 계정 삭제", target = null, onDismiss = { accountOperations = false })
 }
 
 @Composable
