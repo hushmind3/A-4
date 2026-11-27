@@ -912,6 +912,24 @@ class RemoteBackedRepository(
         store.saveState(_state.value)
     }
 
+    private val globalCursor=java.util.concurrent.atomic.AtomicLong(0L)
+    override fun engineChangeSignals()=if(endpoint==null)kotlinx.coroutines.flow.emptyFlow()
+        else com.dominion.mobile.data.remote.engineChangeSignals(api,globalCursor)
+
+    override suspend fun synchronizeChange(change:EngineChange) {
+        if(endpoint==null)return
+        try {
+            if(change.catalog) { refresh();return }
+            if(change.memory){refreshMemories();return}
+            val id=change.roomId ?: state.value.conversations.singleOrNull{it.sessionId==change.sessionId}?.id
+            if(id!=null){
+                if(state.value.conversation(id)==null)refresh()
+                if(state.value.conversation(id)!=null)refreshRoomHistory(id)
+            }
+        }catch(e:CancellationException){throw e}
+        catch(_:Exception){/* periodic verified snapshot repairs a missed event */}
+    }
+
     private val syncLock=Mutex()
     private var syncCursor=0
 

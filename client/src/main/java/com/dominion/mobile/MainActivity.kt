@@ -83,11 +83,14 @@ class MainActivity : ComponentActivity() {
         }
         intent.getStringExtra("dominion_notification_room")?.let { roomId ->
             val originKey = intent.getStringExtra("dominion_notification_origin")
+            val credential=intent.getStringExtra("dominion_notification_credential")
             intent.removeExtra("dominion_notification_room")
             intent.removeExtra("dominion_notification_origin")
+            intent.removeExtra("dominion_notification_credential")
             val current = (application as DominionApplication).container.engine
             if (current != null && originKey ==
-                com.dominion.mobile.platform.background.BackgroundJobMonitor.originKey(current.origin)) {
+                com.dominion.mobile.platform.background.BackgroundJobMonitor.originKey(current.origin) &&
+                (credential==null || credential==com.dominion.mobile.platform.background.NotificationReplyReceiver.credentialKey(current))) {
                 viewModel.openRoomFromNotification(roomId)
             }
             return

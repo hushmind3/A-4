@@ -38,7 +38,7 @@ class EngineSyncWorker(context:Context,params:WorkerParameters):CoroutineWorker(
             repo.synchronizeEngine()
             if(container.engine!==engine || container.repository!==repo)return Result.success()
             pendingJobWatches(repo.state.value).forEach{watch->
-                BackgroundJobMonitor.enqueue(applicationContext,engine.origin,watch.roomId,watch.jobId)
+                BackgroundJobMonitor.enqueue(applicationContext,engine,watch.roomId,watch.jobId)
             }
         }catch(e:CancellationException){throw e}
         catch(_:Exception){return Result.retry()}

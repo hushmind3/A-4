@@ -71,6 +71,8 @@ class AppViewModel(
 
     suspend fun refreshServer() = repo.refresh()
     suspend fun synchronizeServer() = repo.synchronizeEngine()
+    fun engineChangeSignals()=repo.engineChangeSignals()
+    suspend fun synchronizeChange(change:com.dominion.mobile.data.remote.EngineChange)=repo.synchronizeChange(change)
 
     suspend fun searchMessages(query: String) = repo.searchMessages(query)
 

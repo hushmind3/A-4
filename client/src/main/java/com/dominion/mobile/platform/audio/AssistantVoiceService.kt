@@ -158,6 +158,9 @@ class AssistantVoiceService:Service(){
             this.flags=Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra("dominion_notification_origin",BackgroundJobMonitor.originKey(origin))
             putExtra("dominion_notification_room",room)
+            (application as DominionApplication).container.engine?.let {
+                putExtra("dominion_notification_credential",com.dominion.mobile.platform.background.NotificationReplyReceiver.credentialKey(it))
+            }
         }
         val content=PendingIntent.getActivity(this,NOTIFICATION,open,PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         fun command(action:String,code:Int)=PendingIntent.getService(this,code,

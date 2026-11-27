@@ -131,6 +131,11 @@ fun DominionAppRoot(vm: AppViewModel) {
                 }
             }
         }
+        LaunchedEffect(lifecycleOwner,vm) {
+            lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                vm.engineChangeSignals().collect { change -> vm.synchronizeChange(change) }
+            }
+        }
         DisposableEffect(lifecycleOwner, state.settings.appLock) {
             val observer = LifecycleEventObserver { _, event ->
                 if (event == Lifecycle.Event.ON_STOP) {

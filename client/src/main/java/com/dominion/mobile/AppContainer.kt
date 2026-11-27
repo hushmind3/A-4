@@ -24,7 +24,7 @@ class AppContainer(context: Context) {
     private fun restoreJobWatches() {
         val connection = engine ?: return
         com.dominion.mobile.data.remote.pendingJobWatches(repository.state.value).forEach { watch ->
-            BackgroundJobMonitor.enqueue(app, connection.origin, watch.roomId, watch.jobId)
+            BackgroundJobMonitor.enqueue(app, connection, watch.roomId, watch.jobId)
         }
     }
 
@@ -49,7 +49,7 @@ class AppContainer(context: Context) {
             onRemindersChanged = { items ->
                 com.dominion.mobile.platform.background.ReminderMonitor.schedule(app, scope, items)
             }) { roomId, jobId ->
-            connection?.let { BackgroundJobMonitor.enqueue(app, it.origin, roomId, jobId) }
+            connection?.let { BackgroundJobMonitor.enqueue(app, it, roomId, jobId) }
         }
     }
 

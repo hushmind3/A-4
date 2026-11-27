@@ -42,18 +42,22 @@ object BackgroundJobMonitor {
     internal fun workKey(origin: String, room: String, job: String) =
         PREFIX + digest(origin + "|" + room + "|" + job)
 
-    fun enqueue(context: Context, origin: String, roomId: String, jobId: String) {
+    internal fun scopedWorkKey(engine:com.dominion.mobile.data.local.EngineConnection,room:String,job:String)=
+        workKey(NotificationReplyReceiver.credentialKey(engine),room,job)
+
+    fun enqueue(context: Context, engine:com.dominion.mobile.data.local.EngineConnection, roomId: String, jobId: String) {
         if (roomId.isBlank() || jobId.isBlank()) return
-        val name = workKey(origin, roomId, jobId)
+        val name = scopedWorkKey(engine, roomId, jobId)
         val work = PeriodicWorkRequestBuilder<BackgroundJobWorker>(15, TimeUnit.MINUTES)
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
-            .setInputData(workDataOf(ORIGIN to originKey(origin), ROOM to roomId, JOB to jobId))
+            .setInputData(workDataOf(ORIGIN to originKey(engine.origin), ROOM to roomId, JOB to jobId,
+                "credential" to NotificationReplyReceiver.credentialKey(engine)))
             .build()
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(name, ExistingPeriodicWorkPolicy.KEEP, work)
     }
 
-    internal fun stop(context: Context, origin: String, room: String, job: String) =
-        WorkManager.getInstance(context).cancelUniqueWork(workKey(origin, room, job))
+    internal fun stop(context: Context, engine:com.dominion.mobile.data.local.EngineConnection, room: String, job: String) =
+        WorkManager.getInstance(context).cancelUniqueWork(scopedWorkKey(engine, room, job))
 }
 
 /** Reads only the server's durable records; never starts or resumes an agent job. */
@@ -69,7 +73,8 @@ class BackgroundJobWorker(context: Context, params: WorkerParameters) : Coroutin
         val engine = container.engine
         val repository = container.repository
         // Never use a new engine's owner token to fetch the previous engine's job.
-        if (engine == null || BackgroundJobMonitor.originKey(engine.origin) != expected) {
+        if (engine == null || BackgroundJobMonitor.originKey(engine.origin) != expected ||
+            inputData.getString("credential")!=NotificationReplyReceiver.credentialKey(engine)) {
             WorkManager.getInstance(applicationContext).cancelWorkById(id)
             return Result.success()
         }
@@ -84,7 +89,7 @@ class BackgroundJobWorker(context: Context, params: WorkerParameters) : Coroutin
             return Result.success()
         }
         if (!job.belongsToRoom(roomId, jobId)) {
-            BackgroundJobMonitor.stop(applicationContext, engine.origin, roomId, jobId)
+            BackgroundJobMonitor.stop(applicationContext, engine, roomId, jobId)
             return Result.success()
         }
         // Persist actual server status before announcing it or cancelling the durable watcher.
@@ -93,7 +98,7 @@ class BackgroundJobWorker(context: Context, params: WorkerParameters) : Coroutin
         catch (_: Exception) { return Result.retry() }
         if (container.engine !== engine || container.repository !== repository) return Result.success()
         verifiedSession = job.sessionId
-        val key = BackgroundJobMonitor.workKey(engine.origin, roomId, jobId)
+        val key = BackgroundJobMonitor.scopedWorkKey(engine, roomId, jobId)
         when (job.status) {
             "completed" -> {
                 val task = repository.state.value.tasks.firstOrNull {
@@ -108,15 +113,15 @@ class BackgroundJobWorker(context: Context, params: WorkerParameters) : Coroutin
                         com.dominion.mobile.data.WatchDecision.NO_MATCH -> Unit
                     }
                 } else notifyOnce(key, "completed", "DOMINION 작업 완료", "서버 작업이 완료됐습니다. 대화방에서 결과를 확인하세요.")
-                BackgroundJobMonitor.stop(applicationContext, engine.origin, roomId, jobId)
+                BackgroundJobMonitor.stop(applicationContext, engine, roomId, jobId)
             }
             "failed" -> {
                 notifyOnce(key, "failed", "DOMINION 작업 실패", "대화방에서 실패 원인을 확인하세요.")
-                BackgroundJobMonitor.stop(applicationContext, engine.origin, roomId, jobId)
+                BackgroundJobMonitor.stop(applicationContext, engine, roomId, jobId)
             }
             "cancelled" -> {
                 notifyOnce(key, "cancelled", "DOMINION 작업 중단", "서버에서 작업이 중단됐습니다.")
-                BackgroundJobMonitor.stop(applicationContext, engine.origin, roomId, jobId)
+                BackgroundJobMonitor.stop(applicationContext, engine, roomId, jobId)
             }
             "needs_review", "paused", "interrupted", "stopped" ->
                 notifyOnce(key, job.status ?: "attention", "DOMINION 작업 확인 필요", "대화방에서 현재 상태를 확인하세요.")
@@ -141,8 +146,9 @@ class BackgroundJobWorker(context: Context, params: WorkerParameters) : Coroutin
     private fun canNotify(): Boolean {
         val container = (applicationContext as DominionApplication).container
         val room = inputData.getString(BackgroundJobMonitor.ROOM)
-        if (container.engine?.origin?.let(BackgroundJobMonitor::originKey) != inputData.getString(BackgroundJobMonitor.ORIGIN))
-            return false
+        val engine=container.engine ?: return false
+        if (BackgroundJobMonitor.originKey(engine.origin) != inputData.getString(BackgroundJobMonitor.ORIGIN) ||
+            NotificationReplyReceiver.credentialKey(engine)!=inputData.getString("credential"))return false
         val state = container.repository.state.value
         if (!state.settings.notifications || (room != null && state.conversation(room)?.muted == true)) return false
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(applicationContext,
@@ -162,6 +168,7 @@ class BackgroundJobWorker(context: Context, params: WorkerParameters) : Coroutin
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra("dominion_notification_room", inputData.getString(BackgroundJobMonitor.ROOM))
             putExtra("dominion_notification_origin", inputData.getString(BackgroundJobMonitor.ORIGIN))
+            putExtra("dominion_notification_credential",inputData.getString("credential"))
         }
         val id = key.hashCode() and 0x7fffffff
         val destination = PendingIntent.getActivity(applicationContext, id, open,
