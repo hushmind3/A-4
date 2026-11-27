@@ -153,6 +153,7 @@ fun ChatRoomScreen(
     var miniAppMessage by remember(conversationId, conversation.sessionId) { mutableStateOf<Message?>(null) }
     var createMiniApp by remember(conversationId, conversation.sessionId) { mutableStateOf(false) }
     var createPhonePlan by remember(conversationId, conversation.sessionId) { mutableStateOf(false) }
+    var workflowGoal by remember(conversationId, conversation.sessionId) { mutableStateOf<String?>(null) }
     var phonePlanMessage by remember(conversationId, conversation.sessionId) { mutableStateOf<Message?>(null) }
     var attachmentViewer by remember(conversationId, conversation.sessionId) {
         mutableStateOf<com.dominion.mobile.data.model.ArchiveItem?>(null)
@@ -359,7 +360,10 @@ fun ChatRoomScreen(
                 }
             }
             GlyphButton(Glyph.PHONE, onClick = {
-                if(vm.localExecution) startSpeechInput()
+                if(vm.localExecution) {
+                    if(state.call==null)voiceConversation=true
+                    else context.toast(tr(lang,"통화 종료 후 사용하세요.","End the call first."))
+                }
                 else if (vm.startCall(conversationId, false)) onStartCall(false)
                 else context.toast(tr(lang, "음성 통화를 시작할 수 없습니다.", "Unable to start voice call"))
             })
@@ -424,6 +428,15 @@ fun ChatRoomScreen(
                             }) {
                             androidx.compose.material3.OutlinedButton(onClick = { miniAppMessage = entry.message },
                                 modifier = Modifier.padding(start = 40.dp, bottom = 8.dp)) { Text("미니앱 실행") }
+                        }
+                        if(vm.localExecution&&entry.message.sender==MessageSender.ASSISTANT&&
+                            entry.message.text==com.dominion.mobile.data.ErrandWorkflowDraft.CHAT_OFFER){
+                            val owner=conversation.messages.firstOrNull{it.id==entry.message.replyTo&&
+                                it.sender==MessageSender.USER&&it.jobStatus=="needs_review"}
+                            if(owner!=null&&owner.text.trim().length in 3..1500){
+                                androidx.compose.material3.OutlinedButton(onClick={workflowGoal=owner.text.trim()},
+                                    modifier=Modifier.padding(start=40.dp,bottom=8.dp)){Text("복합 업무 계획 검토")}
+                            }
                         }
                         if(entry.message.sender==MessageSender.ASSISTANT &&
                             remember(entry.message.id,entry.message.text){com.dominion.mobile.data.PhoneNavigationPlan.fromMessage(entry.message.text)!=null}){
@@ -720,6 +733,9 @@ fun ChatRoomScreen(
             else context.toast("현재 본체 연결 또는 통화 상태를 확인하세요.")
         }, onDismiss = { realtimeChoice = false })
 
+    workflowGoal?.let{goal->
+        com.dominion.mobile.ui.components.ErrandWorkflowDialog(vm,state,initialGoal=goal,onDismiss={workflowGoal=null})
+    }
     if (createPhonePlan) com.dominion.mobile.ui.components.PhonePlanRequestDialog(
         onConfirm = { request ->
             draft = listOf(draft, request).filter { it.isNotBlank() }.joinToString("\n")
@@ -787,6 +803,12 @@ fun ChatRoomScreen(
     messageMenu?.let { message ->
         AppBottomSheet(onDismiss = { messageMenu = null }) {
             SheetTitle(tr(lang, "메시지", "Message"))
+            if(vm.localExecution&&message.sender==MessageSender.USER&&message.text.trim().length in 3..1500){
+                SheetRow("복합 업무로 실행 계획 만들기",Glyph.TASK){
+                    workflowGoal=message.text.trim()
+                    messageMenu=null
+                }
+            }
             if (message.sender == MessageSender.ASSISTANT && message.status == MessageStatus.SENT &&
                 com.dominion.mobile.data.PhoneNavigationPlan.fromMessage(message.text) != null) {
                 SheetRow("앱 조작 검토·실행", Glyph.PLUG) {

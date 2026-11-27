@@ -33,6 +33,8 @@ data class ErrandWorkflowDraft(val id:String,val goal:String,val stages:List<Err
         return this
     }
     companion object{
+        // Runtime-owned message; the UI binds the proposal to the original user turn.
+        const val CHAT_OFFER="복합 업무로 나누어 실행 계획을 검토할 수 있습니다."
         fun parse(goal:String,raw:String,agents:Set<String>,apps:Set<String>):ErrandWorkflowDraft{
             require(raw.length<=12000)
             val o=JsonParser.parseString(raw.trim().removePrefix("```json").removeSuffix("```").trim()).asJsonObject

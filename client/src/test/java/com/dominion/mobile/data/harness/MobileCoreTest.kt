@@ -50,6 +50,11 @@ class MobileCoreTest{
   assertTrue(runCatching{MobileCore.validate("shell",JsonObject())}.isFailure)
   assertTrue(runCatching{MobileCore.validate("schedule.create",JsonObject())}.isFailure)
  }
+ @Test fun workflowOfferAcceptsOnlyEmptyArguments(){
+  assertTrue(MobileCore.validate("errand.plan",JsonObject()).entrySet().isEmpty())
+  val forged=JsonObject().apply{addProperty("goal","untrusted model goal")}
+  assertTrue(runCatching{MobileCore.validate("errand.plan",forged)}.isFailure)
+ }
  @Test fun terminalStatusDistinguishesVerifiedPartialWork(){
   assertEquals("failed",MobileCore.terminalStatus(false,false,listOf("failed")))
   assertEquals("paused",MobileCore.terminalStatus(false,true,listOf("completed")))
