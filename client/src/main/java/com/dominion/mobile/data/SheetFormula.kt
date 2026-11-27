@@ -113,7 +113,7 @@ internal class SheetFormula(private val cells:Map<String,Cell>) {
         private val ADDRESS=Regex("\\$?[A-Za-z]{1,3}\\$?[1-9][0-9]{0,6}")
         private fun range(a:String,b:String):List<String>{
             fun split(s:String):Pair<Int,Int>{
-                val col=s.takeWhile(Char::isLetter).fold(0){n,c->n*26+c.uppercaseChar()-'A'+1}
+                val col=s.takeWhile(Char::isLetter).fold(0){n,c->n*26+(c.uppercaseChar()-'A')+1}
                 val row=s.dropWhile(Char::isLetter).toInt()
                 require(col in 1..16384 && row in 1..1048576)
                 return col to row
