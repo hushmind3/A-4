@@ -18,6 +18,8 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.dominion.mobile.DominionApplication
 import com.dominion.mobile.data.remote.CloudAccountSnapshot
+import com.dominion.mobile.data.remote.CloudChatMessage
+import com.dominion.mobile.data.remote.CloudModelProtocol
 import com.dominion.mobile.ui.LocalLang
 import com.dominion.mobile.ui.components.ScreenTopBar
 import com.dominion.mobile.ui.theme.LocalDominionPalette
@@ -40,6 +42,20 @@ fun CloudAccountScreen(onBack: () -> Unit, onEngineSettings: () -> Unit) {
     var snapshot by remember { mutableStateOf<CloudAccountSnapshot?>(null) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf(false) }
+    val container=(context.applicationContext as DominionApplication).container
+    var selected by remember { mutableStateOf("") }
+    var ask by remember { mutableStateOf("") }
+    var history by remember { mutableStateOf<List<CloudChatMessage>>(emptyList()) }
+    var resultInfo by remember { mutableStateOf("") }
+    var registerReview by remember { mutableStateOf(false) }
+    var registered by remember { mutableStateOf("") }
+    LaunchedEffect(snapshot?.accountId,snapshot?.pairingId) {
+        history=emptyList();resultInfo="";registered="";ask=""
+    }
+    LaunchedEffect(snapshot?.models) {
+        if(snapshot?.models.orEmpty().none{it.id==selected})
+            selected=snapshot?.models.orEmpty().firstOrNull()?.id.orEmpty()
+    }
 
     suspend fun refresh() {
         if (busy) return
@@ -82,6 +98,26 @@ fun CloudAccountScreen(onBack: () -> Unit, onEngineSettings: () -> Unit) {
         }
     }
 
+    if(registerReview) {
+        val engine=container.engine
+        AlertDialog(onDismissRequest={registerReview=false},title={Text("본체에 무료 모델 연결")},text={
+            Text("선택 모델: "+selected+"\n본체: "+(engine?.origin?:"미설정")+
+                "\n현재 Google 계정의 무료 모델 전용 앱 세션을 이 본체의 공급자 저장소에 등록합니다. "+
+                "결제 권한은 없으며 연결 해제 시 본체에서도 이 세션을 사용할 수 없습니다.")
+        },confirmButton={TextButton(enabled=engine!=null && !busy,onClick={
+            registerReview=false
+            if(engine!=null){
+                busy=true;error=false
+                val model=selected
+                scope.launch{
+                    try{registered=repo.registerEngineModel(model,engine){container.engine===engine}}
+                    catch(e:CancellationException){throw e}
+                    catch(_:Exception){error=true}
+                    finally{busy=false}
+                }
+            }
+        }){Text("등록 승인")}},dismissButton={TextButton(onClick={registerReview=false}){Text("취소")}})
+    }
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().background(p.screen)) {
         ScreenTopBar(title = "DOMINION Cloud", onBack = onBack)
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(20.dp),
@@ -129,10 +165,46 @@ fun CloudAccountScreen(onBack: () -> Unit, onEngineSettings: () -> Unit) {
                         Text(tr(lang, "오늘 무료 모델 잔여 요청: ", "Free requests remaining today: ") +
                             "${it.free_daily_remaining} / ${it.free_daily_limit}")
                     }
-                    Text(tr(lang, "클라우드 제공 모델 (목록 조회)", "Available cloud models (read only)"),
-                        style = MaterialTheme.typography.titleMedium)
-                    current.models.forEach { Text(it.name.ifBlank { it.id }) }
-                    Text(tr(lang, "이 목록은 본체 실행 모델을 변경하지 않습니다.", "This list does not change the engine model."))
+                    Text(tr(lang,"Cloudflare 무료 모델","Cloudflare free models"),style=MaterialTheme.typography.titleMedium)
+                    current.models.forEach { model ->
+                        Row {
+                            RadioButton(selected==model.id,onClick={selected=model.id;history=emptyList();resultInfo="";registered=""},enabled=!busy)
+                            Text(model.name.ifBlank{model.id},Modifier.padding(top=12.dp))
+                        }
+                    }
+                    if(selected.isNotBlank()) {
+                        Text("직접 무료 모델 대화 · 본체 없이도 사용 가능",style=MaterialTheme.typography.titleSmall)
+                        Text("직접 대화는 모델 추론만 사용합니다. 도구·작업·기억 실행은 아래 본체 등록을 이용하세요.",
+                            style=MaterialTheme.typography.bodySmall)
+                        history.forEach{m->Text((if(m.role=="user")"나: " else "AI: ")+m.content)}
+                        OutlinedTextField(ask,{ask=it.take(4000)},label={Text("클라우드 모델에 요청")},enabled=!busy,maxLines=4,
+                            modifier=Modifier.fillMaxWidth())
+                        Row {
+                            Button(enabled=!busy && ask.isNotBlank() && (current.billing?.free_daily_remaining?:0)>0,onClick={
+                                val next=CloudModelProtocol.append(history,ask.trim())
+                                val model=selected
+                                busy=true;error=false;resultInfo=""
+                                scope.launch {
+                                    try {
+                                        val answer=repo.complete(model,next)
+                                        history=CloudModelProtocol.append(next,answer.content,"assistant")
+                                        ask="";resultInfo="실제 응답 · "+answer.model
+                                        snapshot=repo.refresh()
+                                    }catch(e:CancellationException){throw e}
+                                    catch(e:retrofit2.HttpException){resultInfo=if(e.code()==429)"무료 이용 한도 또는 공급자 제한" else "클라우드 HTTP "+e.code()}
+                                    catch(_:Exception){resultInfo="클라우드 모델 응답 실패"}
+                                    finally{busy=false}
+                                }
+                            }){Text("무료 모델 전송")}
+                            TextButton(enabled=!busy,onClick={history=emptyList();resultInfo=""}){Text("새 대화")}
+                        }
+                        Text(resultInfo)
+                        OutlinedButton(enabled=!busy && container.engine!=null,onClick={registerReview=true}){
+                            Text("선택 모델을 DOMINION 본체에 등록")
+                        }
+                        if(container.engine==null)Text("본체가 연결되면 해당 모델을 기존 하네스에 등록할 수 있습니다.")
+                        if(registered.isNotBlank())Text("본체 모델 등록 완료. 본체의 모델 선택에서 사용하세요. 등록 ID: "+registered)
+                    }
                     OutlinedButton(onClick = { runAction(repo::disconnect) }, enabled = !busy) {
                         Text(tr(lang, "클라우드 연결 해제", "Disconnect cloud account"))
                     }

@@ -150,6 +150,10 @@ interface DominionApi {
     @POST("api/rooms/{id}/messages")
     suspend fun submitRoomMessage(@Path("id") id: String, @Body body: RoomInput): RoomSubmission
     @GET("api/providers")
+    suspend fun cloudProviderRecords(): List<com.google.gson.JsonObject>
+    @POST("api/providers")
+    suspend fun saveCloudProvider(@Body body:com.google.gson.JsonObject):com.google.gson.JsonObject
+    @GET("api/providers")
     suspend fun engineProviders(): List<EngineProvider>
     @GET("api/providers/{id}/models")
     suspend fun engineModels(@Path("id") id: String): List<EngineModel>

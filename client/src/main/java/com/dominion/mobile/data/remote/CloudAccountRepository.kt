@@ -61,10 +61,13 @@ private interface CloudApi {
     @GET("v1/me") suspend fun me(@Header("Authorization") auth: String): CloudIdentity
     @GET("v1/billing") suspend fun billing(@Header("Authorization") auth: String): CloudBilling
     @GET("v1/models") suspend fun models(@Header("Authorization") auth: String): CloudModels
+    @POST("v1/chat/completions") suspend fun complete(@Header("Authorization") auth:String,
+        @Body request:CloudCompletionRequest):CloudCompletionResponse
     @POST("v1/apps/disconnect") suspend fun disconnect(@Header("Authorization") auth: String, @Body body: Map<String, String>): DisconnectResponse
 }
 
-/** Cloud-only credentials. The local engine never receives this bearer. */
+/** Cloud credentials stay here except for explicitly approved free-only provider registration
+ * in the user's already authenticated DOMINION engine. No owner/cloud admin bearer is exported. */
 
 data class CloudAccountSnapshot(
     val pairingId: String? = null,
@@ -135,6 +138,48 @@ class CloudAccountRepository(context: Context) {
             }
         }
     }
+
+    private suspend fun approved(): Pair<CloudPairing,CloudIdentity> {
+        val pair=requireNotNull(loadPairing()){"Google account connection required"}
+        val auth="Bearer "+pair.token
+        val status=api.status(auth)
+        check(status.id==pair.id && status.status=="approved" && status.expires_at>System.currentTimeMillis()/1000)
+        val identity=api.me(auth)
+        check(identity.scope=="free_inference" && identity.app_session_id==pair.id &&
+            identity.account_id.isNotBlank() && (pair.verifiedAccountId==null || pair.verifiedAccountId==identity.account_id))
+        if(pair.verifiedAccountId==null)store.save(pair.copy(verifiedAccountId=identity.account_id))
+        return pair to identity
+    }
+
+    suspend fun complete(model:String,messages:List<CloudChatMessage>):CloudCompletion =
+        withContext(Dispatchers.IO) { lock.withLock {
+            val (pair,identity)=approved()
+            val auth="Bearer "+pair.token
+            check(api.models(auth).data.any{it.free && it.id==model})
+            val request=CloudCompletionRequest(model,messages).validated()
+            val result=api.complete(auth,request).verified(model)
+            check(approved().second.account_id==identity.account_id)
+            result
+        } }
+
+    suspend fun registerEngineModel(model:String,connection:com.dominion.mobile.data.local.EngineConnection,
+        stillSelected:()->Boolean):String = withContext(Dispatchers.IO) { lock.withLock {
+        val (pair,identity)=approved()
+        check(api.models("Bearer "+pair.token).data.any{it.free && it.id==model})
+        check(stillSelected())
+        val engine=ApiFactory.create(connection)
+        // Separate mobile-scoped record; never overwrite a desktop account/provider.
+        val id=CloudModelProtocol.providerId(pair.id,model)
+        val existing=engine.cloudProviderRecords().firstOrNull{it.get("id")?.asString==id}
+        if(existing!=null)check(existing.get("baseUrl")?.asString=="$CLOUD_ORIGIN/v1" &&
+            existing.get("model")?.asString==model && existing.get("integration")?.asString=="dominion-mobile-cloud")
+        check(stillSelected())
+        val saved=engine.saveCloudProvider(CloudModelProtocol.providerBody(id,model,pair.token))
+        check(saved.get("id")?.asString==id && saved.get("baseUrl")?.asString=="$CLOUD_ORIGIN/v1" &&
+            saved.get("model")?.asString==model && saved.get("hasKey")?.asBoolean==true)
+        check(stillSelected() && approved().second.account_id==identity.account_id)
+        id
+    } }
 
     suspend fun disconnect(): CloudAccountSnapshot = withContext(Dispatchers.IO) {
         lock.withLock {
