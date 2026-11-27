@@ -60,7 +60,8 @@ fun ExploreScreen(
     state: AppState,
     vm: AppViewModel,
     onOpenChat: (String) -> Unit,
-    onKoreanServices: () -> Unit
+    onKoreanServices: () -> Unit,
+    onNavigate: (String) -> Unit
 ) {
     val p = LocalDominionPalette.current
     val lang = LocalLang.current
@@ -166,6 +167,11 @@ fun ExploreScreen(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                     Text(tr(lang, "🇰🇷 한국 생활·행정 비서", "Korean daily and public services"))
                 }
+            }
+            item {
+                com.dominion.mobile.ui.components.NextActionPanel(state, onOpenChat = onOpenChat,
+                    onTasks = { onNavigate(com.dominion.mobile.ui.nav.Routes.TASKS) },
+                    onSchedules = { onNavigate(com.dominion.mobile.ui.nav.Routes.SCHEDULES) })
             }
             item { Spacer(Modifier.height(16.dp)) }
             item {

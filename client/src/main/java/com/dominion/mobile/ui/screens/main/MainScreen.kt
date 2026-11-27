@@ -177,7 +177,8 @@ fun MainScreen(
                             state = state,
                             vm = vm,
                             onOpenChat = { onNavigate(Routes.chat(it)) },
-                            onKoreanServices = { onNavigate(Routes.KOREAN_SERVICES) }
+                            onKoreanServices = { onNavigate(Routes.KOREAN_SERVICES) },
+                            onNavigate = onNavigate
                         )
                         TabId.FRIENDS -> FriendsScreen(
                             state = state,

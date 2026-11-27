@@ -20,6 +20,8 @@ fun QuickAssistantScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
     val p = LocalDominionPalette.current
     val connection by vm.connection.collectAsStateWithLifecycle()
     val rooms = state.conversations.filter { state.character(it.characterId) != null }
+    val suggested = com.dominion.mobile.data.NextActions.build(state, System.currentTimeMillis())
+        .firstOrNull { it.roomId != null && state.conversation(it.roomId) != null }
     var selected by remember { mutableStateOf(rooms.firstOrNull { it.id == "assistant" }?.id.orEmpty()) }
     var voice by remember { mutableStateOf<String?>(null) }
     var draft by remember { mutableStateOf("") }
@@ -29,6 +31,12 @@ fun QuickAssistantScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
             Text("본체 연결: " + connection.name, color = p.textSecondary)
             Text("대화방을 선택하고 음성 대화를 시작하거나 요청을 작성하세요. 시스템 호출의 화면·문자 정보는 자동 수집하지 않습니다.")
             if (rooms.isEmpty()) OutlinedButton(onClick = onSettings) { Text("본체 연결") }
+            suggested?.let { action ->
+                TextButton(onClick = { selected = requireNotNull(action.roomId) }) {
+                    Text("추천 대화 · " + action.title)
+                }
+                Text(action.reason, style = MaterialTheme.typography.labelSmall)
+            }
             AppTextField(draft, { draft = it.take(32000) }, label = "작업 요청", singleLine = false, maxLines = 4)
         }
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(16.dp)) {
