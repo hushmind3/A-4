@@ -533,6 +533,14 @@ class RemoteBackedRepository(
         return room.id
     }
 
+    override suspend fun synthesizeAlignedVoice(text: String): AlignedSpeech? {
+        require(text.isNotBlank() && text.codePointCount(0,text.length) <= 2000)
+        val capabilities = try { api.mobileCapabilities() }
+        catch (e: HttpException) { if (e.code() == 404 || e.code() == 501) return null else throw e }
+        if ("aligned_speech" !in capabilities.features.orEmpty()) return null
+        val account = capabilities.requireFeature("aligned_speech")
+        return api.alignedVoice(AlignedVoiceRequest(account,text)).verified(account)
+    }
     override suspend fun voiceStatus(): EngineVoiceStatus = api.voiceStatus()
 
     override suspend fun transcribeVoice(wav: ByteArray): String {

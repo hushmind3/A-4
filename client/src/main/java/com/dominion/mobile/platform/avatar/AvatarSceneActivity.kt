@@ -43,11 +43,14 @@ class AvatarSceneActivity : ComponentActivity() {
     private var savedModel by mutableStateOf(false)
     private var hasMouth by mutableStateOf(false)
     private var hasRig by mutableStateOf(false)
+    private var visemes by mutableStateOf(setOf<String>())
+    private var selectedViseme by mutableStateOf("a")
     private var headPose by mutableFloatStateOf(0f)
     private var jawPose by mutableFloatStateOf(0f)
     private var mouthPreview by mutableFloatStateOf(0f)
     private fun showScene(scene: AvatarModelStore.Scene) {
-        renderer.replaceMesh(scene.mesh, scene.mouth, scene.rig)
+        renderer.replaceMesh(scene.mesh, scene.mouth, scene.rig, scene.visemes)
+        visemes = scene.visemes.keys
         hasRig = scene.rig != null
         headPose = 0f; jawPose = 0f; renderer.jointPose(0f,0f)
         mouthPreview = 0f
@@ -72,16 +75,22 @@ class AvatarSceneActivity : ComponentActivity() {
         speechStatus = "본체 Piper 음성 준비 중"
         speechJob = lifecycleScope.launch {
             try {
-                val wav = repo.synthesizeVoice("안녕하세요. 저는 $name 입니다. 무엇을 도와드릴까요?")
+                val text = "안녕하세요. 저는 $name 입니다. 무엇을 도와드릴까요?"
+                val aligned = repo.synthesizeAlignedVoice(text)
+                val wav = aligned?.wav ?: repo.synthesizeVoice(text)
                 check(container.repository === repo)
                 speechStatus = "실제 음성 재생 중"
                 renderer.expression("voice")
                 com.dominion.mobile.platform.audio.EngineVoiceAudio.play(
-                    this@AvatarSceneActivity, wav, onSpeechLevel = renderer::speechLevel)
+                    this@AvatarSceneActivity, wav, onSpeechLevel = renderer::speechLevel,
+                    onPositionMs = aligned?.let { speech -> { ms: Int ->
+                        val cue = speech.timeline.at(ms)
+                        renderer.alignedSpeechPose(cue?.viseme, if (ms < 0) null else cue?.openness ?: 0f)
+                    } })
                 speechStatus = "음성 재생 완료"
             } catch (e: CancellationException) { speechStatus = "음성 재생 중단"; throw e }
             catch (_: Exception) { speechStatus = "본체 음성 합성 또는 재생 실패" }
-            finally { renderer.speechLevel(0f); renderer.expression(expression); speaking = false }
+            finally { renderer.speechLevel(0f); renderer.alignedSpeechPose(null,null); renderer.expression(expression); speaking = false }
         }
     }
     private lateinit var modelStore: AvatarModelStore
@@ -151,6 +160,34 @@ class AvatarSceneActivity : ComponentActivity() {
                     showScene(scene)
                 } catch (e: CancellationException) { throw e }
                 catch (_: Exception) { modelStatus = "입 모양 연결 실패 · 원본과 동일한 정점·삼각형 순서의 OBJ가 필요합니다." }
+                finally { importing = false }
+            }
+        }
+    }
+    private val visemePicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null && imported && !importing && !speaking) {
+            val shape = selectedViseme
+            importing = true
+            lifecycleScope.launch {
+                try {
+                    val scene = withContext(Dispatchers.IO) {
+                        require(uri.scheme == "content")
+                        val bytes = requireNotNull(contentResolver.openInputStream(uri)).use { input ->
+                            val out = java.io.ByteArrayOutputStream()
+                            val chunk = ByteArray(8192)
+                            while (true) {
+                                val n = input.read(chunk)
+                                if (n < 0) break
+                                require(out.size() + n <= ObjAvatarMesh.MAX_BYTES)
+                                out.write(chunk,0,n)
+                            }
+                            out.toByteArray()
+                        }
+                        modelStore.saveViseme(modelKey,shape,bytes)
+                    }
+                    showScene(scene)
+                } catch (e: CancellationException) { throw e }
+                catch (_: Exception) { modelStatus = "발음 모델 연결 실패 · 원본과 동일한 메시 필요" }
                 finally { importing = false }
             }
         }
@@ -235,7 +272,7 @@ class AvatarSceneActivity : ComponentActivity() {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                             TextButton(enabled = !importing, onClick = { modelPicker.launch(arrayOf("*/*")) }) { Text("OBJ 가져오기·저장") }
                             TextButton(enabled = imported && !importing, onClick = {
-                                renderer.restoreMesh(); imported = false; hasMouth = false; hasRig = false
+                                renderer.restoreMesh(); imported = false; hasMouth = false; hasRig = false; visemes = emptySet()
                                 modelStatus = "기본 모델 표시 중 · 저장된 OBJ는 유지됩니다."
                             }) { Text("기본 모델") }
                             if (savedModel && !imported) TextButton(enabled = !importing,
@@ -255,6 +292,16 @@ class AvatarSceneActivity : ComponentActivity() {
                             TextButton(enabled = !importing && !speaking, onClick = {
                                 rigPicker.launch(arrayOf("application/json","text/plain","*/*"))
                             }) { Text("머리·턱 리그 JSON 연결") }
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                                listOf("a","e","i","o","u","closed").forEach { shape ->
+                                    FilterChip(selected = selectedViseme == shape, enabled = !importing && !speaking,
+                                        onClick = { selectedViseme = shape },
+                                        label = { Text(shape + if (shape in visemes) "✓" else "") })
+                                }
+                            }
+                            TextButton(enabled = !importing && !speaking, onClick = {
+                                visemePicker.launch(arrayOf("*/*"))
+                            }) { Text("선택 발음 OBJ 연결 ($selectedViseme)") }
                             if (hasRig) {
                                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
                                     Text("머리", modifier = Modifier.padding(top = 12.dp))
@@ -276,7 +323,7 @@ class AvatarSceneActivity : ComponentActivity() {
                                 }
                             }
                         }
-                        if (!imported || hasMouth || hasRig) TextButton(enabled = !importing, onClick = { previewSpeech() }) {
+                        if (!imported || hasMouth || hasRig || visemes.isNotEmpty()) TextButton(enabled = !importing, onClick = { previewSpeech() }) {
                             Text(if (speaking) "음성 중단" else "본체 음성으로 말하기")
                         }
                         if (speechStatus.isNotBlank()) Text(speechStatus,

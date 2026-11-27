@@ -16,7 +16,8 @@ internal class AvatarModelStore(private val root: File) {
         return AtomicFile(File(File(root, "avatar_models"), "$key.obj"))
     }
 
-    data class Scene(val mesh: FloatArray, val mouth: FloatArray? = null, val rig: AvatarRig? = null)
+    data class Scene(val mesh: FloatArray, val mouth: FloatArray? = null, val rig: AvatarRig? = null,
+        val visemes: Map<String, FloatArray> = emptyMap())
     private fun bytes(key: String): ByteArray? =
         try { file(key).openRead().use(::boundedRead) }
         catch (_: FileNotFoundException) { null }
@@ -24,6 +25,17 @@ internal class AvatarModelStore(private val root: File) {
         Companion.key("mouth:" + key, MessageDigest.getInstance("SHA-256").digest(base)
             .joinToString("") { "%02x".format(it.toInt() and 255) })
 
+    private fun visemeKey(key: String, base: ByteArray, shape: String): String {
+        require(shape in com.dominion.mobile.data.remote.SpeechCueTimeline.shapes)
+        return Companion.key("viseme:" + key + ":" + shape, AvatarRigSpec.sha256(base))
+    }
+    fun saveViseme(key: String, shape: String, target: ByteArray): Scene = synchronized(lock) {
+        require(target.size in 1..ObjAvatarMesh.MAX_BYTES)
+        val base = requireNotNull(bytes(key))
+        ObjAvatarMesh.morph(base.toString(Charsets.UTF_8), target.toString(Charsets.UTF_8))
+        write(visemeKey(key,base,shape),target)
+        requireNotNull(loadScene(key)).also { check(shape in it.visemes) }
+    }
     private fun rigKey(key: String, base: ByteArray): String =
         Companion.key("rig:" + key, AvatarRigSpec.sha256(base))
 
@@ -53,7 +65,16 @@ internal class AvatarModelStore(private val root: File) {
             it.toString(Charsets.UTF_8)) }.getOrNull() }
         val mesh = morph?.base ?: neutral
         val rig = bytes(rigKey(key, base))?.let { runCatching { parseRig(base, mesh.size / 6, it) }.getOrNull() }
-        Scene(mesh, morph?.open, rig)
+        val visemes = com.dominion.mobile.data.remote.SpeechCueTimeline.shapes.mapNotNull { shape ->
+            bytes(visemeKey(key,base,shape))?.let { targetBytes ->
+                runCatching {
+                    val pair = ObjAvatarMesh.morph(base.toString(Charsets.UTF_8),targetBytes.toString(Charsets.UTF_8))
+                    require(pair.base.contentEquals(mesh))
+                    shape to pair.open
+                }.getOrNull()
+            }
+        }.toMap()
+        Scene(mesh, morph?.open, rig, visemes)
     }
 
     fun saveMouth(key: String, target: ByteArray): Scene = synchronized(lock) {

@@ -7,7 +7,7 @@ import kotlin.math.sqrt
 /** 40ms RMS envelope of actual PCM16 WAV samples, indexed by player time.
  * Unknown formats still play normally; they simply have no mouth animation.
  */
-internal class SpeechEnvelope private constructor(private val levels: FloatArray) {
+internal class SpeechEnvelope private constructor(private val levels: FloatArray, val durationMs: Int) {
     fun levelAt(positionMs: Int): Float =
         if (positionMs < 0) 0f else levels.getOrElse(positionMs / 40) { 0f }
 
@@ -53,7 +53,7 @@ internal class SpeechEnvelope private constructor(private val levels: FloatArray
                 val rms = sqrt(sum / ((end - i * window) * channels))
                 levels[i] = ((rms - 0.012) * 5).toFloat().coerceIn(0f, 1f)
             }
-            return SpeechEnvelope(levels)
+            return SpeechEnvelope(levels, ((frames.toLong()*1000L + rate - 1) / rate).toInt())
         }
     }
 }

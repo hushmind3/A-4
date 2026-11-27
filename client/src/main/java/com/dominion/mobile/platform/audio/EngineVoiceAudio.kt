@@ -128,7 +128,8 @@ object EngineVoiceAudio {
     }
 
     suspend fun play(context: Context, bytes: ByteArray, communication: Boolean = false,
-        existingCallFocus: Boolean = false, onSpeechLevel: ((Float) -> Unit)? = null) {
+        existingCallFocus: Boolean = false, onSpeechLevel: ((Float) -> Unit)? = null,
+        onPositionMs: ((Int) -> Unit)? = null) {
         require(!existingCallFocus || communication)
         require(WaveAudio.isWave(bytes))
         val envelope = if (onSpeechLevel != null) withContext(Dispatchers.Default) {
@@ -166,10 +167,11 @@ object EngineVoiceAudio {
                             player.setOnPreparedListener {
                                 if (continuation.isActive) {
                                     it.start()
-                                    if (onSpeechLevel != null && envelope != null) animation = animationScope.launch {
+                                    if ((onSpeechLevel != null && envelope != null) || onPositionMs != null) animation = animationScope.launch {
                                         while (isActive && continuation.isActive) {
                                             val position = runCatching { player.currentPosition }.getOrNull() ?: break
-                                            onSpeechLevel.invoke(envelope.levelAt(position))
+                                            if (envelope != null) onSpeechLevel?.invoke(envelope.levelAt(position))
+                                            onPositionMs?.invoke(position)
                                             delay(40)
                                         }
                                     }
@@ -190,6 +192,7 @@ object EngineVoiceAudio {
                 } finally {
                     animation?.cancel()
                     onSpeechLevel?.invoke(0f)
+                    onPositionMs?.invoke(-1)
                     player.release()
                     focusLease?.let { manager.abandonAudioFocusRequest(it) }
                     focusLease = null

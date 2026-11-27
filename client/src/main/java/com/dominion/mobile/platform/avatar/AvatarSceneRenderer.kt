@@ -24,7 +24,14 @@ internal class AvatarSceneRenderer(private val ar: Boolean, shape: CharacterShap
     private val originalMesh = AvatarMesh.build(shape)
     private var mesh = originalMesh
     private var vertices = buffer(mesh)
-    private data class MeshChange(val base: FloatArray, val mouth: FloatArray?, val rig: AvatarRig?)
+    private data class MeshChange(val base: FloatArray, val mouth: FloatArray?, val rig: AvatarRig?,
+        val visemes: Map<String, FloatArray>)
+    private var visemeVertices = emptyMap<String, FloatBuffer>()
+    private data class VoicePose(val shape: String?, val openness: Float)
+    @Volatile private var alignedPose: VoicePose? = null
+    fun alignedSpeechPose(shape: String?, openness: Float?) {
+        alignedPose = openness?.let { VoicePose(shape,it.coerceIn(0f,1f)) }
+    }
     private var rig: AvatarRig? = null
     private var rigWeights: FloatBuffer? = null
     private val headTransform = FloatArray(16)
@@ -77,12 +84,14 @@ internal class AvatarSceneRenderer(private val ar: Boolean, shape: CharacterShap
     private var failure = false
     private var textureSession: Session? = null
 
-    fun replaceMesh(value: FloatArray, mouth: FloatArray? = null, rig: AvatarRig? = null) {
+    fun replaceMesh(value: FloatArray, mouth: FloatArray? = null, rig: AvatarRig? = null,
+        visemes: Map<String, FloatArray> = emptyMap()) {
         require(mouth == null || mouth.size == value.size)
         require(rig == null || rig.weights.size == value.size / 3)
-        pendingMesh.set(MeshChange(value, mouth, rig))
+        require(visemes.values.all { it.size == value.size })
+        pendingMesh.set(MeshChange(value, mouth, rig, visemes))
     }
-    fun restoreMesh() { pendingMesh.set(MeshChange(originalMesh, null, null)) }
+    fun restoreMesh() { pendingMesh.set(MeshChange(originalMesh, null, null, emptyMap())) }
     fun expression(mode: String) { if (mode in setOf("idle","happy","talk","voice")) faceMode = mode }
     fun setSession(value: Session?) { session = value }
     fun touchDown(px:Float,py:Float) { x=px;y=py }
@@ -134,6 +143,7 @@ internal class AvatarSceneRenderer(private val ar: Boolean, shape: CharacterShap
                 mouthVertices = it.mouth?.let(::buffer)
                 rig = it.rig
                 rigWeights = it.rig?.weights?.let(::buffer)
+                visemeVertices = it.visemes.mapValues { (_,target) -> buffer(target) }
                 imported = it.base !== originalMesh
             }
             if(resetRequested) {
@@ -189,8 +199,10 @@ internal class AvatarSceneRenderer(private val ar: Boolean, shape: CharacterShap
             }
             Matrix.multiplyMM(mv,0,view,0,model,0)
             Matrix.multiplyMM(mvp,0,projection,0,mv,0)
-            drawMesh(vertices, mesh.size/6, model, mvp, color, mouthVertices,
-                if (faceMode == "voice") voiceLevel else previewLevel, rig, rigWeights)
+            val pose = if (faceMode == "voice") alignedPose else null
+            val target = pose?.shape?.let { visemeVertices[it] } ?: mouthVertices
+            val weight = if (faceMode == "voice") pose?.openness ?: voiceLevel else previewLevel
+            drawMesh(vertices, mesh.size/6, model, mvp, color, target, weight, rig, rigWeights)
             if (!imported) drawFace()
         } catch (_:Exception) {
             failure=true;report("그래픽 또는 AR 추적 오류 · 화면을 다시 여세요.")
@@ -267,7 +279,7 @@ internal class AvatarSceneRenderer(private val ar: Boolean, shape: CharacterShap
             }
             around(headTransform,skeleton.headPivot,headAngle,0f,1f)
             // If an authored mouth morph exists it drives speech instead of doubling jaw movement.
-            val jaw = if (faceMode == "voice" && mouth == null) voiceLevel*30f else jawAngle
+            val jaw = if (faceMode == "voice" && mouth == null) weight*30f else jawAngle
             around(jawLocal,skeleton.jawPivot,jaw,1f,0f)
             Matrix.multiplyMM(jawTransform,0,headTransform,0,jawLocal,0)
         }

@@ -31,6 +31,7 @@ interface DominionRepository {
     suspend fun decideMobileOperation(nonce: String, digest: String, allow: Boolean):
         com.dominion.mobile.data.remote.MobileJournalEntry = error("Mobile extension unavailable")
 
+    suspend fun synthesizeAlignedVoice(text: String): com.dominion.mobile.data.remote.AlignedSpeech? = null
     suspend fun voiceStatus(): com.dominion.mobile.data.remote.EngineVoiceStatus = error("Engine not connected")
     suspend fun transcribeVoice(wav: ByteArray): String = error("Engine not connected")
     suspend fun synthesizeVoice(text: String): ByteArray = error("Engine not connected")

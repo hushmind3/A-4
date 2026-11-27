@@ -59,6 +59,9 @@ interface DominionApi {
         @Body decision: MobileReviewDecision): MobileReceipt
 
 
+    @POST("v1/mobile/voice/aligned")
+    suspend fun alignedVoice(@Body request: AlignedVoiceRequest): AlignedVoiceResponse
+
     @GET("api/voice/status")
     suspend fun voiceStatus(): EngineVoiceStatus
     @POST("api/voice/transcribe")
