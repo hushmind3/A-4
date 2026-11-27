@@ -128,6 +128,9 @@ fun ChatRoomScreen(
 
     var draft by remember(conversationId, conversation.sessionId) { mutableStateOf(conversation.draft) }
     var showAttach by remember { mutableStateOf(false) }
+    var voiceInput by remember(conversationId, conversation.sessionId) { mutableStateOf(false) }
+    var voiceChoice by remember { mutableStateOf(false) }
+    var speakText by remember(conversationId, conversation.sessionId) { mutableStateOf<String?>(null) }
     var showMenu by remember { mutableStateOf(false) }
     var messageMenu by remember { mutableStateOf<Message?>(null) }
     var showReport by remember { mutableStateOf(false) }
@@ -462,7 +465,7 @@ fun ChatRoomScreen(
                     .clip(CircleShape)
                     .background(if (draft.isBlank() && selectedAttachment == null) p.raised else p.blue)
                     .clickable {
-                        if (draft.isBlank() && selectedAttachment == null) startSpeechInput()
+                        if (draft.isBlank() && selectedAttachment == null) voiceChoice = true
                         else send()
                     },
                 contentAlignment = Alignment.Center
@@ -471,6 +474,32 @@ fun ChatRoomScreen(
                 else GlyphIcon(Glyph.SEND, Color.White, size = 19.dp)
             }
         }
+    }
+
+    if (voiceChoice) {
+        AppBottomSheet(onDismiss = { voiceChoice = false }) {
+            SheetTitle(tr(lang, "음성 입력", "Voice input"))
+            SheetRow(tr(lang, "본체 Whisper 음성 인식", "Engine Whisper recognition"), Glyph.MIC) {
+                voiceChoice = false
+                if (state.call == null) voiceInput = true
+                else context.toast(tr(lang, "통화 종료 후 녹음하세요.", "End the call before recording."))
+            }
+            SheetRow(tr(lang, "기기 음성 인식", "Device speech recognition"), Glyph.MIC) {
+                voiceChoice = false
+                if (state.call == null) startSpeechInput()
+                else context.toast(tr(lang, "통화 종료 후 사용하세요.", "End the call first."))
+            }
+        }
+    }
+    if (voiceInput) com.dominion.mobile.ui.components.EngineVoiceInputDialog(vm,
+        onDismiss = { voiceInput = false },
+        onTranscript = { spoken ->
+            draft = listOf(draft, spoken).filter { it.isNotBlank() }.joinToString(" ")
+            vm.setDraft(conversationId, draft)
+            voiceInput = false
+        })
+    speakText?.let { text ->
+        com.dominion.mobile.ui.components.EngineSpeechDialog(vm, text, onDismiss = { speakText = null })
     }
 
     if (showAttach) {
@@ -534,6 +563,11 @@ fun ChatRoomScreen(
                 }
             }
             if (message.text.isNotBlank()) {
+                SheetRow(tr(lang, "본체 음성으로 읽기", "Read with engine voice"), Glyph.SPEAKER) {
+                    messageMenu = null
+                    if (state.call == null) speakText = message.text
+                    else context.toast(tr(lang, "통화 종료 후 읽을 수 있습니다.", "End the call first."))
+                }
                 SheetRow(tr(lang, "복사", "Copy"), Glyph.LINK) {
                     clipboard.setText(AnnotatedString(message.text))
                     context.toast(tr(lang, "복사했어요", "Copied"))

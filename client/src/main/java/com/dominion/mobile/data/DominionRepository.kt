@@ -21,6 +21,10 @@ interface DominionRepository {
     suspend fun pollForReply(conversationId: String, knownIds: Set<String>): List<Message> =
         emptyList()
 
+    suspend fun voiceStatus(): com.dominion.mobile.data.remote.EngineVoiceStatus = error("Engine not connected")
+    suspend fun transcribeVoice(wav: ByteArray): String = error("Engine not connected")
+    suspend fun synthesizeVoice(text: String): ByteArray = error("Engine not connected")
+
     suspend fun requestVoiceCall(conversationId: String, video: Boolean = false): com.dominion.mobile.data.remote.CallTokenResponse =
         error("Voice calls require a connected server")
 

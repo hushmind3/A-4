@@ -41,6 +41,14 @@ data class NotificationDto(
 
 /** Existing DOMINION mobile and native engine contracts. */
 interface DominionApi {
+    @GET("api/voice/status")
+    suspend fun voiceStatus(): EngineVoiceStatus
+    @POST("api/voice/transcribe")
+    suspend fun transcribe(@Body wav: okhttp3.RequestBody): VoiceTranscript
+    @retrofit2.http.Streaming
+    @POST("api/voice/speak")
+    suspend fun synthesize(@Body body: Map<String, String>): okhttp3.ResponseBody
+
     @retrofit2.http.Streaming
     @retrofit2.http.Headers("Accept: text/event-stream")
     @GET("api/events")

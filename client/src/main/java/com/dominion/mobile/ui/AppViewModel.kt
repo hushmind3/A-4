@@ -167,6 +167,15 @@ class AppViewModel(
     suspend fun cancelJob(roomId: String, jobId: String) = repo.cancelJob(roomId, jobId)
 
     suspend fun downloadAttachment(roomId: String, attachmentId: String) = repo.downloadAttachment(roomId, attachmentId)
+    suspend fun voiceStatus() = repo.voiceStatus()
+    suspend fun transcribeVoice(wav: ByteArray): String {
+        check(state.value.call == null)
+        return repo.transcribeVoice(wav)
+    }
+    suspend fun synthesizeVoice(text: String): ByteArray {
+        check(state.value.call == null)
+        return repo.synthesizeVoice(text)
+    }
 
     suspend fun sendAttachment(roomId: String, text: String,
         name: String, mimeType: String, bytes: ByteArray) {

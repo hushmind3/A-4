@@ -10,6 +10,8 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import retrofit2.HttpException
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 import com.dominion.mobile.data.local.LocalStore
 import com.dominion.mobile.data.model.AppState
@@ -412,6 +414,28 @@ class RemoteBackedRepository(
             )) + current.conversations.filterNot { it.id == room.id })
         }
         return room.id
+    }
+
+    override suspend fun voiceStatus(): EngineVoiceStatus = api.voiceStatus()
+
+    override suspend fun transcribeVoice(wav: ByteArray): String {
+        require(com.dominion.mobile.data.WaveAudio.isWave(wav) && wav.size <= 2_000_044)
+        check(api.voiceStatus().whisper?.available == true) { "Whisper unavailable" }
+        return api.transcribe(wav.toRequestBody("audio/wav".toMediaType())).text.orEmpty().trim()
+            .also { require(it.isNotBlank() && it.length <= 32000) }
+    }
+
+    override suspend fun synthesizeVoice(text: String): ByteArray {
+        require(text.isNotBlank() && text.codePointCount(0, text.length) <= 2000)
+        check(api.voiceStatus().piper?.available == true) { "Piper unavailable" }
+        val response = api.synthesize(mapOf("text" to text))
+        return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            response.use { body ->
+                require(body.contentType()?.toString()?.startsWith("audio/wav") == true)
+                body.byteStream().use(com.dominion.mobile.platform.attachments.LocalAttachment.Companion::readBounded)
+                    .also { require(com.dominion.mobile.data.WaveAudio.isWave(it)) }
+            }
+        }
     }
 
     override suspend fun requestVoiceCall(conversationId: String, video: Boolean): CallTokenResponse =
