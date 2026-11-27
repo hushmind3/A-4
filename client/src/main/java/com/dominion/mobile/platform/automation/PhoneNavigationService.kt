@@ -156,6 +156,7 @@ class PhoneNavigationService : AccessibilityService() {
             val verified=mutableListOf<String>()
             try {
                 if(replan!=null)recorded=initialRepo.recordPhoneErrand(replan,"running","기기 업무 실행 시작 · "+plan.app)
+                if(replan?.publicRead==true)check(recorded){"공개 업무 실행 기록을 먼저 저장해야 합니다"}
                 showStop()
                 check(DeviceActions.openInstalledApp(this@PhoneNavigationService,plan.app))
                 withTimeout(300_000L) {
@@ -175,6 +176,7 @@ class PhoneNavigationService : AccessibilityService() {
                     val engine=container.engine
                     val repo=container.repository
                     val budget=PhoneReplanBudget()
+                    val delegatedPublic=delegatedRead&&recorded&&replan?.publicRead==true&&engine==null
                     fun validRoom() {
                         if(replan!=null)check(container.engine===engine && container.repository===repo &&
                             repo.state.value.conversation(replan.roomId)?.sessionId==replan.sessionId)
@@ -494,8 +496,10 @@ class PhoneNavigationService : AccessibilityService() {
                             feedback="Failed "+step.action+" on "+step.label+"; inspect and choose a different observed control."
                             // A failed target is not success: require a fresh observation.
                             if(engine==null){
-                                approveStep(PhoneNavigationStep("inspect","실패한 앱 화면 조작 요소 관찰"),
+                                if(!delegatedPublic)approveStep(PhoneNavigationStep("inspect","실패한 앱 화면 조작 요소 관찰"),
                                     plan.app,localCompleted+1,activePlan.steps.size)
+                                validRoom()
+                                _observed.value=null
                                 val view=requireNotNull(rootInActiveWindow)
                                 try{check(view.packageName?.toString()==plan.app)
                                     apply(view,plan.app,PhoneNavigationStep("inspect","화면"))
@@ -519,7 +523,7 @@ class PhoneNavigationService : AccessibilityService() {
                     val frame=nextFrame
                     val mobileReplan=engine==null && replan!=null &&
                         (needsSemanticReplan || frame!=null || activePlan.steps.last().action=="inspect" ||
-                            activePlan.steps.last().action=="visual_inspect")
+                            activePlan.steps.last().action=="visual_inspect" || replan.publicRead)
                     if(replan==null || (frame==null && !mobileReplan)) {
                         _status.value="기기 실행 확인 · 누적 "+completed+"단계 · "+
                             if(activePlan.steps.last().action=="expect")"마지막 화면 문구 확인" else "화면 관찰 완료"
@@ -533,16 +537,24 @@ class PhoneNavigationService : AccessibilityService() {
                     val proposal:PhoneNavigationPlan?
                     val evidence:String
                     if(mobileReplan){
-                        approveStep(PhoneNavigationStep("inspect",
+                        if(!delegatedPublic)approveStep(PhoneNavigationStep("inspect",
                             if(replan.publicRead)"현재 공개 검색 결과와 버튼 문구를 AI에 전달 (개인 화면이면 중지)"
                             else "현재 앱의 조작 버튼 문구만 클라우드 AI에 전달하고 재계획"),plan.app,1,1)
+                        else {
+                            stepLabel?.text="위임한 공개 업무 · 다음 화면 확인"
+                            approveButton?.isEnabled=false
+                            delay(600)
+                        }
                         validRoom()
+                        _observed.value=null
                         val view=requireNotNull(rootInActiveWindow)
                         try{check(view.packageName?.toString()==plan.app)
                             apply(view,plan.app,PhoneNavigationStep("inspect","화면"))
                         }finally{view.recycle()}
                         val observation=_observed.value?.takeIf{it.packageName==plan.app}
-                        var controls=observation?.labels.orEmpty()
+                        var controls=if(replan.publicRead)
+                            com.dominion.mobile.data.PhonePublicResult.observationControls(observation?.labels.orEmpty())
+                        else observation?.labels.orEmpty()
                         approvedResults=if(replan.publicRead)observation?.results.orEmpty() else emptyList()
                         if(replan.publicRead&&Build.VERSION.SDK_INT>=34&&(controls.isEmpty()||feedback.startsWith("Failed click"))){
                             // Only the allowlisted OCR navigation labels are exported;
@@ -598,6 +610,7 @@ class PhoneNavigationService : AccessibilityService() {
                                 }
                             }
                         }
+                        if(replan.publicRead)controls=com.dominion.mobile.data.PhonePublicResult.observationControls(controls)
                         if(controls.isEmpty()&&approvedResults.isEmpty()){
                             _status.value="읽을 수 있는 조작 버튼 없음 · 실행 "+completed+"단계"
                             break
@@ -629,7 +642,10 @@ class PhoneNavigationService : AccessibilityService() {
                         _status.value="다음 실행 계획 없음 · 확인된 "+completed+"단계"
                         break
                     }
-                    check(budget.admit(evidence,proposal,plan.app)){"Repeated or out-of-scope plan"}
+                    if(!budget.admit(evidence,proposal,plan.app)){
+                        _status.value="동일 화면·동작 반복 또는 범위 불일치 · 확인된 "+completed+"단계 · 결과 확인 필요"
+                        break
+                    }
                     activePlan=proposal
                     }
                 }
@@ -963,6 +979,12 @@ class PhoneNavigationService : AccessibilityService() {
             }
             // Reject a password screen even within an allowed map app.
             check(nodes.none { it.isPassword })
+            val publicScope=activeErrand?.takeIf{it.publicRead&&it.app==pkg}
+            if(publicScope!=null){
+                val visible=nodes.filter{it.packageName?.toString()==pkg&&it.isVisibleToUser}
+                    .flatMap{node->listOfNotNull(node.text?.toString(),node.contentDescription?.toString(),node.hintText?.toString())}
+                check(!com.dominion.mobile.data.PhonePublicResult.sensitive(visible)){"개인정보 화면에서는 공개 업무 중단"}
+            }
             // Only visible action labels; never collect editable text, passwords, or screenshots.
             // Keep observations in process memory until the owner explicitly selects what to share.
             val controls = nodes.asSequence().filter { node ->
@@ -1031,8 +1053,14 @@ class PhoneNavigationService : AccessibilityService() {
                 "search_text" -> target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT,Bundle().apply {
                     putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,requireNotNull(step.value))
                 })
-                "search_submit" -> Build.VERSION.SDK_INT>=30&&
-                    target.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
+                "search_submit" -> {
+                    val text=target.text?.toString()?.trim().orEmpty()
+                    val authorized=publicScope==null || (target.isFocused && text.length in 2..100 &&
+                        publicScope.initialRequest.contains(text) &&
+                        com.dominion.mobile.data.PhonePublicResult.text(text)==text)
+                    authorized&&Build.VERSION.SDK_INT>=30&&
+                        target.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
+                }
                 "scroll_forward", "scroll_backward" -> target.performAction(requireNotNull(scrollAction))
                 "expect" -> true
                 else -> false

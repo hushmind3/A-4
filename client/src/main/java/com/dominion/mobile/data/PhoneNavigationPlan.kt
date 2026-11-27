@@ -98,6 +98,8 @@ data class PhoneNavigationPlan(val app: String, val steps: List<PhoneNavigationS
                     !value.contains('@')&&!value.contains("://")&&
                     !Regex("[0-9][0-9 .-]{5,}[0-9]").containsMatchIn(value)
                 }==true
+                "search_submit"->step.label in delegatedLabels && PhoneTransactions.isSearchField(step.label)
+                "inspect"->step.label in setOf("화면","Screen")
                 "scroll_forward","scroll_backward","expect"->true
                 else->false
             }

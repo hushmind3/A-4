@@ -35,7 +35,7 @@ fun PhoneNavigationDialog(plan: PhoneNavigationPlan, onDismiss: () -> Unit,
     var approved by remember(plan) { mutableStateOf(false) }
     var reviewedBatch by remember(plan) { mutableStateOf(false) }
     var automaticReplan by remember(plan) { mutableStateOf(preferReplan&&replanContext!=null) }
-    var delegatedRead by remember(plan){mutableStateOf(false)}
+    var delegatedRead by remember(plan){mutableStateOf(preferReplan&&replanContext?.publicRead==true)}
     var started by remember(plan) { mutableStateOf(false) }
     val container=(context.applicationContext as com.dominion.mobile.DominionApplication).container
     val account=container.cloudAccount.savedAccountId()
@@ -85,7 +85,9 @@ fun PhoneNavigationDialog(plan: PhoneNavigationPlan, onDismiss: () -> Unit,
                             Checkbox(delegatedRead,{delegatedRead=it;approved=false},enabled=!started)
                             Text("검색·스크롤·결과 확인은 한 번 승인하여 실행",Modifier.padding(top=12.dp))
                         }
-                        if(delegatedRead)Text("원래 요청의 검색어와 정해진 탐색 버튼만 자동 실행합니다. 다른 버튼과 화면 정보 전송은 별도 승인합니다.",
+                        if(delegatedRead)Text(if(replanContext?.publicRead==true)
+                            "원래 검색어와 정해진 탐색 버튼을 자동 실행하고, 개인정보 없는 공개 화면 문구를 Cloud AI에 전달해 다음 동작을 판단합니다. 다른 버튼·이미지 전송·거래는 별도 승인합니다."
+                            else "원래 요청의 검색어와 정해진 탐색 버튼만 자동 실행합니다. 다른 버튼과 화면 정보 전송은 별도 승인합니다.",
                             style=MaterialTheme.typography.bodySmall)
                     }
                 }

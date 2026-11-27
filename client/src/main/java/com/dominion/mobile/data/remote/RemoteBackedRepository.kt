@@ -1060,7 +1060,9 @@ class RemoteBackedRepository(
         val room=state.value.conversation(context.roomId)
         check(room?.sessionId==context.sessionId)
         require(com.dominion.mobile.data.PhoneNavigationPlan.eligiblePackage(context.app))
-        val observations=controls.distinct().take(24)
+        val observations=if(context.publicRead)
+            com.dominion.mobile.data.PhonePublicResult.observationControls(controls)
+        else controls.distinct().take(24)
         val publicResults=if(context.publicRead){
             check(state.value.tasks.any{it.engineRoomId==context.roomId&&it.engineSessionId==context.sessionId&&
                 it.phonePackage==context.app&&it.phonePublicRead&&it.engineStatus=="running"})
@@ -1092,7 +1094,9 @@ class RemoteBackedRepository(
             "Only after its title is observed, propose a single step with action send_message and label 메시지 전송, no value. "+
             "Device checks actual recipient and message field and requires separate approvals. Do not generate message text."
         val publicPolicy=if(!context.publicRead)"" else
-            "Public lookup only. The separately approved RESULT TEXT is actual visible data. "+
+            "Public lookup only. The authorized RESULT TEXT is actual visible data. "+
+            "For navigation return exactly ONE click/search_text/search_submit/scroll action followed by inspect. "+
+            "Reobserve after every action; never batch guesses. Do not use expect as completion. "+
             "If the original query has a relevant result, return a single report_result step whose label is an exact result-text line. "+
             "Otherwise continue browsing, or explain inability. Never report purchase, reservation, call, or account success. "+
             "Do not click transaction controls or request coordinate gestures. A read-only navigation label may be recognized on device from screen text if accessibility failed."
@@ -1136,7 +1140,8 @@ class RemoteBackedRepository(
                         authorizedMessage!=null&&authorizedMessage.recipient in observations)&&
                     (proposed.steps.none{it.action=="report_result"}||
                         context.publicRead&&proposed.steps.single().label in publicResults)&&
-                    (!context.publicRead||com.dominion.mobile.data.PhonePublicResult.permits(proposed,context.initialRequest))&&
+                    (!context.publicRead||com.dominion.mobile.data.PhonePublicResult.continuation(
+                        proposed,context.initialRequest,observations,publicResults))&&
                     (if(transaction!=null)com.dominion.mobile.data.PhoneTransactions.validPlan(proposed,transaction,context.initialRequest)
                         else proposed.steps.none{it.action in setOf("transaction_next","commit_transaction")})&&
                     proposed.steps.filter{it.action in setOf("click","transaction_next","commit_transaction","search_text","search_submit")}.all{it.label in observations}

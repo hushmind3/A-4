@@ -39,6 +39,24 @@ object PhonePublicResult {
         if(clean.contains('@')||Regex("[0-9][0-9 .-]{6,}[0-9]").containsMatchIn(clean))return null
         return clean
     }
+    /** A delegated public lookup may only export bounded, non-sensitive labels.
+     * Screen controls are untrusted data and never execution authorization. */
+    fun observationControls(labels:List<String>):List<String> =
+        labels.mapNotNull(::text).filter{safeLabel(it)&&it.length<=80}.distinct().take(24)
+
+    /** Execute one fresh observed action, then inspect the changed screen.
+     * A literal result must be independently re-read by the device executor. */
+    fun continuation(plan:PhoneNavigationPlan,request:String,controls:List<String>,results:List<String>):Boolean {
+        if(!permits(plan,request))return false
+        val first=plan.steps.first()
+        if(first.action=="report_result")return plan.steps.size==1&&first.label in results
+        if(plan.steps.size!=2||plan.steps.last().action!="inspect")return false
+        return when(first.action){
+            "click","search_text","search_submit"->first.label in controls
+            "scroll_forward","scroll_backward"->true
+            else->false
+        }
+    }
     fun permits(plan:PhoneNavigationPlan,request:String):Boolean =
         plan.app in packages&&plan.version==2&&PhoneNavigationPlan.valid(plan)&&plan.steps.all{step->
             when(step.action){
