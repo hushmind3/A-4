@@ -66,8 +66,9 @@ class ReminderWorker(context: Context, params: WorkerParameters) : CoroutineWork
                 val state = repo.state.value
                 val live = state.schedules.firstOrNull { it.id == item.id } ?: continue
                 val occurrence = ReminderTiming.due(live, now)
-                if (occurrence != null && state.settings.notifications && canNotify() &&
-                    post(scope, live, occurrence, state.settings.hideContent || !state.settings.messagePreview)) {
+                if (occurrence != null && (live.watchCondition?.isNotBlank() == true ||
+                    (state.settings.notifications && canNotify() &&
+                    post(scope, live, occurrence, state.settings.hideContent || !state.settings.messagePreview)))) {
                     repo.changeSchedules { rows -> rows.map { row ->
                         if (row != live) row else row.copy(lastNotifiedAt = occurrence,
                             enabled = row.repeat != Repeat.NONE ||

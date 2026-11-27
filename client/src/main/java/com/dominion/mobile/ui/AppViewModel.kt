@@ -540,7 +540,7 @@ class AppViewModel(
 
     fun saveSchedule(existingId: String?, title: String, whenText: String, characterId: String,
         repeat: Repeat, scheduledAt: Long, zoneId: String, workRequest: String? = null,
-        onFailure: () -> Unit = {}, onSaved: () -> Unit = {}) {
+        onFailure: () -> Unit = {}, watchCondition: String? = null, onSaved: () -> Unit = {}) {
         if (title.isBlank() || scheduledAt <= System.currentTimeMillis()) {
             _notice.value = "제목과 미래 날짜·시간을 지정하세요."
             onFailure()
@@ -551,10 +551,12 @@ class AppViewModel(
                 val previous = state.value.schedules.firstOrNull { it.id == existingId }
                 require(previous?.pendingDispatchAt == null) { "Resolve pending work first" }
                 if (!workRequest.isNullOrBlank()) require(state.value.character(characterId) != null && workRequest.length <= 3000)
+                require(watchCondition.isNullOrBlank() || (!workRequest.isNullOrBlank() && watchCondition.length <= 600))
                 val item = ScheduleItem(previous?.id ?: id("sch"), title.trim(), characterId, whenText,
                     repeat, enabled = true, createdAt = previous?.createdAt ?: System.currentTimeMillis(),
                     scheduledAt = scheduledAt, timeZone = zoneId, lastNotifiedAt = null,
-                    workRequest = workRequest?.trim()?.takeIf { it.isNotBlank() })
+                    workRequest = workRequest?.trim()?.takeIf { it.isNotBlank() },
+                    watchCondition = watchCondition?.trim()?.takeIf { it.isNotBlank() })
                 repo.changeSchedules { listOf(item) + it.filterNot { old -> old.id == item.id } }
                 onSaved()
             } catch (cancelled: CancellationException) { throw cancelled }

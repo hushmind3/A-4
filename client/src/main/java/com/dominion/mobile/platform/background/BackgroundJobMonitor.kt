@@ -87,7 +87,17 @@ class BackgroundJobWorker(context: Context, params: WorkerParameters) : Coroutin
         val key = BackgroundJobMonitor.workKey(engine.origin, roomId, jobId)
         when (job.status) {
             "completed" -> {
-                notifyOnce(key, "completed", "DOMINION 작업 완료", "서버 작업이 완료됐습니다. 대화방에서 결과를 확인하세요.")
+                val task = (applicationContext as DominionApplication).container.repository.state.value.tasks
+                    .firstOrNull { it.engineJobId == jobId && it.engineRoomId == roomId }
+                if (!task?.watchCondition.isNullOrBlank()) {
+                    when (com.dominion.mobile.data.WatchDecision.evaluate(requireNotNull(task), job)) {
+                        com.dominion.mobile.data.WatchDecision.MATCH ->
+                            notifyOnce(key, "watch-match", "DOMINION 감시 조건 발견", "본체 AI가 조건 충족으로 판단했습니다. 출처와 근거를 확인하세요.")
+                        com.dominion.mobile.data.WatchDecision.UNKNOWN ->
+                            notifyOnce(key, "watch-unknown", "DOMINION 감시 확인 필요", "조건 충족 여부를 확인하지 못했습니다. 실제 조회 결과를 검토하세요.")
+                        com.dominion.mobile.data.WatchDecision.NO_MATCH -> Unit
+                    }
+                } else notifyOnce(key, "completed", "DOMINION 작업 완료", "서버 작업이 완료됐습니다. 대화방에서 결과를 확인하세요.")
                 BackgroundJobMonitor.stop(applicationContext, engine.origin, roomId, jobId)
             }
             "failed" -> {

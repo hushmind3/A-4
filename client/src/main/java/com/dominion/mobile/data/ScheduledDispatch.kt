@@ -17,6 +17,8 @@ object ScheduledDispatch {
         require(!item.workRequest.isNullOrBlank())
         val id = UUID.nameUUIDFromBytes(("schedule:" + item.id + ":" + occurrence).toByteArray(Charsets.UTF_8)).toString()
         return TaskItem(id, item.title, item.characterId, due = ReminderTiming.format(occurrence, item.timeZone),
-            requestDetails = item.workRequest.trim() + "\n예약 업무입니다. 외부 변경·제출·결제 등 추가 승인 필요한 행동은 본체의 승인 절차를 따르세요.")
+            requestDetails = item.workRequest.trim() + "\n예약 업무입니다. 외부 변경·제출·결제 등 추가 승인 필요한 행동은 본체의 승인 절차를 따르세요." +
+                item.watchCondition?.takeIf { it.isNotBlank() }?.let { WatchDecision.instructions(it) }.orEmpty(),
+            watchCondition = item.watchCondition)
     }
 }

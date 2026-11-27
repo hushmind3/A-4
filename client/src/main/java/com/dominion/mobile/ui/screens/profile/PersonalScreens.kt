@@ -626,7 +626,8 @@ fun SchedulesScreen(
                         }) { Text(tr(lang, "달력", "Calendar")) }
                     }
                     if (!schedule.workRequest.isNullOrBlank()) {
-                        Text(schedule.dispatchStatus ?: "AI 예약", color = p.blue, style = MaterialTheme.typography.labelSmall)
+                        Text((if (schedule.watchCondition.isNullOrBlank()) "" else "조건 감시 · ") +
+                            (schedule.dispatchStatus ?: "AI 예약"), color = p.blue, style = MaterialTheme.typography.labelSmall)
                     }
                     TextButton(onClick = { deleteTarget = schedule.id }) { Text("⋯") }
                     Switch(
@@ -657,8 +658,9 @@ fun SchedulesScreen(
         AddScheduleDialog(
             state = state, existing = editTarget,
             onDismiss = { showAdd = false; editTarget = null },
-            onAdd = { title, whenText, characterId, repeat, due, zone, request ->
-                vm.saveSchedule(editTarget?.id, title, whenText, characterId, repeat, due, zone, request) {
+            onAdd = { title, whenText, characterId, repeat, due, zone, request, condition ->
+                vm.saveSchedule(editTarget?.id, title, whenText, characterId, repeat, due, zone, request,
+                    watchCondition = condition) {
                     showAdd = false; editTarget = null
                 }
             }
@@ -683,7 +685,7 @@ private fun AddScheduleDialog(
     state: AppState,
     onDismiss: () -> Unit,
     existing: ScheduleItem?,
-    onAdd: (String, String, String, Repeat, Long, String, String?) -> Unit
+    onAdd: (String, String, String, Repeat, Long, String, String?, String?) -> Unit
 ) {
     val p = LocalDominionPalette.current
     val lang = LocalLang.current
@@ -692,6 +694,8 @@ private fun AddScheduleDialog(
     var whenText by remember(existing?.id) { mutableStateOf(existing?.whenText.orEmpty()) }
     var runWork by remember(existing?.id) { mutableStateOf(!existing?.workRequest.isNullOrBlank()) }
     var workRequest by remember(existing?.id) { mutableStateOf(existing?.workRequest.orEmpty()) }
+    var conditional by remember(existing?.id) { mutableStateOf(!existing?.watchCondition.isNullOrBlank()) }
+    var condition by remember(existing?.id) { mutableStateOf(existing?.watchCondition.orEmpty()) }
     var repeat by remember(existing?.id) { mutableStateOf(existing?.repeat ?: Repeat.NONE) }
     val zone = remember(existing?.id) { runCatching { ZoneId.of(existing?.timeZone ?: ZoneId.systemDefault().id) }.getOrDefault(ZoneId.systemDefault()) }
     var due by remember(existing?.id) { mutableStateOf(existing?.let { ReminderTiming.nextUndelivered(it, System.currentTimeMillis()) }
@@ -714,6 +718,16 @@ private fun AddScheduleDialog(
                 if (runWork) {
                     AppTextField(workRequest, { workRequest = it.take(3000) },
                         placeholder = "예: 공식 기관의 새 공고를 조사해줘", singleLine = false, maxLines = 3)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.Checkbox(checked = conditional, onCheckedChange = { conditional = it })
+                        Text("조건 충족 시에만 결과 알림")
+                    }
+                    if (conditional) {
+                        AppTextField(condition, { condition = it.take(600) }, label = "감시 조건",
+                            placeholder = "예: 공식 공고에 새 모집 일정이 발표됨", singleLine = false, maxLines = 3)
+                        Text("본체 AI가 근거를 제시한 판단을 알립니다. 판단 불가나 실패도 알립니다.",
+                            style = MaterialTheme.typography.labelSmall)
+                    }
                     Text("휴대폰이 켜지고 본체에 연결될 때 접수합니다. 알림 설정과 별개이며 지연될 수 있습니다.",
                         style = MaterialTheme.typography.labelSmall)
                 }
@@ -760,9 +774,9 @@ private fun AddScheduleDialog(
         confirmButton = {
             TextButton(
                 enabled = title.isNotBlank() && due > System.currentTimeMillis() && existing?.pendingDispatchAt == null &&
-                    (!runWork || (workRequest.isNotBlank() && characterId.isNotBlank())),
+                    (!runWork || (workRequest.isNotBlank() && characterId.isNotBlank() && (!conditional || condition.isNotBlank()))),
                 onClick = { onAdd(title, whenText.ifBlank { ReminderTiming.format(due, zone.id) }, characterId, repeat, due, zone.id,
-                    workRequest.takeIf { runWork }) }
+                    workRequest.takeIf { runWork }, condition.takeIf { runWork && conditional }) }
             ) { Text(tr(lang, "예약 저장", "Save reminder"), color = if (title.isNotBlank()) p.blue else p.textDisabled) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(tr(lang, "취소", "Cancel"), color = p.textSecondary) } }

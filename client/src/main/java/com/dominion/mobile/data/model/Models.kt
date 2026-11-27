@@ -155,7 +155,8 @@ data class TaskItem(
     val engineStatus: String? = null,
     val enginePrompt: String? = null,
     val engineLanguage: String? = null,
-    val requestDetails: String? = null
+    val requestDetails: String? = null,
+    val watchCondition: String? = null
 ) {
     val progress: Float
         get() = if (steps.isEmpty()) (if (done) 1f else 0f)
@@ -185,7 +186,8 @@ data class ScheduleItem(
     val workRequest: String? = null,
     val lastDispatchedAt: Long? = null,
     val pendingDispatchAt: Long? = null,
-    val dispatchStatus: String? = null
+    val dispatchStatus: String? = null,
+    val watchCondition: String? = null
 )
 
 data class MemoryItem(
