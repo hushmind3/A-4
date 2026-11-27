@@ -33,6 +33,7 @@ object PhonePublicResult {
         plan.app in packages&&plan.version==2&&PhoneNavigationPlan.valid(plan)&&plan.steps.all{step->
             when(step.action){
                 "inspect","expect","report_result","scroll_forward","scroll_backward"->true
+                "search_submit"->PhoneTransactions.isSearchField(step.label)
                 "click"->safeLabel(step.label)
                 "search_text"->safeLabel(step.label)&&step.value?.let{request.contains(it)&&text(it)!=null}==true
                 else->false

@@ -664,14 +664,22 @@ class PhoneNavigationService : AccessibilityService() {
             }.flatMap { node -> sequenceOf(node.contentDescription, node.text) }
                 .mapNotNull { it?.toString()?.trim()?.takeIf { label ->
                     label.isNotBlank() && label.length <= 80 && label.none(Char::isISOControl)
-                } }.distinct().take(24).toList()
+                } }.distinct().take(100).toList()
             if (step.action == "inspect") {
                 // Only add the exact user-entered recipient and recognized input hints,
                 // not private conversation text. A fresh approval still gates transmission.
                 val intent=activeErrand?.kakaoMessage?.takeIf{pkg=="com.kakao.talk"}
                 val title=if(intent!=null&&nodes.any{it.packageName?.toString()==pkg&&it.isVisibleToUser&&!it.isEditable&&
                     listOf(it.text?.toString(),it.contentDescription?.toString()).contains(intent.recipient)})listOf(intent.recipient)else emptyList()
-                val observed=(title+controls).distinct().take(24)
+                val searchHints=nodes.filter{it.packageName?.toString()==pkg&&it.isVisibleToUser&&it.isEnabled&&it.isEditable&&!it.isPassword}
+                    .flatMap{listOfNotNull(it.hintText?.toString(),it.contentDescription?.toString())}
+                    .map{it.trim()}.filter(com.dominion.mobile.data.PhoneTransactions::isSearchField).distinct()
+                val scope=activeErrand?.transaction
+                val priority=if(scope!=null)controls.filter{
+                    com.dominion.mobile.data.PhoneTransactions.finalAction(scope.kind,it)||
+                        com.dominion.mobile.data.PhoneTransactions.canAdvance(it)
+                }else emptyList()
+                val observed=(title+searchHints+priority+controls).distinct().take(24)
                 val publicRead=activeErrand?.publicRead==true&&pkg in com.dominion.mobile.data.PhonePublicResult.packages
                 val results=if(publicRead){
                     val raw=nodes.filter{it.packageName?.toString()==pkg&&it.isVisibleToUser&&!it.isPassword&&!it.isEditable}
@@ -696,6 +704,10 @@ class PhoneNavigationService : AccessibilityService() {
                         "click" -> node.isClickable
                         "search_text" -> node.isEditable &&
                             node.actionList.any { it.id == AccessibilityNodeInfo.ACTION_SET_TEXT }
+                        "search_submit" -> Build.VERSION.SDK_INT>=30&&node.isEditable&&
+                            listOfNotNull(node.hintText?.toString(),node.contentDescription?.toString()).any{
+                                it.trim()==step.label&&com.dominion.mobile.data.PhoneTransactions.isSearchField(it.trim())
+                            }&&node.actionList.any{it.id==AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id}
                         "scroll_forward", "scroll_backward" -> node.isScrollable &&
                             node.actionList.any { it.id == scrollAction }
                         "expect" -> true
@@ -711,6 +723,8 @@ class PhoneNavigationService : AccessibilityService() {
                 "search_text" -> target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT,Bundle().apply {
                     putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,requireNotNull(step.value))
                 })
+                "search_submit" -> Build.VERSION.SDK_INT>=30&&
+                    target.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
                 "scroll_forward", "scroll_backward" -> target.performAction(requireNotNull(scrollAction))
                 "expect" -> true
                 else -> false

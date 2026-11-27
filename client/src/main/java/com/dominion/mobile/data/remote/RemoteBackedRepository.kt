@@ -672,7 +672,8 @@ class RemoteBackedRepository(
         explain in natural language why it cannot proceed.
         Never infer or invent current controls. Screenshot bytes are not available.
         You may only click controls with exact labels from the supplied observation.
-        Use at most 4 steps: click/search_text/scroll then inspect (label 화면)
+        Use at most 4 steps: click/search_text/scroll then inspect (label 화면).
+        If an actual search-field hint is observed, search_submit may submit that search field only, never a chat or payment form.
         or expect a concrete success label. Search text only goes to a search field.
         Never propose account, authentication, purchasing, paying, messaging,
         deleting, submitting or other irreversible actions except the explicitly scoped Kakao or transaction actions below.
@@ -705,7 +706,7 @@ class RemoteBackedRepository(
                     (!context.publicRead||com.dominion.mobile.data.PhonePublicResult.permits(proposed,context.initialRequest))&&
                     (if(transaction!=null)com.dominion.mobile.data.PhoneTransactions.validPlan(proposed,transaction,context.initialRequest)
                         else proposed.steps.none{it.action in setOf("transaction_next","commit_transaction")})&&
-                    proposed.steps.filter{it.action in setOf("click","transaction_next","commit_transaction")}.all{it.label in observations}
+                    proposed.steps.filter{it.action in setOf("click","transaction_next","commit_transaction","search_text","search_submit")}.all{it.label in observations}
                 if(valid)return proposed
             }else if(!result.content.contains("dominion-phone-plan")&&!result.content.trim().startsWith("{")){
                 return null

@@ -13,7 +13,8 @@ data class PhoneNavigationPlan(val app: String, val steps: List<PhoneNavigationS
             "길찾기","도보","자동차","대중교통","Search","Directions","지도","출발지","도착지")
         private val searchLabels = setOf("검색","장소 검색","통합 검색","장소, 주소 검색","검색어 입력","Search","출발지","도착지")
         private val commonSearch = setOf("검색","Search","검색어 입력","검색어를 입력하세요","Search files","파일 검색",
-            "YouTube 검색","Search YouTube","일정 검색","Search events")
+            "YouTube 검색","Search YouTube","일정 검색","Search events","상품 검색","음식점 검색","숙소 검색",
+            "병원 검색","출발지","도착지","목적지","출발지 검색","도착지 검색","목적지 검색","장소를 입력하세요","어디로 갈까요?","어디로 가시나요?")
         private val appNavigation = mapOf(
             "com.google.android.youtube" to setOf("홈","Home","구독","Subscriptions","Shorts"),
             "com.google.android.calendar" to setOf("오늘","Today","일정","Schedule","월","Month","주","Week","일","Day"),
@@ -70,6 +71,7 @@ data class PhoneNavigationPlan(val app: String, val steps: List<PhoneNavigationS
                         "report_result" -> step.value==null&&PhonePublicResult.text(step.label)==step.label
                         "commit_transaction" -> step.value==null&&PhoneTransactions.anyFinalAction(step.label)
                         "transaction_next" -> step.value==null&&PhoneTransactions.canAdvance(step.label)
+                        "search_submit" -> plan.version==2&&step.value==null&&PhoneTransactions.isSearchField(step.label)
                         "inspect", "visual_inspect" -> plan.version == 2 && step.value == null && step.label in setOf("화면", "Screen")
                         "tap_point", "swipe_point" -> plan.version == 2 &&
                             VisualGesture.parse(step.action,step.value) != null
@@ -138,7 +140,7 @@ data class PhoneNavigationPlan(val app: String, val steps: List<PhoneNavigationS
                 val action = read(step,"action",20)
                 val label = read(step,"label",100)
                 when (action) {
-                    "click", "scroll_forward", "scroll_backward", "send_message", "report_result", "commit_transaction", "transaction_next" -> {
+                    "click", "scroll_forward", "scroll_backward", "send_message", "report_result", "commit_transaction", "transaction_next", "search_submit" -> {
                         require(step.keySet() == setOf("action","label"))
                         PhoneNavigationStep(action,label)
                     }

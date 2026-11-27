@@ -23,5 +23,9 @@ class PhoneTransactionsTest {
             PhoneNavigationStep("click","주문하기"),PhoneNavigationStep("inspect","화면")))))
         assertTrue(PhoneTransactions.receipt("shopping",listOf("주문 완료")).isNotEmpty())
         assertTrue(PhoneTransactions.receipt("shopping",listOf("완료","장바구니")).isEmpty())
+        assertTrue(PhoneTransactions.receipt("stay",listOf("예약 확정")).isEmpty())
+        assertFalse(PhoneTransactions.canAdvance("다음"))
+        assertFalse(PhoneTransactions.isSearchField("메시지 입력"))
+        assertTrue(PhoneTransactions.isSearchField("도착지 검색"))
     }
 }

@@ -30,13 +30,13 @@ object PhoneTransactions {
         "clinic" to setOf("예약하기","예약 확정","접수하기","접수 신청","진료 예약하기")
     )
     private val nextLabels=setOf("장바구니","장바구니 담기","장바구니 보기","주문서 확인","주문서",
-        "옵션 선택","객실 선택","예약 정보 확인","예약 정보 입력","다음","택시 선택","차량 선택",
+        "옵션 선택","객실 선택","예약 정보 확인","예약 정보 입력","택시 선택","차량 선택",
         "예약 시간 선택","진료시간 선택","일정 선택")
     private val receiptLabels=mapOf(
         "shopping" to setOf("주문 완료","주문이 완료되었습니다","결제 완료","결제가 완료되었습니다"),
         "delivery" to setOf("주문 완료","주문이 완료되었습니다","주문 접수 완료","주문이 접수되었습니다"),
         "transport" to setOf("호출 완료","호출 요청 완료","배차 완료","택시가 배차되었습니다"),
-        "stay" to setOf("예약 완료","예약이 완료되었습니다","예약 확정","예약이 확정되었습니다"),
+        "stay" to setOf("예약 완료","예약이 완료되었습니다","예약이 확정되었습니다"),
         "clinic" to setOf("예약 완료","예약이 완료되었습니다","접수 완료","접수가 완료되었습니다")
     )
     private val money=Regex("(?<![0-9])([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{1,9})\\s*원")
@@ -46,6 +46,9 @@ object PhoneTransactions {
     private val authLabels=setOf("비밀번호 입력","인증번호 입력","본인 인증","본인인증","카드번호 입력","결제 비밀번호")
     fun authScreen(labels:List<String>)=labels.any{v->authLabels.any{v.contains(it,true)}}
     fun canAdvance(label:String)=label in nextLabels
+    fun isSearchField(label:String)=label in setOf("검색","Search","검색어 입력","검색어를 입력하세요","통합 검색",
+        "장소 검색","장소, 주소 검색","상품 검색","음식점 검색","숙소 검색","병원 검색","출발지","도착지","목적지",
+        "출발지 검색","도착지 검색","목적지 검색","장소를 입력하세요","어디로 갈까요?","어디로 가시나요?")
     fun finalAction(kind:String,label:String)=label.replace(pricePrefix,"") in finalLabels[kind].orEmpty()
     fun anyFinalAction(label:String)=finalLabels.keys.any{finalAction(it,label)}
     fun receipt(kind:String,labels:List<String>)=labels.map{it.trim().trimEnd('.','!')}
@@ -58,6 +61,7 @@ object PhoneTransactions {
             "click"->PhonePublicResult.safeLabel(step.label)&&!anyFinalAction(step.label)
             "search_text"->step.value?.let{original.contains(it)&&PhonePublicResult.text(it)!=null}==true
             "inspect","expect","scroll_forward","scroll_backward"->true
+            "search_submit"->isSearchField(step.label)
             else->false
         }}
     }
