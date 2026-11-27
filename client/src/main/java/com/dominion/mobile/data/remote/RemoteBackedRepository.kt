@@ -871,7 +871,7 @@ class RemoteBackedRepository(
             "Public lookup only. The separately approved RESULT TEXT is actual visible data. "+
             "If the original query has a relevant result, return a single report_result step whose label is an exact result-text line. "+
             "Otherwise continue browsing, or explain inability. Never report purchase, reservation, call, or account success. "+
-            "Do not click transaction controls or use coordinate gestures."
+            "Do not click transaction controls or request coordinate gestures. A read-only navigation label may be recognized on device from screen text if accessibility failed."
         val system="""You plan ONE short Android navigation continuation. Output ONLY a valid
         dominion-phone-plan/v2 JSON object with keys schema, app and steps, or
         explain in natural language why it cannot proceed.

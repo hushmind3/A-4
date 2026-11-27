@@ -365,6 +365,15 @@ class PhoneNavigationService : AccessibilityService() {
                             } finally { root.recycle() }
                             if (!success) delay(180)
                         }
+                        if(!success&&replan?.publicRead==true&&engine==null&&Build.VERSION.SDK_INT>=34&&
+                            step.action=="click"&&step.label in ScreenTextNavigation.allowed){
+                            validRoom()
+                            // The semantic click never succeeded. Use only a uniquely
+                            // recognized safe label, with a separate visible approval.
+                            success=try{visualTextClick(plan.app,step.label,::validRoom)}
+                            catch(e:CancellationException){throw e}
+                            catch(_:Exception){false}
+                        }
                         if(!success && replan!=null) {
                             feedback="Failed "+step.action+" on "+step.label+"; inspect and choose a different observed control."
                             // A failed target is not success: require a fresh observation.
@@ -417,8 +426,18 @@ class PhoneNavigationService : AccessibilityService() {
                             apply(view,plan.app,PhoneNavigationStep("inspect","화면"))
                         }finally{view.recycle()}
                         val observation=_observed.value?.takeIf{it.packageName==plan.app}
-                        val controls=observation?.labels.orEmpty()
+                        var controls=observation?.labels.orEmpty()
                         approvedResults=if(replan.publicRead)observation?.results.orEmpty() else emptyList()
+                        if(replan.publicRead&&Build.VERSION.SDK_INT>=34&&(controls.isEmpty()||feedback.startsWith("Failed click"))){
+                            // Only the allowlisted OCR navigation labels are exported;
+                            // no screenshot or arbitrary OCR text is sent to inference.
+                            approveStep(PhoneNavigationStep("화면 문자 탐색","검색용 버튼 문구만 기기에서 인식"),plan.app,1,1)
+                            validRoom()
+                            val found=try{ScreenTextNavigation.targets(captureWindow(plan.app).png)}
+                                catch(e:CancellationException){throw e}
+                                catch(_:Exception){emptyList()}
+                            controls=(found.map{it.label}+controls).distinct().take(24)
+                        }
                         if(controls.isEmpty()&&approvedResults.isEmpty()){
                             _status.value="읽을 수 있는 조작 버튼 없음 · 실행 "+completed+"단계"
                             break
@@ -554,6 +573,24 @@ class PhoneNavigationService : AccessibilityService() {
         }
         check(checkedWindow(pkg) == (id to bounds))
         return VisualFrame(pkg, id, bounds, bytes, VisualGesture.digest(bytes))
+    }
+
+    @androidx.annotation.RequiresApi(34)
+    private suspend fun visualTextClick(pkg:String,label:String,validRoom:()->Unit):Boolean{
+        require(label in ScreenTextNavigation.allowed)
+        val first=captureWindow(pkg)
+        val target=ScreenTextNavigation.targets(first.png).singleOrNull{it.label==label}?:return false
+        approveStep(PhoneNavigationStep("화면에서 확인한 검색 버튼",label),pkg,1,1)
+        validRoom()
+        val fresh=captureWindow(pkg)
+        if(fresh.digest!=first.digest||fresh.windowId!=first.windowId||fresh.bounds!=first.bounds)return false
+        val current=ScreenTextNavigation.targets(fresh.png).singleOrNull{it==target}?:return false
+        validRoom()
+        // OCR is asynchronous; bind the actual dispatch to a last fresh frame.
+        val last=captureWindow(pkg)
+        if(last.digest!=fresh.digest||last.windowId!=fresh.windowId||last.bounds!=fresh.bounds)return false
+        validRoom()
+        return performVisualGesture(last,VisualGesture(last.digest,current.x,current.y))
     }
 
     private suspend fun performVisualGesture(frame: VisualFrame, command: VisualGesture): Boolean {
