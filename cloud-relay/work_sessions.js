@@ -1,6 +1,7 @@
 // Durable cloud work sessions. The mobile app creates/answers/observes work;
 // model, browser and phone adapters execute on the server, not in Android.
 import {deliverPush} from './assistant_push_delivery.js';
+import {runBrowserPlan} from './browser_session.js';
 const now=()=>Math.floor(Date.now()/1000);
 const reply=(x,status=200)=>new Response(JSON.stringify(x),{status,
   headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});
@@ -87,8 +88,12 @@ export async function runWork(env,id,infer){
     .bind(now(),id,now()).first();
   if(!row)return false;
   try{
-    const outcome=row.kind==='phone'?await runPhone(env,row):await askModel(env,
-      {id:row.account_id,scope:'app',capability:'inference'},row,infer);
+    let meta={};try{meta=JSON.parse(row.metadata||'{}')}catch{}
+    const outcome=(row.kind==='browser'||row.kind==='admin')&&typeof meta.url==='string'&&meta.url.startsWith('https://')
+      ?await runBrowserPlan(env,row.account_id,meta.url,row.request,
+        (user,messages)=>infer(user,messages))
+      :row.kind==='phone'?await runPhone(env,row):await askModel(env,
+        {id:row.account_id,scope:'app',capability:'inference'},row,infer);
     const t=now();
     const expired=Number(row.deadline||0)>0&&t>Number(row.deadline);
     if(expired){

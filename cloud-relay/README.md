@@ -98,3 +98,9 @@ The production Worker now has `env.BROWSER` Browser Rendering binding. Version *
 Live checks: a temporary signed account saved a cookie, read `https://www.gov.kr/` (page title `메인 | 정부24`, actual rendered text returned), and executed the generic action endpoint. The temporary account and browser row were deleted. Some sites apply bot/access blocking; the response reflects the actual blocked page rather than claiming success. No payment/identity bypass is implemented.
 
 This is a general browser executor, but a service-specific planner/verifier is still required to reliably complete every reservation/application.
+
+### Natural-language browser work and latest deployment
+
+Browser work (`kind: browser/admin` with `metadata.url`) now opens the authenticated page, snapshots interactive elements, asks the Cloud model for a bounded action plan, executes fill/select/click/submit actions in the same page, and returns the observed page. If model planning fails, it returns the actual observed page text as a partial result instead of inventing completion. Actions that require passwords/OTP/card/account credentials stop for the user.
+
+Latest production version: **5be9dd08-7343-4fc6-b042-7ecefe592cac**. A temporary account exercised a browser work against `https://example.com/`; the job completed with the actual observed page text. The account and work rows were deleted. Government/bank pages may block datacenter browsers; the Worker returns the observed block page, not a success claim. A deterministic per-site action planner/verifier is still required for reliable reservation/submission completion.
