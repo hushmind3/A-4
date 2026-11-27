@@ -205,8 +205,11 @@ class PhoneNavigationService : AccessibilityService() {
                                 delay(500)
                             }else{
                                 approveStep(PhoneNavigationStep("직접 인증 및 최종 확인 화면 이동",localTransaction.target,
-                                    if(localTransaction.kind=="finance")"은행 앱에서 직접 수취인·계좌를 지정하고 이체 확인 화면까지 이동하세요."
-                                    else "통신 앱에서 원하는 요금제 또는 부가서비스 확인 화면까지 이동하세요."),plan.app,1,1)
+                                    when(localTransaction.kind){
+                                        "finance"->"은행 앱에서 직접 수취인·계좌를 지정하고 이체 확인 화면까지 이동하세요."
+                                        "finance_bill"->"은행 앱에서 직접 고지서를 지정하고 정확한 납부 확인 화면까지 이동하세요."
+                                        else->"통신 앱에서 원하는 요금제 또는 부가서비스 확인 화면까지 이동하세요."
+                                    }),plan.app,1,1)
                                 validRoom();delay(350)
                             }
                         }
@@ -237,8 +240,7 @@ class PhoneNavigationService : AccessibilityService() {
                         while(receipt.isEmpty()&&android.os.SystemClock.elapsedRealtime()<deadline){
                             validRoom()
                             receipt=runCatching{withTransactionNodes(plan.app){_,lines->
-                                val found=com.dominion.mobile.data.PhoneTransactions.receipt(localTransaction.kind,lines)
-                                if(localTransaction.kind=="finance"&&lines.none{it.contains(localTransaction.target)})emptyList()else found
+                                com.dominion.mobile.data.PhoneTransactions.completedReceipt(localTransaction,lines)
                             }}.getOrDefault(emptyList())
                             if(receipt.isEmpty())delay(750)
                         }

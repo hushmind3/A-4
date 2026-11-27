@@ -8,7 +8,7 @@ data class PhoneTransactionRequest(val kind:String,val target:String,val conditi
         require(target==target.trim()&&target.length in 2..100&&target.none(Char::isISOControl))
         require(condition==condition.trim()&&condition.length in 2..160&&condition.none(Char::isISOControl))
         require(maxWon in 0..100_000_000L && (kind in setOf("clinic","telecom")||maxWon>0))
-        if(kind=="finance"){
+        if(kind in setOf("finance","finance_bill")){
             // No full account numbers, passwords or recipient inference. The
             // user enters destination details inside the official bank app.
             require(condition.matches(Regex("[0-9]{4}"))&&maxWon in 1..10_000_000L)
@@ -26,11 +26,12 @@ object PhoneTransactions {
         "stay" to setOf("com.cultsotry.yanolja.nativeapp","kr.goodchoice.abouthere"),
         "clinic" to setOf("com.bbros.sayup"),
         "telecom" to PrivateAccountRead.carrierApps,
-        "finance" to PrivateAccountRead.bankApps
+        "finance" to PrivateAccountRead.bankApps,
+        "finance_bill" to PrivateAccountRead.bankApps
     )
     fun supports(kind:String,pkg:String)=pkg in apps[kind].orEmpty()
     fun supportedApp(pkg:String)=apps.values.any{pkg in it}
-    fun deviceOnly(kind:String)=kind in setOf("finance","telecom")
+    fun deviceOnly(kind:String)=kind in setOf("finance","finance_bill","telecom")
     private val finalLabels=mapOf(
         "shopping" to setOf("결제하기","주문하기","주문 확정","결제"),
         "delivery" to setOf("결제하기","주문하기","주문 확정","배달 주문하기"),
@@ -38,7 +39,8 @@ object PhoneTransactions {
         "stay" to setOf("결제하기","예약 확정","예약하기","예약 및 결제"),
         "clinic" to setOf("예약하기","예약 확정","접수하기","접수 신청","진료 예약하기"),
         "telecom" to setOf("요금제 변경 신청","변경 신청","변경하기","부가서비스 신청","부가서비스 해지"),
-        "finance" to setOf("송금하기","이체하기","송금 확인","이체 확인","이체 실행")
+        "finance" to setOf("송금하기","이체하기","송금 확인","이체 확인","이체 실행"),
+        "finance_bill" to setOf("납부하기","납부 확인","납부 실행","공과금 납부")
     )
     private val nextLabels=setOf("장바구니","장바구니 담기","장바구니 보기","주문서 확인","주문서",
         "옵션 선택","객실 선택","예약 정보 확인","예약 정보 입력","택시 선택","차량 선택",
@@ -50,7 +52,8 @@ object PhoneTransactions {
         "stay" to setOf("예약 완료","예약이 완료되었습니다","예약이 확정되었습니다"),
         "clinic" to setOf("예약 완료","예약이 완료되었습니다","접수 완료","접수가 완료되었습니다"),
         "telecom" to setOf("요금제 변경 완료","요금제가 변경되었습니다","부가서비스 신청 완료","부가서비스 해지 완료"),
-        "finance" to setOf("송금 완료","송금이 완료되었습니다","이체 완료","이체가 완료되었습니다")
+        "finance" to setOf("송금 완료","송금이 완료되었습니다","이체 완료","이체가 완료되었습니다"),
+        "finance_bill" to setOf("납부 완료","납부가 완료되었습니다","공과금 납부 완료")
     )
     private val money=Regex("(?<![0-9])([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{1,9})\\s*원")
     private val pricePrefix=Regex("^[0-9,]+\\s*원\\s*")
@@ -71,6 +74,16 @@ object PhoneTransactions {
     fun anyFinalAction(label:String)=finalLabels.keys.any{finalAction(it,label)}
     fun receipt(kind:String,labels:List<String>)=labels.map{it.trim().trimEnd('.','!')}
         .filter{it in receiptLabels[kind].orEmpty()}.distinct()
+    fun completedReceipt(request:PhoneTransactionRequest,lines:List<String>):List<String>{
+        val result=receipt(request.kind,lines)
+        if(request.kind !in setOf("finance","finance_bill"))return result
+        val target=lines.any{it.trim()==request.target||
+            listOf("받는 분: ","받는 분 ","납부처: ","납부처 ").any{prefix->it.trim()==prefix+request.target}}
+        val amount=lines.any{line->money.findAll(line).any{
+            it.groupValues[1].replace(",","").toLongOrNull()==request.maxWon
+        }}
+        return if(target&&amount)result else emptyList()
+    }
     fun validPlan(plan:PhoneNavigationPlan,request:PhoneTransactionRequest,original:String):Boolean{
         if(!supports(request.kind,plan.app)||!PhoneNavigationPlan.valid(plan)||plan.version!=2)return false
         return plan.steps.all{step->when(step.action){
@@ -89,6 +102,7 @@ object PhoneTransactions {
                 "transport"->"화면 예상 운임 (실제 변동 가능): "
                 "telecom"->"화면 월 이용료 또는 변경 비용: "
                 "finance"->"화면 이체 금액: "
+                "finance_bill"->"화면 납부 총액: "
                 else->"화면 결제금액: "
             })+amount+"원\n실행: "+button
     }
@@ -100,6 +114,11 @@ object PhoneTransactions {
             // suffix; a random number elsewhere on the page is not evidence.
             if(lines.none{it.trim()==request.target||it.trim()=="받는 분 "+request.target||it.trim()=="받는 분: "+request.target})return null
             if(lines.none{line->Regex("[*＊•●Xx]{2,}[ -]*"+Regex.escape(request.condition)+"(?![0-9])").containsMatchIn(line)})return null
+        }else if(request.kind=="finance_bill"){
+            if(lines.none{it.trim()==request.target||it.trim()=="납부처 "+request.target||it.trim()=="납부처: "+request.target})return null
+            val prefix=listOf("납부자번호","전자납부번호","고지서번호","고객번호")
+            if(lines.none{line->prefix.any{line.startsWith(it)}&&
+                Regex("[*＊•●Xx]{2,}[ -]*"+Regex.escape(request.condition)+"(?![0-9])").containsMatchIn(line)})return null
         }else if(lines.none{it.contains(request.target)}||lines.none{it.contains(request.condition)})return null
         // Only explicitly labeled totals or the price printed on the final button.
         // Never mistake an individual item, crossed-out price, coupon, or range for a total.
@@ -113,6 +132,7 @@ object PhoneTransactions {
         val totals=when(request.kind){
             "telecom"->listOf("변경 후 월 요금","변경 후 월정액","월 이용료","월정액","월 요금","월 기본료")
             "finance"->listOf("이체 금액","이체금액","송금 금액","송금금액","보낼 금액")
+            "finance_bill"->listOf("총 납부금액","총 납부 금액","납부 금액","납부금액","납부할 금액")
             else->totalLabels
         }
         for(i in lines.indices){
@@ -131,12 +151,12 @@ object PhoneTransactions {
             lines.any{it=="무료"||it=="결제금액 0원"||it=="총 결제금액 0원"})candidates.add(0)
         val amount=candidates.singleOrNull()?:return null
         if(amount>request.maxWon)return null
-        if(request.kind=="finance"){
+        if(request.kind in setOf("finance","finance_bill")){
             if(amount!=request.maxWon)return null
             // Require an explicit zero transfer fee; never silently exceed the
             // exact amount the owner authorized.
             val fees=lines.mapIndexedNotNull{i,line->
-                val prefix=listOf("이체 수수료","송금 수수료","수수료").firstOrNull{line.startsWith(it)}
+                val prefix=listOf("이체 수수료","송금 수수료","납부 수수료","수수료").firstOrNull{line.startsWith(it)}
                     ?:return@mapIndexedNotNull null
                 line.removePrefix(prefix).trim().trimStart(':').trim().ifBlank{lines.getOrNull(i+1).orEmpty()}
             }

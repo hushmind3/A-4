@@ -101,6 +101,7 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
             var transact by remember{mutableStateOf(false)}
             var privateField by remember{mutableStateOf<String?>(null)}
             val canPrivate=selectedApp?.let{com.dominion.mobile.data.PrivateAccountRead.supports(errand.id,it.packageName)}==true
+            var billPay by remember{mutableStateOf(false)}
             var target by remember{mutableStateOf("")}
             var condition by remember{mutableStateOf("")}
             var maxWon by remember{mutableStateOf("")}
@@ -146,11 +147,15 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
                             Text(when(errand.id){"finance"->"기기 전용 이체 실행";"telecom"->"기기 전용 요금제·부가서비스 변경";else->"실제 주문·예약·호출 실행"},Modifier.padding(top=12.dp))}
                     }
                     if(canTransact&&transact){
-                        AppTextField(target,{target=it.take(100)},label=when(errand.id){"finance"->"정확한 수취인 이름";"telecom"->"정확한 요금제·부가서비스 명칭";else->"정확한 상품·가게·목적지·숙소·병원"})
+                        if(errand.id=="finance"){
+                            Row{RadioButton(selected=!billPay,onClick={billPay=false});Text("이체",Modifier.padding(top=12.dp))
+                                RadioButton(selected=billPay,onClick={billPay=true});Text("공과금 납부",Modifier.padding(top=12.dp))}
+                        }
+                        AppTextField(target,{target=it.take(100)},label=when(errand.id){"finance"->if(billPay)"정확한 납부처 이름" else "정확한 수취인 이름";"telecom"->"정확한 요금제·부가서비스 명칭";else->"정확한 상품·가게·목적지·숙소·병원"})
                         AppTextField(condition,{condition=if(errand.id=="finance")it.filter(Char::isDigit).take(4)else it.take(160)},
-                            label=if(errand.id=="finance")"수취 계좌 끝 4자리" else "화면에서 확인할 조건",
-                            placeholder=if(errand.id=="finance")"전체 계좌번호는 공식 은행 앱에 직접 입력" else "옵션·수량·날짜·시간·출발지 등 실제 표시 문구")
-                        AppTextField(maxWon,{maxWon=it.filter(Char::isDigit).take(9)},label=when(errand.id){"finance"->"정확한 이체 금액(원)";"telecom"->"최대 월 이용료(원)";else->"최대 승인 금액(원)"},placeholder="무료는 0")
+                            label=if(errand.id=="finance"){if(billPay)"고지서·납부자 번호 끝 4자리" else "수취 계좌 끝 4자리"} else "화면에서 확인할 조건",
+                            placeholder=if(errand.id=="finance")"전체 식별 번호는 공식 은행 앱에 직접 입력" else "옵션·수량·날짜·시간·출발지 등 실제 표시 문구")
+                        AppTextField(maxWon,{maxWon=it.filter(Char::isDigit).take(9)},label=when(errand.id){"finance"->if(billPay)"정확한 납부 총액(원)" else "정확한 이체 금액(원)";"telecom"->"최대 월 이용료(원)";else->"최대 승인 금액(원)"},placeholder="무료는 0")
                         if(errand.id in setOf("finance","telecom"))Text("개인정보와 인증은 공식 앱에서 직접 처리합니다. AI 서버에 화면을 보내지 않으며 확인된 최종 버튼만 승인 후 실행합니다.")
                         Text("실제 화면의 대상·조건·최종 금액을 대조하고 마지막 실행 버튼을 별도로 승인합니다. 정보가 다르면 확정하지 않습니다.")
                     }
@@ -187,7 +192,7 @@ fun KoreanServicesScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
                         com.dominion.mobile.data.PhonePrivateRead(errand.id,it).checked(requireNotNull(selectedApp).packageName)
                     }else null
                     val transaction=if(canTransact&&transact)runCatching{
-                        com.dominion.mobile.data.PhoneTransactionRequest(errand.id,target.trim(),condition.trim(),
+                        com.dominion.mobile.data.PhoneTransactionRequest(if(errand.id=="finance"&&billPay)"finance_bill" else errand.id,target.trim(),condition.trim(),
                             requireNotNull(maxWon.toLongOrNull())).checked(requireNotNull(selectedApp).packageName)
                     }.getOrNull() else null
                     Button(enabled=selectedApp!=null&&state.character(agent)!=null&&
