@@ -90,7 +90,7 @@ class MainActivity : ComponentActivity() {
             val current = (application as DominionApplication).container.engine
             if (current != null && originKey ==
                 com.dominion.mobile.platform.background.BackgroundJobMonitor.originKey(current.origin) &&
-                (credential==null || credential==com.dominion.mobile.platform.background.NotificationReplyReceiver.credentialKey(current))) {
+                credential==com.dominion.mobile.platform.background.NotificationReplyReceiver.credentialKey(current)) {
                 viewModel.openRoomFromNotification(roomId)
             }
             return

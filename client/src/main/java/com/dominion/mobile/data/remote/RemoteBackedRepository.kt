@@ -916,8 +916,19 @@ class RemoteBackedRepository(
     override fun engineChangeSignals()=if(endpoint==null)kotlinx.coroutines.flow.emptyFlow()
         else com.dominion.mobile.data.remote.engineChangeSignals(api,globalCursor)
 
+    private val recentSyncHints=linkedMapOf<String,Long>()
     override suspend fun synchronizeChange(change:EngineChange) {
         if(endpoint==null)return
+        val key=when{change.catalog->"catalog";change.memory->"memory";else->"room:"+(change.roomId?:change.sessionId)}
+        val now=android.os.SystemClock.elapsedRealtime()
+        // Coalesce rapid job progress frames and replayed events; periodic snapshots
+        // repair dropped invalidations. No event content is rendered as a reply.
+        synchronized(recentSyncHints){
+            val last=recentSyncHints[key]
+            if(last!=null && now-last<1500L)return
+            recentSyncHints[key]=now
+            if(recentSyncHints.size>256)recentSyncHints.remove(recentSyncHints.keys.first())
+        }
         try {
             if(change.catalog) { refresh();return }
             if(change.memory){refreshMemories();return}

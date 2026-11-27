@@ -54,6 +54,6 @@ fun networkRecoverySignals(context:Context)=callbackFlow<Unit>{
         }
     }
     try{manager.registerDefaultNetworkCallback(callback)}
-    catch(e:Exception){close(e);return@callbackFlow}
+    catch(_:Exception){close();return@callbackFlow}
     awaitClose{runCatching{manager.unregisterNetworkCallback(callback)}}
 }.conflate()

@@ -48,9 +48,9 @@ class NotificationReplyReceiver: BroadcastReceiver() {
                         .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
                         .build()
                     WorkManager.getInstance(context).enqueueUniqueWork("dominion-notification-reply-"+id,ExistingWorkPolicy.KEEP,request)
-                    updateNotification(context,origin,room,notificationId,"후속 요청 저장 · 서버 접수 확인 중")
+                    updateNotification(context,origin,room,notificationId,credential,"후속 요청 저장 · 서버 접수 확인 중")
                 }
-            } catch(_:Exception){ updateNotification(context,origin,room,notificationId,"후속 요청 저장·연결 확인 필요") }
+            } catch(_:Exception){ updateNotification(context,origin,room,notificationId,credential,"후속 요청 저장·연결 확인 필요") }
             finally { token.finish() }
         }
     }
@@ -75,11 +75,12 @@ class NotificationReplyReceiver: BroadcastReceiver() {
                 .setAllowGeneratedReplies(false)
                 .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY).build()
         }
-        internal fun updateNotification(context:Context,origin:String,room:String,id:Int,status:String) {
+        internal fun updateNotification(context:Context,origin:String,room:String,id:Int,credential:String,status:String) {
             val manager=context.getSystemService(NotificationManager::class.java)
             val intent=Intent(context,MainActivity::class.java).apply {
                 flags=Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
                 putExtra("dominion_notification_origin",origin);putExtra("dominion_notification_room",room)
+                putExtra("dominion_notification_credential",credential)
             }
             val pending=PendingIntent.getActivity(context,id,intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
@@ -110,7 +111,7 @@ class NotificationReplyWorker(context:Context,params:WorkerParameters):Coroutine
             catch(e:CancellationException){throw e}
             catch(_:Exception){false}
         if(container.engine===engine && container.repository===repo)
-            NotificationReplyReceiver.updateNotification(applicationContext,origin,room,notification,
+            NotificationReplyReceiver.updateNotification(applicationContext,origin,room,notification,credential,
                 if(accepted)"후속 요청 서버 접수 확인" else "후속 요청 미확인 · 대화에서 조회")
         return Result.success()
     }

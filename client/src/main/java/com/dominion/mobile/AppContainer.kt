@@ -18,7 +18,16 @@ class AppContainer(context: Context) {
     }.getOrNull()
         private set
     private val stores = mutableMapOf<String, LocalStore>()
-    @Volatile var repository: DominionRepository = buildRepository(engine)
+    private val scopeStore=EncryptedRecordStore(app,"dominion_engine_scopes",com.dominion.mobile.data.local.EngineScopeRegistry::class.java)
+    private fun resolveScope(connection:EngineConnection?,legacy:Boolean=false):String{
+        if(connection==null)return "unconfigured"
+        val registry=scopeStore.load()?:com.dominion.mobile.data.local.EngineScopeRegistry()
+        val (next,scope)=registry.resolve(connection,legacy)
+        if(next!=registry)scopeStore.save(next)
+        return scope
+    }
+    @Volatile private var activeScope=resolveScope(engine,legacy=true)
+    @Volatile var repository: DominionRepository = buildRepository(engine,activeScope)
         private set
 
     private fun restoreJobWatches() {
@@ -36,14 +45,9 @@ class AppContainer(context: Context) {
             reminderScope(), repository.state.value.schedules)
     }
 
-    fun reminderScope(): String = engine?.origin?.let(BackgroundJobMonitor::originKey) ?: "unconfigured"
+    fun reminderScope(): String = activeScope
 
-    private fun buildRepository(connection: EngineConnection?): DominionRepository {
-        val scope = connection?.let {
-            java.security.MessageDigest.getInstance("SHA-256")
-                .digest(it.origin.toByteArray(Charsets.UTF_8))
-                .joinToString("") { b -> "%02x".format(b.toInt() and 255) }
-        } ?: "unconfigured"
+    private fun buildRepository(connection: EngineConnection?,scope:String): DominionRepository {
         val store = stores.getOrPut(scope) { LocalStore(app, scope) }
         return RemoteBackedRepository(connection?.let(ApiFactory::create), store,
             onRemindersChanged = { items ->
@@ -57,9 +61,11 @@ class AppContainer(context: Context) {
     @Synchronized fun applyEngine(connection: EngineConnection?) {
         check(repository.state.value.call == null && !com.dominion.mobile.platform.audio.AssistantVoiceService.state.value.active)
         stores.values.forEach { it.flush() }
-        val next = buildRepository(connection)
+        val scope=resolveScope(connection)
+        val next = buildRepository(connection,scope)
         if (connection == null) credentials.clear() else credentials.save(connection)
         engine = connection
+        activeScope=scope
         repository = next
         com.dominion.mobile.platform.background.EngineSyncMonitor.install(app,connection)
         restoreJobWatches()
