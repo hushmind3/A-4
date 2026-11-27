@@ -1,6 +1,7 @@
 package com.dominion.mobile.platform.avatar
 
 import android.content.Context
+import android.util.Log
 import android.view.Choreographer
 import android.view.SurfaceView
 import android.widget.FrameLayout
@@ -41,6 +42,12 @@ private class StandardAvatarSurface(context: Context): FrameLayout(context) {
 
     init {
         addView(child,LayoutParams(LayoutParams.MATCH_PARENT,LayoutParams.MATCH_PARENT))
+        // Filament's default orbit camera is constructed with the current
+        // SurfaceView size. Initializing it before Android's first layout
+        // can permanently create a zero-sized camera on slow emulators.
+        child.addOnLayoutChangeListener { _,left,top,right,bottom,_,_,_,_ ->
+            if(right>left && bottom>top && active && isAttachedToWindow) ensureViewer()
+        }
     }
 
     fun update(asset: StandardAvatarAsset, level: Float, index: Int,
@@ -55,6 +62,7 @@ private class StandardAvatarSurface(context: Context): FrameLayout(context) {
     }
 
     private fun ensureViewer() {
+        if(!active || !isAttachedToWindow || child.width<=0 || child.height<=0)return
         try {
             val data=source ?: return
             if (viewer==null) {
@@ -105,8 +113,8 @@ private class StandardAvatarSurface(context: Context): FrameLayout(context) {
                 }.orEmpty())
             }
             if(active) schedule()
-        } catch (_:Exception) { failure() }
-        catch (_:LinkageError) { failure() }
+        }catch(e:Exception){Log.e("DOMINION-Avatar","Filament initialization failed",e);failure()}
+        catch(e:LinkageError){Log.e("DOMINION-Avatar","Filament libraries unavailable",e);failure()}
     }
     private val callback=Choreographer.FrameCallback { now ->
         scheduled=false
@@ -131,8 +139,8 @@ private class StandardAvatarSurface(context: Context): FrameLayout(context) {
             }else morphs.forEach { (instance,index,_) -> manager.setMorphWeights(instance,floatArrayOf(mouth),index) }
             v.render(now)
             schedule()
-        } catch (_:Exception) { failure() }
-        catch (_:LinkageError) { failure() }
+        }catch(e:Exception){Log.e("DOMINION-Avatar","Filament frame failed",e);failure()}
+        catch(e:LinkageError){Log.e("DOMINION-Avatar","Filament rendering unavailable",e);failure()}
     }
     private fun schedule() {
         if (!scheduled && active && isAttachedToWindow && viewer!=null) {

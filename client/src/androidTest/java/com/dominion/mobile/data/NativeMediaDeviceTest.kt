@@ -73,6 +73,9 @@ class NativeMediaDeviceTest {
                     return null
                 }
                 var rendered=false
+                var validSurfaces=0
+                var copiedFrames=0
+                var lastPixelCopyStatus=-1
                 repeat(30) {
                     if(rendered)return@repeat
                     val signal=CountDownLatch(1)
@@ -81,9 +84,15 @@ class NativeMediaDeviceTest {
                     scenario.onActivity{activity->
                         val view=surface(activity.window.decorView)
                         if(view!=null && view.holder.surface.isValid && view.width>0 && view.height>0){
+                            validSurfaces++
                             val image=Bitmap.createBitmap(view.width,view.height,Bitmap.Config.ARGB_8888)
                             bitmap=image
-                            PixelCopy.request(view,image,{result->success=result==PixelCopy.SUCCESS;signal.countDown()},Handler(Looper.getMainLooper()))
+                            PixelCopy.request(view,image,{result->
+                                lastPixelCopyStatus=result
+                                success=result==PixelCopy.SUCCESS
+                                if(success)copiedFrames++
+                                signal.countDown()
+                            },Handler(Looper.getMainLooper()))
                         }else signal.countDown()
                     }
                     if(signal.await(2,TimeUnit.SECONDS)){
@@ -99,7 +108,10 @@ class NativeMediaDeviceTest {
                     }
                     if(!rendered)Thread.sleep(300)
                 }
-                assertTrue("Expected actual green model pixels on Filament SurfaceView",rendered)
+                assertTrue("Expected actual green model pixels on Filament SurfaceView; "+
+                    "validSurfaceSamples="+validSurfaces+", successfulPixelCopies="+copiedFrames+
+                    ", pixelCopyStatus="+lastPixelCopyStatus+
+                    " (check DOMINION-Avatar logcat for initialization errors)",rendered)
             }
         }finally{store.remove(key)}
     }
