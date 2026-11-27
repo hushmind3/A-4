@@ -77,6 +77,23 @@ fun SettingsScreen(
     val context = LocalContext.current
     val own = state.myCharacter()
     val export = rememberDataExport(state, lang)
+    var assistantHeld by remember { mutableStateOf(false) }
+    val roleManager = if (android.os.Build.VERSION.SDK_INT >= 29)
+        context.getSystemService(android.app.role.RoleManager::class.java) else null
+    val roleLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) {
+        assistantHeld = if (android.os.Build.VERSION.SDK_INT >= 29)
+            roleManager?.isRoleHeld(android.app.role.RoleManager.ROLE_ASSISTANT) == true else false
+    }
+    val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(owner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME && android.os.Build.VERSION.SDK_INT >= 29)
+                assistantHeld = roleManager?.isRoleHeld(android.app.role.RoleManager.ROLE_ASSISTANT) == true
+        }
+        owner.lifecycle.addObserver(observer)
+        onDispose { owner.lifecycle.removeObserver(observer) }
+    }
 
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().background(p.screen)) {
         ScreenTopBar(title = tr(lang, "설정", "Settings"), onBack = onBack)
@@ -128,6 +145,20 @@ fun SettingsScreen(
             SectionLabel(tr(lang, "실행 서버", "Execution server"), Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
             SettingsGroup {
                 SettingsRow(title = tr(lang, "본체 연결 및 모델·도구", "Engine, models and tools"), onClick = { onNavigate(Routes.ENGINE_SETTINGS) })
+                Hairline()
+                SettingsRow(title = tr(lang, "기본 디지털 비서", "Default digital assistant"),
+                    subtitle = if (assistantHeld) tr(lang, "시스템에서 선택됨", "Selected by system")
+                        else tr(lang, "Android 기본 비서 선택", "Choose Android assistant"),
+                    onClick = {
+                        runCatching {
+                            if (android.os.Build.VERSION.SDK_INT >= 29 &&
+                                roleManager?.isRoleAvailable(android.app.role.RoleManager.ROLE_ASSISTANT) == true && !assistantHeld) {
+                                roleLauncher.launch(roleManager.createRequestRoleIntent(android.app.role.RoleManager.ROLE_ASSISTANT))
+                            } else context.startActivity(android.content.Intent(android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
+                        }.onFailure { android.widget.Toast.makeText(context, "기본 앱 설정을 열 수 없습니다.", android.widget.Toast.LENGTH_SHORT).show() }
+                    })
+                Hairline()
+                SettingsRow(title = tr(lang, "빠른 음성 비서", "Quick voice assistant"), onClick = { onNavigate(Routes.QUICK_ASSISTANT) })
             }
             SectionLabel("DOMINION Cloud", Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
             SettingsGroup {

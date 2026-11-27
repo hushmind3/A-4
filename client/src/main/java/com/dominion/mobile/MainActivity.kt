@@ -54,6 +54,16 @@ class MainActivity : ComponentActivity() {
 
     private fun handleIntent(intent: Intent?) {
         if (intent == null) return
+        if (intent.action in setOf(Intent.ACTION_ASSIST,
+            com.dominion.mobile.platform.widget.DominionWidgetProvider.ACTION_OPEN_CHAT,
+            com.dominion.mobile.platform.widget.DominionWidgetProvider.ACTION_START_CALL)) {
+            val voice = intent.action != com.dominion.mobile.platform.widget.DominionWidgetProvider.ACTION_OPEN_CHAT
+            // Ignore any external text, assist bundle, or room ID. No action is executed automatically.
+            intent.action = null
+            intent.replaceExtras(Bundle())
+            viewModel.requestQuickEntry(voice)
+            return
+        }
         if (intent.action == "com.dominion.mobile.action.OPEN_CALL") {
             viewModel.requestOpenCall()
             intent.action = null

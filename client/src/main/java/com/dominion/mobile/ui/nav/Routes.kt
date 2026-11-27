@@ -2,6 +2,7 @@ package com.dominion.mobile.ui.nav
 
 object Routes {
     const val MAIN = "main"
+    const val QUICK_ASSISTANT = "quick-assistant"
     const val KOREAN_SERVICES = "korean-services"
     const val DEVICE_AGENDA = "device-agenda"
     const val DEVICE_ACTIONS = "device-actions"

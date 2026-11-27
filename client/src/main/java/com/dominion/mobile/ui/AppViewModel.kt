@@ -56,6 +56,11 @@ class AppViewModel(
 
     val connection = repo.connection
 
+    private val _quickEntry = MutableStateFlow<Boolean?>(null)
+    val quickEntry = _quickEntry.asStateFlow()
+    fun requestQuickEntry(voice: Boolean) { _quickEntry.value = voice }
+    fun consumeQuickEntry() { _quickEntry.value = null }
+
     private val _notificationRoom = MutableStateFlow<String?>(null)
     val notificationRoom = _notificationRoom.asStateFlow()
     fun openRoomFromNotification(roomId: String) {

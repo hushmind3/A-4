@@ -12,8 +12,7 @@ import com.dominion.mobile.R
 
 /**
  * Home-screen widgets, matching the original client's 4x2 and 2x1 widgets.
- * They open the app directly in a chat or call intent. A production build can
- * refresh the character name and preview from the repository.
+ * Actual quick-entry actions; private conversation content is not exposed on widgets.
  */
 open class DominionWidgetProvider(private val layout: Int) : AppWidgetProvider() {
 
@@ -25,7 +24,7 @@ open class DominionWidgetProvider(private val layout: Int) : AppWidgetProvider()
         appWidgetIds.forEach { appWidgetId ->
             val views = RemoteViews(context.packageName, layout)
             views.setTextViewText(R.id.widget_title, "Dominion")
-            views.setTextViewText(R.id.widget_subtitle, "내 도미니온과 대화해요")
+            views.setTextViewText(R.id.widget_subtitle, "채팅 · 음성 비서")
             views.setOnClickPendingIntent(
                 R.id.widget_root,
                 activityIntent(context, ACTION_OPEN_CHAT, 100 + appWidgetId)

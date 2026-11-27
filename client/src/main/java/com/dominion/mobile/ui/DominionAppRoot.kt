@@ -136,6 +136,15 @@ fun DominionAppRoot(vm: AppViewModel) {
         }
 
         val locked = state.settings.appLock && !appUnlocked
+        val quickEntry by vm.quickEntry.collectAsStateWithLifecycle()
+        LaunchedEffect(quickEntry, locked, state.conversations) {
+            val voice = quickEntry ?: return@LaunchedEffect
+            if (locked) return@LaunchedEffect
+            val room = state.conversation("assistant")
+            if (!voice && room != null) nav.navigate(Routes.chat(room.id)) { launchSingleTop = true }
+            else nav.navigate(Routes.QUICK_ASSISTANT) { launchSingleTop = true }
+            vm.consumeQuickEntry()
+        }
         val focus = androidx.compose.ui.platform.LocalFocusManager.current
         val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
         LaunchedEffect(locked) {
@@ -147,6 +156,11 @@ fun DominionAppRoot(vm: AppViewModel) {
         Box(Modifier.fillMaxSize()) {
         NavHost(navController = nav, startDestination = Routes.MAIN,
             modifier = if (locked) Modifier.alpha(0f).clearAndSetSemantics {} else Modifier) {
+            composable(Routes.QUICK_ASSISTANT) {
+                if (!locked) com.dominion.mobile.ui.screens.profile.QuickAssistantScreen(state, vm,
+                    onBack = { nav.popBackStack() }, onChat = { nav.navigate(Routes.chat(it)) { launchSingleTop = true } },
+                    onSettings = { nav.navigate(Routes.ENGINE_SETTINGS) })
+            }
             composable(Routes.ONBOARDING) {
                 com.dominion.mobile.ui.screens.onboarding.OnboardingScreen(
                     state = state, vm = vm, onDone = { nav.popBackStack() },

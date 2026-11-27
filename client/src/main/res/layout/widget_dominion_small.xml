@@ -53,7 +53,14 @@
 
     <TextView
         android:id="@+id/widget_call"
-        android:layout_width="0dp"
-        android:layout_height="0dp"
-        android:visibility="gone" />
+        android:layout_width="wrap_content"
+        android:layout_height="32dp"
+        android:layout_marginStart="4dp"
+        android:background="@drawable/widget_button_soft"
+        android:gravity="center"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:text="음성"
+        android:textColor="#111111"
+        android:textSize="11sp" />
 </LinearLayout>
