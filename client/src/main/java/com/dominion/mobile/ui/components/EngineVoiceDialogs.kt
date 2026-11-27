@@ -21,7 +21,7 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 
 @Composable
-private fun StopOnBackground(onStop: () -> Unit) {
+internal fun StopOnBackground(onStop: () -> Unit) {
     val owner = LocalLifecycleOwner.current
     val latest = rememberUpdatedState(onStop)
     DisposableEffect(owner) {

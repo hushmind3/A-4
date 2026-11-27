@@ -24,9 +24,12 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
+class NoSpeechDetected : Exception("No sustained speech detected")
+
 object EngineVoiceAudio {
     @SuppressLint("MissingPermission")
-    suspend fun record(context: Context, stop: AtomicBoolean): ByteArray = withContext(Dispatchers.IO) {
+    suspend fun record(context: Context, stop: AtomicBoolean,
+        autoEndpoint: Boolean = false): ByteArray = withContext(Dispatchers.IO) {
         require(ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
         val rate = WaveAudio.SAMPLE_RATE
         val minimum = AudioRecord.getMinBufferSize(rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
@@ -35,6 +38,8 @@ object EngineVoiceAudio {
             AudioFormat.ENCODING_PCM_16BIT, maxOf(minimum * 2, 6400))
         val samples = ShortArray(rate * WaveAudio.MAX_SECONDS)
         var count = 0
+        val detector = com.dominion.mobile.data.SpeechEndpoint()
+        val started = android.os.SystemClock.elapsedRealtime()
         try {
             check(recorder.state == AudioRecord.STATE_INITIALIZED)
             recorder.startRecording()
@@ -43,10 +48,14 @@ object EngineVoiceAudio {
                 currentCoroutineContext().ensureActive()
                 val n = recorder.read(samples, count, minOf(320, samples.size - count), AudioRecord.READ_NON_BLOCKING)
                 check(n >= 0)
+                if (autoEndpoint && n > 0) detector.accept(samples, count, n)
                 count += n
+                if (autoEndpoint && (detector.finished || detector.noSpeechTimeout)) break
+                if (android.os.SystemClock.elapsedRealtime() - started > 65_000L) break
                 if (n == 0) delay(10)
             }
             require(count >= rate / 4) { "Recording too short" }
+            if (autoEndpoint && !detector.hasSpeech) throw NoSpeechDetected()
             WaveAudio.mono16(samples, count)
         } finally {
             runCatching { recorder.stop() }
