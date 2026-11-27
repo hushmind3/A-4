@@ -25,3 +25,29 @@ test('a PC relay credential cannot launch cloud jobs',async()=>{
    env,{id:'A',scope:'app',capability:'assistant_pc'},{waitUntil(){}},async()=>null);
  assert.equal(result.status,403);
 });
+
+test('cloud daily quota keys are scoped to the exact account',async()=>{
+ const {quotaKey}=await import('./agent_jobs.js');
+ assert.notEqual(quotaKey('google:alpha'),quotaKey('google:beta'));
+ assert.match(quotaKey('google:alpha',new Date('2026-11-27T00:00:00Z')),/^google:alpha:cloud-jobs:2026-11-27$/);
+});
+test('read-only route enforces account ownership before decrypting results',async()=>{
+ let queryArgs;
+ const store={prepare(sql){return{
+   bind(...args){queryArgs=args;return this},
+   async first(){return null}
+ }}};
+ const user={id:'google:other-user',scope:'app',capability:'inference'};
+ const request=new Request('https://cloud/v1/agent/jobs/11111111-1111-4111-8111-111111111111');
+ const result=await jobRoute(request,{...env,DB:store},user,{waitUntil(){}},async()=>null);
+ assert.equal(result.status,404);
+ assert.equal(queryArgs[1],'google:other-user');
+});
+test('create rejects invalid client IDs without spending quota',async()=>{
+ const account={id:'google:alpha',scope:'app',capability:'inference'};
+ const res=await jobRoute(new Request('https://cloud/v1/agent/jobs',{
+   method:'POST',headers:{'content-type':'application/json'},
+   body:JSON.stringify({client_id:'not-a-uuid',prompt:'Research this'})
+ }),{...env,DB:{prepare(){throw Error('Must not touch DB')}}},account,{waitUntil(){}},async()=>null);
+ assert.equal(res.status,400);
+});

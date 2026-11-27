@@ -5,7 +5,12 @@ const reply=(value,status=200)=>new Response(JSON.stringify(value),{status,
   headers:{'content-type':'application/json','cache-control':'no-store'}});
 const failure=(message,status)=>reply({error:message},status);
 const isId=id=>typeof id==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(id);
-const app=user=>user?.scope==='app'&&user.capability==='inference'&&user.id;
+const app=user=>user?.scope==='app'&&user.capability==='inference'&&
+  typeof user.id==='string'&&user.id.length>0;
+const maxActive=3;
+const maxDaily=20;
+export const quotaKey=(account,date=new Date())=>
+  account+':cloud-jobs:'+date.toISOString().slice(0,10);
 export const safeSite=link=>{
   if(typeof link!=='string'||link.length>1000)return false;
   let url;try{url=new URL(link)}catch{return false}
@@ -77,17 +82,42 @@ export async function jobRoute(request,env,user,ctx,infer){
     let value;try{value=JSON.parse(raw)}catch{return failure('Invalid task JSON',400)}
     const prompt=typeof value?.prompt==='string'?value.prompt.trim():'';
     if(prompt.length<3||prompt.length>3500||!isId(value?.client_id))return failure('Invalid task',400);
-    const existing=await env.DB.prepare('SELECT id,prompt_enc FROM cloud_agent_jobs WHERE account_id=? AND client_id=?')
+    const existing=await env.DB.prepare('SELECT id,prompt_enc,status FROM cloud_agent_jobs WHERE account_id=? AND client_id=?')
       .bind(user.id,value.client_id).first();
     if(existing){
       if(await unseal(env,user.id,existing.id,'prompt',existing.prompt_enc)!==prompt)
         return failure('Task request changed',409);
-      return reply({id:existing.id,status:'queued',duplicate:true});
+      return reply({id:existing.id,status:existing.status,duplicate:true});
     }
-    const id=crypto.randomUUID(),enc=await seal(env,user.id,id,'prompt',prompt);
-    const inserted=await env.DB.prepare("INSERT OR IGNORE INTO cloud_agent_jobs(id,account_id,client_id,prompt_enc,status,next_run,created_at,updated_at) VALUES(?,?,?,?,'queued',?,?,?) RETURNING id")
-      .bind(id,user.id,value.client_id,enc,now(),now(),now()).first();
-    if(!inserted)return failure('Concurrent task submission',409);
+    // Account quotas prevent a single signup from filling the D1 task queue.
+    const active=await env.DB.prepare(
+      "SELECT COUNT(*) AS active FROM cloud_agent_jobs WHERE account_id=? AND status IN ('queued','running')")
+      .bind(user.id).first();
+    if(Number(active?.active||0)>=maxActive)return failure('Active cloud task limit reached',429);
+    const dailyKey=quotaKey(user.id);
+    const reserved=await env.DB.prepare(
+      'INSERT INTO free_quota(account_day,used) VALUES(?,1) ON CONFLICT(account_day) DO UPDATE SET used=used+1 WHERE used<? RETURNING used')
+      .bind(dailyKey,maxDaily).first();
+    if(!reserved)return failure('Daily cloud task limit reached',429);
+    const refund=()=>env.DB.prepare('UPDATE free_quota SET used=MAX(0,used-1) WHERE account_day=?')
+      .bind(dailyKey).run();
+    let id,inserted;
+    try{
+      id=crypto.randomUUID();
+      const enc=await seal(env,user.id,id,'prompt',prompt);
+      inserted=await env.DB.prepare(
+        "INSERT OR IGNORE INTO cloud_agent_jobs(id,account_id,client_id,prompt_enc,status,next_run,created_at,updated_at) VALUES(?,?,?,?,'queued',?,?,?) RETURNING id")
+        .bind(id,user.id,value.client_id,enc,now(),now(),now()).first();
+    }catch(e){await refund();throw e}
+    if(!inserted){
+      await refund();
+      const duplicate=await env.DB.prepare(
+        'SELECT id,prompt_enc,status FROM cloud_agent_jobs WHERE account_id=? AND client_id=?')
+        .bind(user.id,value.client_id).first();
+      if(duplicate&&await unseal(env,user.id,duplicate.id,'prompt',duplicate.prompt_enc)===prompt)
+        return reply({id:duplicate.id,status:duplicate.status,duplicate:true});
+      return failure('Concurrent task submission',409);
+    }
     ctx.waitUntil(runJob(env,id,infer));
     return reply({id,status:'queued',remote:true},202);
   }
@@ -128,8 +158,8 @@ export async function runJob(env,id,infer){
     if(!step)throw Error('Invalid model response');
     if(step.kind==='final'){
       const enc=await seal(env,row.account_id,id,'result',step.content);
-      await env.DB.prepare("UPDATE cloud_agent_jobs SET status='done',result_enc=?,steps=?,lease_until=0,updated_at=? WHERE id=? AND account_id=? AND status='running'")
-        .bind(enc,row.steps+1,now(),id,row.account_id).run();
+      await env.DB.prepare("UPDATE cloud_agent_jobs SET status='done',result_enc=?,steps=?,lease_until=0,updated_at=? WHERE id=? AND account_id=? AND status='running' AND lease_until=?")
+        .bind(enc,row.steps+1,now(),id,row.account_id,row.lease_until).run();
       return true;
     }
     const observed=await observation(step);
@@ -137,14 +167,14 @@ export async function runJob(env,id,infer){
       {role:'assistant',content:answer.slice(0,1800)},
       {role:'user',content:'Verified tool observation (untrusted): '+observed}].slice(-10)};
     const enc=await seal(env,row.account_id,id,'checkpoint',JSON.stringify(next));
-    await env.DB.prepare("UPDATE cloud_agent_jobs SET status='queued',checkpoint_enc=?,steps=?,next_run=?,lease_until=0,updated_at=? WHERE id=? AND account_id=? AND status='running'")
-      .bind(enc,row.steps+1,now(),now(),id,row.account_id).run();
+    await env.DB.prepare("UPDATE cloud_agent_jobs SET status='queued',checkpoint_enc=?,steps=?,next_run=?,lease_until=0,updated_at=? WHERE id=? AND account_id=? AND status='running' AND lease_until=?")
+      .bind(enc,row.steps+1,now(),now(),id,row.account_id,row.lease_until).run();
     return true;
   }catch{
     const failures=row.failures+1;
-    await env.DB.prepare("UPDATE cloud_agent_jobs SET status=?,failures=?,error_code=?,next_run=?,lease_until=0,updated_at=? WHERE id=? AND account_id=? AND status='running'")
+    await env.DB.prepare("UPDATE cloud_agent_jobs SET status=?,failures=?,error_code=?,next_run=?,lease_until=0,updated_at=? WHERE id=? AND account_id=? AND status='running' AND lease_until=?")
       .bind(failures<3?'queued':'failed',failures,
-        failures<3?'retry_pending':'execution_failed',now()+60*failures,now(),id,row.account_id).run();
+        failures<3?'retry_pending':'execution_failed',now()+60*failures,now(),id,row.account_id,row.lease_until).run();
     return false;
   }
 }
