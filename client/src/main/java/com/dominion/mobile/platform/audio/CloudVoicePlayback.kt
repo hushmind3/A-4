@@ -25,13 +25,18 @@ object CloudVoicePlayback {
                 val manager=context.getSystemService(AudioManager::class.java)
                 val audio=AudioAttributes.Builder().setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .setUsage(AudioAttributes.USAGE_MEDIA).build()
-                val focus=AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-                    .setAudioAttributes(audio).setOnAudioFocusChangeListener{}.build()
+                var focus:AudioFocusRequest?=null
                 var obtained=false
                 try{
                     suspendCancellableCoroutine<Unit>{continuation->
                         try{
-                            check(manager.requestAudioFocus(focus)==AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
+                            val request=AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                                .setAudioAttributes(audio).setOnAudioFocusChangeListener{change->
+                                    if(change<0&&continuation.isActive)
+                                        continuation.resumeWithException(IllegalStateException("Audio focus lost"))
+                                }.build()
+                            focus=request
+                            check(manager.requestAudioFocus(request)==AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
                             obtained=true
                             player.setAudioAttributes(audio)
                             player.setDataSource(temporary.absolutePath)
@@ -53,7 +58,7 @@ object CloudVoicePlayback {
                     }
                 }finally{
                     player.release()
-                    if(obtained)manager.abandonAudioFocusRequest(focus)
+                    if(obtained)focus?.let{manager.abandonAudioFocusRequest(it)}
                 }
             }
         }finally{temporary.delete()}
