@@ -112,7 +112,7 @@ fun MobileVoiceConversationDialog(vm:AppViewModel,roomId:String,onDismiss:()->Un
 
     LaunchedEffect(room?.messages,waiting){
         val id=waiting?:return@LaunchedEffect
-        if(room?.sessionId!=originalSession){waiting=null;phase="대화 세션 변경으로 중지";return@LaunchedEffect}
+        if(room==null || room.sessionId!=originalSession){waiting=null;phase="대화 세션 변경으로 중지";return@LaunchedEffect}
         val owner=room.messages.firstOrNull{it.id==id}
         if(owner?.status==MessageStatus.FAILED || owner?.jobStatus in setOf("cancelled","failed","interrupted")){
             waiting=null;phase="작업 실패 · 대화방에서 확인해 주세요";return@LaunchedEffect
