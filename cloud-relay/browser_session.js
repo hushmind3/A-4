@@ -222,7 +222,7 @@ export async function runBrowserPlan(env,account,url,goal,infer){
         let raw=a>=0&&b>a?text.slice(a,b+1):text.replace(/^```json\s*|\s*```$/g,'');
         raw=raw.replace(/,\s*"\{/g,',{').replace(/\}"\s*\]/g,'}]');
         plan=JSON.parse(raw);
-      }catch{return lastText.trim()?{kind:'done',text:'브라우저에서 실제 확인한 화면입니다.\n'+lastText.slice(0,4000)}:{kind:'waiting',text:'브라우저 계획을 해석하지 못했습니다. 화면을 다시 확인해 주세요.'}}
+      }catch{return lastText.trim()?{kind:'waiting',text:'계획 해석에 실패했습니다. 마지막으로 확인한 화면:\n'+lastText.slice(0,4000)}:{kind:'waiting',text:'브라우저 계획을 해석하지 못했습니다. 화면을 다시 확인해 주세요.'}}
       if(plan.final)return {kind:'done',text:String(plan.final).slice(0,5000)};
       if(plan.question)return {kind:'question',text:String(plan.question).slice(0,1200)};
       if(!Array.isArray(plan.actions)||plan.actions.length<1||plan.actions.length>8)
@@ -239,11 +239,11 @@ export async function runBrowserPlan(env,account,url,goal,infer){
       await new Promise(r=>setTimeout(r,1200));
       const text=await session.page.evaluate(()=>document.body?document.body.innerText:'');
       observations.push(String(text).slice(0,2000));
-      if(submitted)return {kind:'done',text:String(text).slice(0,5000)};
+      if(submitted)return {kind:'waiting',text:'제출 동작 이후 확인한 화면입니다. 실제 접수 여부를 확인해 주세요.\n'+String(text).slice(0,4500)};
     }
     return {kind:'waiting',text:'브라우저 업무를 계속하려면 추가 정보가 필요합니다.'};
   }catch(e){const why=String(e&&e.message||e).slice(0,180);console.error('browser_plan',why);
-    if(lastText.trim())return {kind:'done',text:'모델 계획 없이 브라우저에서 실제 확인한 화면입니다.\n'+lastText.slice(0,4000)};
+    if(lastText.trim())return {kind:'waiting',text:'브라우저 업무가 중단되었습니다. 마지막으로 확인한 화면:\n'+lastText.slice(0,4000)};
     return {kind:'waiting',text:'브라우저 실행에 실패했습니다: '+why};}
   finally{try{if(session){await closeSession(env,account,session);await session.browser.close()}}catch{}}
 }

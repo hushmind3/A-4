@@ -119,7 +119,13 @@ export async function runWork(env,id,infer){
     "UPDATE cloud_work_sessions SET status='running',lease_until=?,updated_at=? WHERE id=? AND status='queued' AND next_run<=? RETURNING *")
     .bind(now()+300,now(),id,now()).first();
   if(!row)return false;
+  const owns=async()=>!!await env.DB.prepare("SELECT id FROM cloud_work_sessions WHERE id=? AND status='running' AND lease_until=? AND lease_until>=?").bind(id,row.lease_until,now()).first();
+  const transition=async(sql,args)=>!!await env.DB.prepare(sql+" AND status='running' AND lease_until=? AND lease_until>=? RETURNING id").bind(...args,row.lease_until,now()).first();
   try{
+    if(Number(row.deadline||0)>0&&now()>=Number(row.deadline)){
+      if(await transition("UPDATE cloud_work_sessions SET status='failed',last_error='deadline',lease_until=0,updated_at=? WHERE id=?",[now(),id])) await addEvent(env,id,'assistant','업무 종료 기한이 지났습니다.');
+      return false;
+    }
     let meta={};try{meta=JSON.parse(row.metadata||'{}')}catch{}
     const outcome=row.kind==='document'?await runDocument(env,row,infer)
       :row.kind==='image'?await runImage(env,row)
@@ -128,51 +134,56 @@ export async function runWork(env,id,infer){
         (user,messages)=>infer(user,messages))
       :row.kind==='phone'?await runPhone(env,row):await askModel(env,
         {id:row.account_id,scope:'app',capability:'inference'},row,infer);
+    if(!await owns())return false;
     const t=now();
     const expired=Number(row.deadline||0)>0&&t>Number(row.deadline);
     if(expired){
+      if(!await transition("UPDATE cloud_work_sessions SET status='failed',last_error='deadline',lease_until=0,updated_at=? WHERE id=?",[t,id]))return false;
       await addEvent(env,id,'assistant','업무 종료 기한이 지났습니다. 확인이 필요합니다.');
-      await env.DB.prepare("UPDATE cloud_work_sessions SET status='failed',last_error='deadline',updated_at=? WHERE id=?")
-        .bind(t,id).run();
       await notifyWork(env,row.account_id,'DOMINION 업무가 종료 기한을 넘었습니다.');
       return true;
     }
     if(outcome.kind==='question'||outcome.kind==='waiting'){
+      if(!await transition("UPDATE cloud_work_sessions SET status='waiting',waiting_for='user',lease_until=0,updated_at=? WHERE id=?",[t,id]))return false;
       await addEvent(env,id,'assistant',outcome.text);
-      await env.DB.prepare("UPDATE cloud_work_sessions SET status='waiting',waiting_for='user',updated_at=? WHERE id=?")
-        .bind(t,id).run();
       await notifyWork(env,row.account_id,outcome.kind==='question'?'DOMINION 업무에 답변이 필요합니다.':'DOMINION 업무가 진행 중입니다.');
     }else if(outcome.kind==='done'){
+      if(!await transition("UPDATE cloud_work_sessions SET status='done',result=?,waiting_for=NULL,lease_until=0,attempts=0,last_error=NULL,updated_at=? WHERE id=?",[outcome.text,t,id]))return false;
       await addEvent(env,id,'assistant',outcome.text);
-      await env.DB.prepare("UPDATE cloud_work_sessions SET status='done',result=?,waiting_for=NULL,lease_until=0,updated_at=? WHERE id=?")
-        .bind(outcome.text,t,id).run();
       await notifyWork(env,row.account_id,'DOMINION 백그라운드 업무 결과가 도착했습니다.');
       if(row.repeat_rule&&row.repeat_rule!=='none'){
         const next=t+(row.repeat_rule==='weekly'?7*86400:86400);
         if(!Number(row.deadline||0)||next<=Number(row.deadline))
-          await env.DB.prepare("UPDATE cloud_work_sessions SET status='queued',next_run=?,waiting_for=NULL,updated_at=? WHERE id=?")
+          await env.DB.prepare("UPDATE cloud_work_sessions SET status='queued',next_run=?,waiting_for=NULL,updated_at=? WHERE id=? AND status='done'")
             .bind(next,t,id).run();
       }
     }else{
+      if(!await transition("UPDATE cloud_work_sessions SET status='queued',next_run=?,lease_until=0,updated_at=? WHERE id=?",[now()+3600,t,id]))return false;
       await addEvent(env,id,'assistant',outcome.text);
-      await env.DB.prepare("UPDATE cloud_work_sessions SET status='queued',next_run=?,updated_at=? WHERE id=?")
-        .bind(now()+3600,t,id).run();
     }
     return true;
   }catch(error){
     console.error('work_error',String(error&&error.message||error).slice(0,200));
     const attempts=Number(row.attempts||0)+1;
-    const retry=attempts<3&&(Number(row.deadline||0)===0||now()<Number(row.deadline));
-    await addEvent(env,id,'assistant',retry?'일시적 오류가 발생해 재시도합니다.':'업무 처리에 실패했습니다. 내용을 보완해 주세요.');
-    await env.DB.prepare("UPDATE cloud_work_sessions SET status=?,attempts=?,last_error=?,next_run=?,waiting_for=?,updated_at=? WHERE id=?")
-      .bind(retry?'queued':'waiting',attempts,'execution_error',now()+60*attempts,retry?null:'user',now(),id).run();
+    const external=['phone','browser','admin'].includes(row.kind);
+    const retry=!external&&attempts<3&&(Number(row.deadline||0)===0||now()<Number(row.deadline));
+    if(!await transition("UPDATE cloud_work_sessions SET status=?,attempts=?,last_error=?,next_run=?,waiting_for=?,lease_until=0,updated_at=? WHERE id=?",
+      [retry?'queued':'waiting',attempts,'execution_error',now()+60*attempts,retry?null:'user',now(),id]))return false;
+    await addEvent(env,id,'assistant',retry?'일시적 오류가 발생해 재시도합니다.':external?'외부 업무 실행이 중단되었습니다. 중복 실행을 막기 위해 결과를 먼저 확인해 주세요.':'업무 처리에 실패했습니다. 내용을 보완해 주세요.');
     if(!retry)await notifyWork(env,row.account_id,'DOMINION 업무에 확인이 필요합니다.');
     return false;
   }
 }
 export async function tickWork(env,infer){
-  await env.DB.prepare("UPDATE cloud_work_sessions SET status='queued',attempts=attempts+1,last_error='worker_interrupted',next_run=?,lease_until=0,updated_at=? WHERE status='running' AND lease_until< ? AND attempts<3")
-    .bind(now(),now(),now()).run();
+  const t=now();
+  const stopped=await env.DB.prepare("UPDATE cloud_work_sessions SET status=CASE WHEN deadline>0 AND deadline<=? THEN 'failed' ELSE 'waiting' END,waiting_for=CASE WHEN deadline>0 AND deadline<=? THEN NULL ELSE 'user' END,last_error=CASE WHEN deadline>0 AND deadline<=? THEN 'deadline' ELSE 'worker_interrupted' END,lease_until=0,updated_at=? WHERE (status='running' AND lease_until<? AND (attempts>=2 OR kind IN ('phone','browser','admin'))) OR (status IN ('queued','running') AND deadline>0 AND deadline<=?) RETURNING id,account_id,status")
+    .bind(t,t,t,t,t,t).all();
+  for(const row of stopped.results||[]){
+    await addEvent(env,row.id,'assistant',row.status==='failed'?'업무 종료 기한이 지났습니다.':'작업이 중단되었습니다. 실행 결과를 확인한 뒤 재개해 주세요.');
+    await notifyWork(env,row.account_id,'DOMINION 업무에 확인이 필요합니다.');
+  }
+  await env.DB.prepare("UPDATE cloud_work_sessions SET status='queued',attempts=attempts+1,last_error='worker_interrupted',next_run=?,lease_until=0,updated_at=? WHERE status='running' AND lease_until<? AND attempts<2 AND kind NOT IN ('phone','browser','admin')")
+    .bind(t,t,t).run();
   const rows=await env.DB.prepare(
     "SELECT id FROM cloud_work_sessions WHERE status='queued' AND next_run<=? ORDER BY next_run LIMIT 5")
     .bind(now()).all();
@@ -231,17 +242,19 @@ export async function workRoute(request,env,user,ctx,infer){
     .bind(m[1],user.id).first();
   if(!row)return fail('Not found',404);
   if(m[2]==='/cancel'&&request.method==='POST'){
-    await env.DB.prepare("UPDATE cloud_work_sessions SET status='cancelled',updated_at=? WHERE id=? AND account_id=?")
-      .bind(now(),m[1],user.id).run();
+    const changed=await env.DB.prepare("UPDATE cloud_work_sessions SET status='cancelled',waiting_for=NULL,lease_until=0,updated_at=? WHERE id=? AND account_id=? AND status IN ('queued','running','waiting') RETURNING id")
+      .bind(now(),m[1],user.id).first();
+    if(!changed&&row.status!=='cancelled')return fail('Work is already terminal',409);
     return reply({id:m[1],status:'cancelled'});
   }
   if(m[2]==='/message'&&request.method==='POST'){
     const raw=await request.text();if(raw.length>6000)return fail('Too large',413);
     let b;try{b=JSON.parse(raw)}catch{return fail('Invalid JSON',400)}
     if(!isId(b?.client_id)||!maxText(b?.text,3000))return fail('Invalid message',400);
+    const changed=await env.DB.prepare("UPDATE cloud_work_sessions SET status='queued',waiting_for=NULL,next_run=?,attempts=0,lease_until=0,updated_at=? WHERE id=? AND account_id=? AND status='waiting' RETURNING id")
+      .bind(now(),now(),m[1],user.id).first();
+    if(!changed)return fail('Work is not waiting for input',409);
     await addEvent(env,m[1],'user',b.text.trim());
-    await env.DB.prepare("UPDATE cloud_work_sessions SET status='queued',waiting_for=NULL,next_run=?,attempts=0,updated_at=? WHERE id=? AND account_id=?")
-      .bind(now(),now(),m[1],user.id).run();
     ctx.waitUntil(runWork(env,m[1],infer));
     return reply({id:m[1],status:'queued'});
   }

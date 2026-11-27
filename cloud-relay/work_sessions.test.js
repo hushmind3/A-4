@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
-import {workRoute} from './work_sessions.js';
+import {workRoute,tickWork} from './work_sessions.js';
 
 const fixture=()=>{
   const sqlite=new DatabaseSync(':memory:');
@@ -50,6 +50,42 @@ test('work persists a question and resumes from a user answer',async()=>{
     assert.match(work.result,/접수했습니다/);
     assert.equal(sqlite.prepare('SELECT COUNT(*) AS n FROM cloud_work_events').get().n,4);
     assert.equal((await workRoute(req('/v1/work/'+id),{DB},{id:'google:bob'},ctx,infer)).status,404);
+    assert.equal((await workRoute(req('/v1/work/'+id+'/cancel','POST'),{DB},user,ctx,infer)).status,409);
+  }finally{sqlite.close()}
+});
+
+test('cancelling in-flight work fences the late model result and prevents revival',async()=>{
+  const {sqlite,DB,user,ctx,pending}=fixture();
+  try{
+    let release,started;
+    const ready=new Promise(r=>{started=r});
+    const result=new Promise(r=>{release=r});
+    const infer=async()=>{started();return result};
+    const created=await workRoute(req('/v1/work','POST',{
+      client_id:'33333333-3333-4333-8333-333333333333',kind:'research',
+      title:'조사',request:'자료 조사'}),{DB},user,ctx,infer);
+    const {id}=await created.json();
+    await ready;
     assert.equal((await workRoute(req('/v1/work/'+id+'/cancel','POST'),{DB},user,ctx,infer)).status,200);
+    release('{"done":"late result"}');
+    await Promise.all(pending);
+    const work=await(await workRoute(req('/v1/work/'+id),{DB},user,ctx,infer)).json();
+    assert.equal(work.status,'cancelled');
+    assert.equal(work.result,null);
+    assert.ok(!work.events.some(e=>e.text==='late result'));
+    assert.equal((await workRoute(req('/v1/work/'+id+'/message','POST',{
+      client_id:'44444444-4444-4444-8444-444444444444',text:'재개'}),{DB},user,ctx,infer)).status,409);
+  }finally{sqlite.close()}
+});
+test('expired external leases are not replayed and exhausted leases leave running',async()=>{
+  const {sqlite,DB,user,ctx}=fixture();
+  try{
+    const insert=sqlite.prepare("INSERT INTO cloud_work_sessions(id,account_id,client_id,kind,title,request,status,created_at,updated_at,lease_until,attempts) VALUES(?,?,?,?,?,?,'running',0,0,1,?)");
+    insert.run('phone',user.id,'phone','phone','전화','전화 업무',0);
+    insert.run('exhausted',user.id,'exhausted','research','조사','조사 업무',2);
+    let calls=0;
+    await tickWork({DB},async()=>{calls++;return '{"done":"unexpected"}'});
+    assert.equal(calls,0);
+    assert.deepEqual(sqlite.prepare('SELECT status FROM cloud_work_sessions ORDER BY id').all().map(r=>r.status),['waiting','waiting']);
   }finally{sqlite.close()}
 });
