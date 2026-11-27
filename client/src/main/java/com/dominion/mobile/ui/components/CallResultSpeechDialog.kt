@@ -19,7 +19,8 @@ import kotlinx.coroutines.*
 
 /** Read only the exact completed job response, locally on the existing call audio route. */
 @Composable
-fun CallResultSpeechDialog(vm: AppViewModel, callId: String, roomId: String, nonce: String, onDismiss: () -> Unit) {
+fun CallResultSpeechDialog(vm: AppViewModel, callId: String, roomId: String, nonce: String,
+    onDismiss: () -> Unit, onSpeechLevel: (Float) -> Unit = {}) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val state by vm.state.collectAsState()
@@ -75,7 +76,8 @@ fun CallResultSpeechDialog(vm: AppViewModel, callId: String, roomId: String, non
                             val wav = vm.synthesizeVoice(chunk)
                             check(safe())
                             // The active LiveKit call already owns its communication route/focus.
-                            EngineVoiceAudio.play(context,wav,communication=true,existingCallFocus=true)
+                            EngineVoiceAudio.play(context,wav,communication=true,existingCallFocus=true,
+                                onSpeechLevel = onSpeechLevel)
                         }
                         progress = "재생 완료"
                     } finally { watchdog.cancelAndJoin() }

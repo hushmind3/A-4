@@ -27,6 +27,8 @@ internal class AvatarSceneRenderer(private val ar: Boolean, shape: CharacterShap
     private val featureMesh = AvatarMesh.build(CharacterShape.BLOB)
     private val featureVertices = buffer(featureMesh)
     @Volatile private var faceMode = "idle"
+    @Volatile private var voiceLevel = 0f
+    fun speechLevel(value: Float) { voiceLevel = value.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f }
     private var imported = false
     private val faceDepths = listOf(-0.29f to 0.23f,0.29f to 0.23f,0f to -0.30f).map { (x,y) ->
         frontDepth(originalMesh,x,y)
@@ -61,7 +63,7 @@ internal class AvatarSceneRenderer(private val ar: Boolean, shape: CharacterShap
 
     fun replaceMesh(value: FloatArray) { pendingMesh.set(value) }
     fun restoreMesh() { pendingMesh.set(originalMesh) }
-    fun expression(mode: String) { if (mode in setOf("idle","happy","talk")) faceMode = mode }
+    fun expression(mode: String) { if (mode in setOf("idle","happy","talk","voice")) faceMode = mode }
     fun setSession(value: Session?) { session = value }
     fun touchDown(px:Float,py:Float) { x=px;y=py }
     fun drag(px:Float,py:Float) {
@@ -193,6 +195,7 @@ internal class AvatarSceneRenderer(private val ar: Boolean, shape: CharacterShap
         val blink = if (time % 4.2 < 0.13) 0.12f else 1f
         val mouth = when (faceMode) {
             "talk" -> (0.035 + 0.075 * kotlin.math.abs(kotlin.math.sin(time*10))).toFloat()
+            "voice" -> 0.022f + 0.13f * voiceLevel
             "happy" -> 0.055f
             else -> 0.022f
         }

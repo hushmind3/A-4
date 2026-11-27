@@ -42,6 +42,31 @@ class AvatarSceneActivity : ComponentActivity() {
     private var expression by mutableStateOf("idle")
     private var savedModel by mutableStateOf(false)
     private var modelStatus by mutableStateOf("")
+    private var speaking by mutableStateOf(false)
+    private var speechStatus by mutableStateOf("")
+    private var speechJob: Job? = null
+
+    private fun previewSpeech() {
+        if (speaking) { speechJob?.cancel(); return }
+        val container = (application as com.dominion.mobile.DominionApplication).container
+        val repo = container.repository
+        if (container.engine == null) { speechStatus = "본체 연결 필요"; return }
+        speaking = true
+        speechStatus = "본체 Piper 음성 준비 중"
+        speechJob = lifecycleScope.launch {
+            try {
+                val wav = repo.synthesizeVoice("안녕하세요. 저는 $name 입니다. 무엇을 도와드릴까요?")
+                check(container.repository === repo)
+                speechStatus = "실제 음성 재생 중"
+                renderer.expression("voice")
+                com.dominion.mobile.platform.audio.EngineVoiceAudio.play(
+                    this@AvatarSceneActivity, wav, onSpeechLevel = renderer::speechLevel)
+                speechStatus = "음성 재생 완료"
+            } catch (e: CancellationException) { speechStatus = "음성 재생 중단"; throw e }
+            catch (_: Exception) { speechStatus = "본체 음성 합성 또는 재생 실패" }
+            finally { renderer.speechLevel(0f); renderer.expression(expression); speaking = false }
+        }
+    }
     private lateinit var modelStore: AvatarModelStore
     private lateinit var modelKey: String
 
@@ -158,6 +183,11 @@ class AvatarSceneActivity : ComponentActivity() {
                                 }, label = { Text(title) })
                             }
                         }
+                        if (!imported) TextButton(onClick = { previewSpeech() }) {
+                            Text(if (speaking) "음성 중단" else "본체 음성으로 말하기")
+                        }
+                        if (speechStatus.isNotBlank()) Text(speechStatus,
+                            modifier = Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.labelSmall)
                         if (importing) LinearProgressIndicator(Modifier.fillMaxWidth())
                         if (ar) Text("AR은 Google Play Services for AR를 사용합니다. 카메라 영상은 기기에서 공간 추적·표시에 사용되며 DOMINION 본체에 자동 전송되지 않습니다. Google의 AR 개인정보 처리방침: developers.google.com/ar/develop/privacy",
                             modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.labelSmall)
@@ -213,6 +243,7 @@ class AvatarSceneActivity : ComponentActivity() {
     }
 
     override fun onPause() {
+        speechJob?.cancel()
         if (resumedSurface) {
             surface.onPause()
             resumedSurface = false

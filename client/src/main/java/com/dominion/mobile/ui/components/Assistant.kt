@@ -60,7 +60,8 @@ fun AssistantAvatar(
     selected: Boolean = false,
     level: Int? = null,
     breathing: Boolean = false,
-    photo: String? = null
+    photo: String? = null,
+    speechLevel: Float = 0f
 ) {
     val p = LocalDominionPalette.current
     val infinite = rememberInfiniteTransition(label = "assistant-avatar")
@@ -200,7 +201,12 @@ fun AssistantAvatar(
                     moveTo(w * 0.42f, top)
                     quadraticBezierTo(w * 0.5f, top + h * 0.075f, w * 0.58f, top)
                 }
-                drawPath(mouth, ink, style = Stroke(width = w * 0.022f, cap = androidx.compose.ui.graphics.StrokeCap.Round))
+                val speaking = speechLevel.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: 0f
+                if (speaking > 0.035f) {
+                    val mouthHeight = h * (0.025f + 0.13f * speaking)
+                    drawOval(ink, topLeft = Offset(w * 0.42f, h * 0.61f - mouthHeight / 2),
+                        size = Size(w * 0.16f, mouthHeight))
+                } else drawPath(mouth, ink, style = Stroke(width = w * 0.022f, cap = androidx.compose.ui.graphics.StrokeCap.Round))
 
                 drawCircle(
                     color = Color.White.copy(alpha = 0.16f),

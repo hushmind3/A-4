@@ -16,6 +16,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.CancellationException
 import androidx.core.content.ContextCompat
 import com.dominion.mobile.data.WaveAudio
@@ -127,9 +128,12 @@ object EngineVoiceAudio {
     }
 
     suspend fun play(context: Context, bytes: ByteArray, communication: Boolean = false,
-        existingCallFocus: Boolean = false) {
+        existingCallFocus: Boolean = false, onSpeechLevel: ((Float) -> Unit)? = null) {
         require(!existingCallFocus || communication)
         require(WaveAudio.isWave(bytes))
+        val envelope = if (onSpeechLevel != null) withContext(Dispatchers.Default) {
+            com.dominion.mobile.data.SpeechEnvelope.fromWave(bytes)
+        } else null
         val file = File.createTempFile("dominion-speech-", ".wav", context.cacheDir)
         try {
             withContext(Dispatchers.IO) { file.writeBytes(bytes) }
@@ -139,6 +143,8 @@ object EngineVoiceAudio {
                 val attributes = AudioAttributes.Builder().setUsage(if (communication) AudioAttributes.USAGE_VOICE_COMMUNICATION else AudioAttributes.USAGE_MEDIA)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
                 var focusLease: AudioFocusRequest? = null
+                var animation: kotlinx.coroutines.Job? = null
+                val animationScope = kotlinx.coroutines.CoroutineScope(currentCoroutineContext())
                 try {
                     suspendCancellableCoroutine<Unit> { continuation ->
                         val focus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
@@ -157,7 +163,18 @@ object EngineVoiceAudio {
                             }
                             player.setAudioAttributes(attributes)
                             player.setDataSource(file.absolutePath)
-                            player.setOnPreparedListener { if (continuation.isActive) it.start() }
+                            player.setOnPreparedListener {
+                                if (continuation.isActive) {
+                                    it.start()
+                                    if (onSpeechLevel != null && envelope != null) animation = animationScope.launch {
+                                        while (isActive && continuation.isActive) {
+                                            val position = runCatching { player.currentPosition }.getOrNull() ?: break
+                                            onSpeechLevel.invoke(envelope.levelAt(position))
+                                            delay(40)
+                                        }
+                                    }
+                                }
+                            }
                             player.setOnCompletionListener { if (continuation.isActive) continuation.resume(Unit) }
                             player.setOnErrorListener { _, _, _ ->
                                 if (continuation.isActive) continuation.resumeWithException(IllegalStateException("Playback failed"))
@@ -171,6 +188,8 @@ object EngineVoiceAudio {
                         }
                     }
                 } finally {
+                    animation?.cancel()
+                    onSpeechLevel?.invoke(0f)
                     player.release()
                     focusLease?.let { manager.abandonAudioFocusRequest(it) }
                     focusLease = null

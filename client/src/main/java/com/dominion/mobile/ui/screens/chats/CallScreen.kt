@@ -42,6 +42,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -168,6 +169,8 @@ fun CallScreen(
     var frameSource by remember(call.sessionId) { mutableStateOf<String?>(null) }
     var lastInstruction by remember(call.sessionId) { mutableStateOf<String?>(null) }
     var readResult by remember(call.sessionId) { mutableStateOf(false) }
+    var piperLevel by remember(call.sessionId) { mutableFloatStateOf(0f) }
+    val speechLevel = if (mediaReady) maxOf(media.remoteAudioLevel, piperLevel) else 0f
     val instruction = state.conversation(call.conversationId)?.messages?.firstOrNull {
         it.id == lastInstruction || (lastInstruction != null && it.clientMessageId == lastInstruction)
     }
@@ -207,7 +210,8 @@ fun CallScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    AssistantAvatar(accent, character.shape, size = 150.dp, breathing = true, photo = character.avatarPhoto)
+                    AssistantAvatar(accent, character.shape, size = 150.dp, breathing = true, photo = character.avatarPhoto,
+                        speechLevel = speechLevel)
                     Spacer(Modifier.height(18.dp))
                     Text(
                         character.name,
@@ -289,7 +293,7 @@ fun CallScreen(
 
             if (!call.video && !(mediaReady && (media.remoteVideo != null || media.remoteScreen != null))) {
                 Spacer(Modifier.weight(0.6f))
-                CallAvatar(accent, character)
+                CallAvatar(accent, character, speechLevel)
                 Spacer(Modifier.height(26.dp))
                 Text(
                     character.name,
@@ -443,7 +447,8 @@ fun CallScreen(
     }
     if (readResult && lastInstruction != null) {
         com.dominion.mobile.ui.components.CallResultSpeechDialog(vm, call.sessionId, call.conversationId,
-            requireNotNull(lastInstruction), onDismiss = { readResult = false })
+            requireNotNull(lastInstruction), onDismiss = { readResult = false; piperLevel = 0f },
+            onSpeechLevel = { piperLevel = it })
     }
     if (localCommand) {
         com.dominion.mobile.ui.components.RemoteSpeechDialog(vm, call.sessionId, call.conversationId,
@@ -503,7 +508,7 @@ fun CallScreen(
 }
 
 @Composable
-private fun CallAvatar(accent: Color, character: com.dominion.mobile.data.model.Character) {
+private fun CallAvatar(accent: Color, character: com.dominion.mobile.data.model.Character, speechLevel: Float) {
     val transition = rememberInfiniteTransition(label = "call")
     val pulse by transition.animateFloat(
         initialValue = 0f,
@@ -531,7 +536,8 @@ private fun CallAvatar(accent: Color, character: com.dominion.mobile.data.model.
                 .background(Color.White.copy(alpha = 0.06f)),
             contentAlignment = Alignment.Center
         ) {
-            AssistantAvatar(accent, character.shape, size = 160.dp, breathing = true, photo = character.avatarPhoto)
+            AssistantAvatar(accent, character.shape, size = 160.dp, breathing = true,
+                photo = character.avatarPhoto, speechLevel = speechLevel)
         }
     }
 }

@@ -39,7 +39,7 @@ data class CallMediaState(val sessionId: String? = null, val room: Room? = null,
     val audioLevel: Float = 0f, val speaker: Boolean = false, val cameraBusy: Boolean = false,
     val error: String? = null, val sharingScreen: Boolean = false,
     val remoteScreen: VideoTrack? = null, val screenBusy: Boolean = false,
-    val localScreen: VideoTrack? = null)
+    val localScreen: VideoTrack? = null, val remoteAudioLevel: Float = 0f)
 
 /** Owns the actual media room; UI navigation does not own microphone lifetime. */
 class CallForegroundService : Service() {
@@ -276,13 +276,14 @@ class CallForegroundService : Service() {
         val remoteScreen = media.remoteParticipants.values.asSequence().mapNotNull {
             it.getTrackPublication(Track.Source.SCREEN_SHARE)?.takeUnless { p -> p.muted }?.track as? VideoTrack
         }.firstOrNull()
-        val level = maxOf(media.localParticipant.audioLevel,
-            media.remoteParticipants.values.maxOfOrNull { it.audioLevel } ?: 0f).coerceIn(0f, 1f)
+        val remoteLevel = (media.remoteParticipants.values.maxOfOrNull { it.audioLevel } ?: 0f)
+            .coerceIn(0f, 1f)
+        val level = maxOf(media.localParticipant.audioLevel, remoteLevel).coerceIn(0f, 1f)
         _mediaState.value = CallMediaState(sessionId, media, local, remote, level,
             media.audioSwitchHandler?.selectedAudioDevice is AudioDevice.Speakerphone, cameraBusy, mediaError,
             sharingScreen = screenPublished(media), remoteScreen = remoteScreen, screenBusy = screenBusy,
             localScreen = media.localParticipant.getTrackPublication(Track.Source.SCREEN_SHARE)
-                ?.takeUnless { it.muted }?.track as? VideoTrack)
+                ?.takeUnless { it.muted }?.track as? VideoTrack, remoteAudioLevel = remoteLevel)
     }
 
     private fun peerState(media: Room) {
