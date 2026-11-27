@@ -1,0 +1,3 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {validNative} from './native_relay_policy.js';
+const req=(path,method='GET',base64='')=>({path,method,base64,contentType:'application/json'});
+test('native allowlist',()=>{assert.ok(validNative(req('/api/rooms/assistant/messages','POST','e30=')));assert.ok(validNative(req('/v1/me')));for(const p of ['/api/events','/api/cloud-auth/google/status','/api/remote/workers','//evil/v1/me','/api/rooms/../settings','/api/rooms/%2e%2e'])assert.equal(validNative(req(p)),false);assert.equal(validNative(req('/v1/me','GET','e30=')),false)});
