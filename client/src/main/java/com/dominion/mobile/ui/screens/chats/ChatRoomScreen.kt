@@ -714,7 +714,7 @@ fun ChatRoomScreen(
             })
     }
     if (createMiniApp) com.dominion.mobile.ui.components.TextPromptDialog(
-        title = "미니앱 제작", label = "필요한 체크리스트·표·예산 계산기·입력 양식을 설명하세요.",
+        title = "미니앱 제작", label = "필요한 업무 앱·편집 표·선택 양식·수식 계산기를 설명하세요.",
         confirmLabel = "요청 작성", singleLine = false, onConfirm = { text ->
             if (text.isNotBlank()) {
                 draft = listOf(draft, com.dominion.mobile.data.MiniAppDocument.prompt(text)).filter { it.isNotBlank() }.joinToString("\n")

@@ -72,22 +72,58 @@ fun MiniAppPanel(document: MiniAppDocument, initial: Map<String,String> = emptyM
                                 }
                             }
                         }
-                        "form", "budget" -> {
+                        "form", "budget", "number" -> {
                             block.items.forEachIndexed { index, label ->
                                 val id = block.id + ":" + index
                                 OutlinedTextField(value = values[id].orEmpty(),
                                     onValueChange = { raw ->
                                         if (block.kind == "budget") {
                                             if (raw.isEmpty() || MiniAppDocument.money(raw) != null) set(id,raw)
+                                        } else if (block.kind == "number") {
+                                            if (raw.isEmpty() || raw == "-" || raw.endsWith(".") &&
+                                                MiniAppDocument.decimal(raw.dropLast(1)) != null ||
+                                                MiniAppDocument.decimal(raw) != null) set(id,raw)
                                         } else set(id,raw.take(300))
                                     }, label = { Text(label) }, modifier = Modifier.fillMaxWidth(),
-                                    keyboardOptions = KeyboardOptions(keyboardType = if (block.kind == "budget")
-                                        KeyboardType.Number else KeyboardType.Text), singleLine = block.kind == "budget",
-                                    maxLines = if (block.kind == "budget") 1 else 3)
+                                    keyboardOptions = KeyboardOptions(keyboardType = when (block.kind) {
+                                        "budget" -> KeyboardType.Number
+                                        "number" -> KeyboardType.Decimal
+                                        else -> KeyboardType.Text
+                                    }), singleLine = block.kind != "form",
+                                    maxLines = if (block.kind == "form") 3 else 1)
                             }
                             if (block.kind == "budget") Text("합계: " +
                                 java.text.NumberFormat.getIntegerInstance(java.util.Locale.KOREA)
                                     .format(document.total(block, values)) + "원", style = MaterialTheme.typography.titleMedium)
+                        }
+                        "choice" -> {
+                            val id = block.id + ":0"
+                            block.items.forEach { label ->
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    RadioButton(values[id] == label, onClick = { set(id,label) })
+                                    Text(label)
+                                }
+                            }
+                        }
+                        "metric" -> {
+                            val amount = document.calculated(values)[block.id]
+                            Text(amount?.toPlainString()?.let { it + " " + block.formula?.unit.orEmpty() }
+                                ?: "입력값을 확인하세요", style = MaterialTheme.typography.headlineSmall)
+                        }
+                        "editable_table" -> {
+                            Column(Modifier.horizontalScroll(rememberScrollState())) {
+                                Row { block.columns.forEach { Text(it,Modifier.width(160.dp).padding(6.dp)) } }
+                                block.rows.forEachIndexed { row,cells ->
+                                    Row {
+                                        cells.forEachIndexed { col,initialCell ->
+                                            val id = block.id + ":" + row + ":" + col
+                                            OutlinedTextField(values[id] ?: initialCell,
+                                                { set(id,it.take(300)) }, modifier=Modifier.width(160.dp).padding(3.dp),
+                                                singleLine=true)
+                                        }
+                                    }
+                                }
+                            }
                         }
                         "table" -> {
                             var query by remember { mutableStateOf("") }
