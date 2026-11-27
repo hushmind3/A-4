@@ -104,3 +104,17 @@ This is a general browser executor, but a service-specific planner/verifier is s
 Browser work (`kind: browser/admin` with `metadata.url`) now opens the authenticated page, snapshots interactive elements, asks the Cloud model for a bounded action plan, executes fill/select/click/submit actions in the same page, and returns the observed page. If model planning fails, it returns the actual observed page text as a partial result instead of inventing completion. Actions that require passwords/OTP/card/account credentials stop for the user.
 
 Latest production version: **5be9dd08-7343-4fc6-b042-7ecefe592cac**. A temporary account exercised a browser work against `https://example.com/`; the job completed with the actual observed page text. The account and work rows were deleted. Government/bank pages may block datacenter browsers; the Worker returns the observed block page, not a success claim. A deterministic per-site action planner/verifier is still required for reliable reservation/submission completion.
+
+### Work executor, assets and recovery (2026-11-28)
+
+Latest production version: **798a782e-848c-4380-85fd-b857c105d750**.
+
+- D1 migration 0009 rebuilt work sessions with `document`/`image` kinds and lease fields; migration 0010 fixed the asset foreign key.
+- `A4_ASSETS` KV namespace is bound. Document work writes Markdown assets; image work uses Workers AI Flux and stores JPEG assets.
+- `GET /v1/work/{id}/assets/{asset}` returns account-scoped assets.
+- Work claims now carry a lease; cron requeues interrupted `running` work, increments attempts, and fails after three attempts.
+- Browser work uses the model-planned action loop and returns observed page text when planning fails.
+- Live checks: a temporary signed account created a document (Markdown asset downloadable), generated a 1024×1024 JPEG image, and downloaded it. Temporary account/work/asset rows were deleted.
+- Android `syncWork` downloads assets, stores encrypted device attachments, adds them to the work conversation and auto-adds archive entries.
+
+Still source-level/operator-dependent: LiveKit/SIP/FCM actual delivery, per-service deterministic action recipes, and full reservation/payment verification.

@@ -62,9 +62,11 @@ data class CloudBrowserSession(val host:String="",val updatedAt:Long=0)
 data class CloudBrowserSessions(val sessions:List<CloudBrowserSession>?=null)
 data class CloudBrowserRead(val url:String="",val host:String="",val title:String="",val text:String="")
 data class CloudWorkEvent(val id:String="",val role:String="",val text:String="",val createdAt:Long=0)
+data class CloudWorkAsset(val id:String="",val kind:String="",val mime:String="",val name:String="",
+    val size:Long=0,val createdAt:Long=0)
 data class CloudWork(val id:String="",val kind:String="",val title:String="",val status:String="",
     val waitingFor:String?=null,val result:String?=null,val createdAt:Long=0,val updatedAt:Long=0,
-    val events:List<CloudWorkEvent>?=null) {
+    val events:List<CloudWorkEvent>?=null,val assets:List<CloudWorkAsset>?=null) {
     fun checked():CloudWork {
         require(id.matches(Regex("[a-f0-9-]{36}"))&&kind in setOf("research","browser","phone","admin")&&
             status in setOf("queued","running","waiting","done","failed","cancelled")&&title.length<=160)
@@ -149,6 +151,9 @@ private interface CloudApi {
     @GET("v1/work") suspend fun works(@Header("Authorization") auth:String):CloudWorks
     @GET("v1/work/{id}") suspend fun work(@Header("Authorization") auth:String,
         @Path("id") id:String):CloudWork
+    @retrofit2.http.Streaming
+    @GET("v1/work/{id}/assets/{asset}") suspend fun workAsset(@Header("Authorization") auth:String,
+        @Path("id") id:String,@Path("asset") asset:String):okhttp3.ResponseBody
     @POST("v1/work/{id}/message") suspend fun workMessage(@Header("Authorization") auth:String,
         @Path("id") id:String,@Body body:CloudWorkMessage):CloudWorkAck
     @POST("v1/work/{id}/cancel") suspend fun cancelWork(@Header("Authorization") auth:String,
@@ -475,6 +480,23 @@ class CloudAccountRepository(context: Context) {
     suspend fun work(id:String):CloudWork=withContext(Dispatchers.IO){
         require(id.matches(Regex("[a-f0-9-]{36}")))
         withSessionToken{api.work("Bearer "+it,id).checked()}
+    }
+
+    suspend fun downloadWorkAsset(workId:String,assetId:String):ByteArray=withContext(Dispatchers.IO){
+        require(workId.matches(Regex("[a-f0-9-]{36}"))&&assetId.matches(Regex("[a-f0-9-]{36}")))
+        val body=withSessionToken{api.workAsset("Bearer "+it,workId,assetId)}
+        body.use{
+            require(it.contentLength() in -1..8L*1024*1024)
+            val output=java.io.ByteArrayOutputStream()
+            val input=it.byteStream()
+            val buffer=ByteArray(8192)
+            while(true){
+                val n=input.read(buffer);if(n<0)break
+                require(output.size()+n<=8*1024*1024){"Work asset too large"}
+                output.write(buffer,0,n)
+            }
+            output.toByteArray().also{bytes->require(bytes.isNotEmpty())}
+        }
     }
 
     suspend fun workMessage(id:String,text:String,clientId:String):Boolean=withContext(Dispatchers.IO){

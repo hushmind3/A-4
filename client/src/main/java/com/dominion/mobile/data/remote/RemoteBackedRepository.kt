@@ -18,6 +18,8 @@ import com.dominion.mobile.data.model.AppState
 import com.dominion.mobile.data.model.Message
 import com.dominion.mobile.data.model.MessageSender
 import com.dominion.mobile.data.model.MessageKind
+import com.dominion.mobile.data.model.MessageCard
+import com.dominion.mobile.data.model.CardKind
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -116,6 +118,31 @@ class RemoteBackedRepository(
                 when(event.role){"user"->MessageSender.USER;"assistant"->MessageSender.ASSISTANT;else->MessageSender.SYSTEM},
                 event.text,kind=if(event.role=="system")MessageKind.SYSTEM else MessageKind.TEXT,
                 createdAt=if(event.createdAt>0)event.createdAt*1000 else System.currentTimeMillis())
+        }.toMutableList()
+        val newArchives= mutableListOf<com.dominion.mobile.data.model.ArchiveItem>()
+        for(asset in work.assets.orEmpty()){
+            val id=asset.id.takeIf{it.matches(Regex("[a-f0-9-]{36}"))}?:continue
+            val already=state.value.conversation(roomId)?.messages.orEmpty().any{id in it.attachmentIds.orEmpty()}
+            if(already)continue
+            try{
+                val bytes=kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO){
+                    requireNotNull(mobileCloud).downloadWorkAsset(work.id,id)
+                }
+                store.deviceAttachments.save(roomId,id,bytes)
+                val image=asset.mime.startsWith("image/")
+                mapped+=Message("work-asset-msg:"+id,roomId,MessageSender.ASSISTANT,asset.name,
+                    kind=if(image)MessageKind.IMAGE else MessageKind.FILE,
+                    card=MessageCard(kind=if(image)CardKind.IMAGE else CardKind.FILE,title=asset.name,
+                        subtitle=asset.mime,meta=bytes.size.toString()+" bytes"),
+                    attachmentIds=listOf(id))
+                newArchives+=com.dominion.mobile.data.model.ArchiveItem(
+                    "work-asset:"+id,
+                    if(image)com.dominion.mobile.data.model.ArchiveType.IMAGE
+                    else com.dominion.mobile.data.model.ArchiveType.FILE,
+                    asset.name,bytes.size.toString()+" bytes",roomId,
+                    attachmentId=id,mimeType=asset.mime)
+            }catch(e:CancellationException){throw e}
+            catch(_:Exception){/* keep work result even if asset download fails */}
         }
         update{s->
             val existing=s.conversation(roomId)
@@ -126,7 +153,8 @@ class RemoteBackedRepository(
                 engineStatus=if(work.status=="waiting")"needs_review" else work.status)else it},
                 conversations=listOf(conversation.copy(messages=(conversation.messages+mapped.filter{m->
                     conversation.messages.none{it.id==m.id}}),updatedAt=System.currentTimeMillis()))+
-                    s.conversations.filterNot{it.id==roomId})
+                    s.conversations.filterNot{it.id==roomId},
+                archive=(s.archive+newArchives.filter{a->s.archive.none{it.id==a.id}}).distinctBy{it.id})
         }
         store.saveStateNow(state.value)
     }

@@ -11,6 +11,7 @@ const fixture=()=>{
     'CREATE TABLE free_quota(account_day TEXT PRIMARY KEY,used INTEGER NOT NULL);');
   sqlite.exec(readFileSync(new URL('./migrations/0007_work_sessions.sql',import.meta.url),'utf8'));
   sqlite.exec(readFileSync(new URL('./migrations/0008_work_schedule.sql',import.meta.url),'utf8'));
+  sqlite.exec(readFileSync(new URL('./migrations/0009_work_executor_assets.sql',import.meta.url),'utf8'));
   const DB={prepare(sql){
     const st=sqlite.prepare(sql);let args=[];
     const b={bind(...v){args=v;return b},async first(){return st.get(...args)??null},

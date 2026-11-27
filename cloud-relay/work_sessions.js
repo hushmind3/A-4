@@ -82,14 +82,48 @@ async function runPhone(env,row){
   }
   return {kind:'waiting',text:'전화 통화가 아직 진행 중입니다. 결과를 확인해 주세요.'};
 }
+async function saveAsset(env,row,kind,mime,name,bytes){
+  if(!env.A4_ASSETS)throw Error('Asset storage not configured');
+  const id=crypto.randomUUID(),key='work/'+row.account_id+'/'+row.id+'/'+id;
+  await env.A4_ASSETS.put(key,bytes,{metadata:{mime,name,kind}});
+  await env.DB.prepare(
+    'INSERT INTO cloud_work_assets(id,work_id,account_id,kind,mime,name,kv_key,size,created_at) VALUES(?,?,?,?,?,?,?,?,?)')
+    .bind(id,row.id,row.account_id,kind,mime,name,key,bytes.byteLength,now()).run();
+  return {id,name,mime,size:bytes.byteLength,kind};
+}
+async function runDocument(env,row,infer){
+  const messages=[
+    {role:'system',content:'You are DOMINION document writer. Produce a complete, useful document in the user language. Return the document body only, no JSON, no claims of external submission.'},
+    {role:'user',content:row.request.slice(0,3500)}
+  ];
+  let answer;
+  try{answer=await infer({id:row.account_id,scope:'app',capability:'inference'},messages)}
+  catch{const direct=await env.AI.run('@cf/meta/llama-3.1-8b-instruct-fast',{messages,max_tokens:700});answer=direct?.response||''}
+  const text=String(answer||'').trim().slice(0,100000);
+  if(!text)throw Error('Empty document');
+  const asset=await saveAsset(env,row,'document','text/markdown',row.title.replace(/[\\/:*?"<>|]/g,'_').slice(0,80)+'.md',new TextEncoder().encode(text));
+  return {kind:'done',text:text.slice(0,5000),asset};
+}
+async function runImage(env,row){
+  if(!env.AI)throw Error('Image model unavailable');
+  const result=await env.AI.run('@cf/black-forest-labs/flux-1-schnell',{prompt:row.request.slice(0,1500)});
+  const b64=typeof result?.image==='string'?result.image:'';
+  if(!b64)throw Error('Empty image');
+  const bytes=Uint8Array.from(atob(b64),x=>x.charCodeAt(0));
+  if(bytes.byteLength>8*1024*1024)throw Error('Image too large');
+  const asset=await saveAsset(env,row,'image','image/jpeg',row.title.replace(/[\\/:*?"<>|]/g,'_').slice(0,80)+'.jpg',bytes);
+  return {kind:'done',text:'요청한 이미지를 생성했습니다.',asset};
+}
 export async function runWork(env,id,infer){
   const row=await env.DB.prepare(
-    "UPDATE cloud_work_sessions SET status='running',updated_at=? WHERE id=? AND status='queued' AND next_run<=? RETURNING *")
-    .bind(now(),id,now()).first();
+    "UPDATE cloud_work_sessions SET status='running',lease_until=?,updated_at=? WHERE id=? AND status='queued' AND next_run<=? RETURNING *")
+    .bind(now()+300,now(),id,now()).first();
   if(!row)return false;
   try{
     let meta={};try{meta=JSON.parse(row.metadata||'{}')}catch{}
-    const outcome=(row.kind==='browser'||row.kind==='admin')&&typeof meta.url==='string'&&meta.url.startsWith('https://')
+    const outcome=row.kind==='document'?await runDocument(env,row,infer)
+      :row.kind==='image'?await runImage(env,row)
+      :(row.kind==='browser'||row.kind==='admin')&&typeof meta.url==='string'&&meta.url.startsWith('https://')
       ?await runBrowserPlan(env,row.account_id,meta.url,row.request,
         (user,messages)=>infer(user,messages))
       :row.kind==='phone'?await runPhone(env,row):await askModel(env,
@@ -110,7 +144,7 @@ export async function runWork(env,id,infer){
       await notifyWork(env,row.account_id,outcome.kind==='question'?'DOMINION 업무에 답변이 필요합니다.':'DOMINION 업무가 진행 중입니다.');
     }else if(outcome.kind==='done'){
       await addEvent(env,id,'assistant',outcome.text);
-      await env.DB.prepare("UPDATE cloud_work_sessions SET status='done',result=?,waiting_for=NULL,updated_at=? WHERE id=?")
+      await env.DB.prepare("UPDATE cloud_work_sessions SET status='done',result=?,waiting_for=NULL,lease_until=0,updated_at=? WHERE id=?")
         .bind(outcome.text,t,id).run();
       await notifyWork(env,row.account_id,'DOMINION 백그라운드 업무 결과가 도착했습니다.');
       if(row.repeat_rule&&row.repeat_rule!=='none'){
@@ -125,7 +159,8 @@ export async function runWork(env,id,infer){
         .bind(now()+3600,t,id).run();
     }
     return true;
-  }catch{
+  }catch(error){
+    console.error('work_error',String(error&&error.message||error).slice(0,200));
     const attempts=Number(row.attempts||0)+1;
     const retry=attempts<3&&(Number(row.deadline||0)===0||now()<Number(row.deadline));
     await addEvent(env,id,'assistant',retry?'일시적 오류가 발생해 재시도합니다.':'업무 처리에 실패했습니다. 내용을 보완해 주세요.');
@@ -136,6 +171,8 @@ export async function runWork(env,id,infer){
   }
 }
 export async function tickWork(env,infer){
+  await env.DB.prepare("UPDATE cloud_work_sessions SET status='queued',attempts=attempts+1,last_error='worker_interrupted',next_run=?,lease_until=0,updated_at=? WHERE status='running' AND lease_until< ? AND attempts<3")
+    .bind(now(),now(),now()).run();
   const rows=await env.DB.prepare(
     "SELECT id FROM cloud_work_sessions WHERE status='queued' AND next_run<=? ORDER BY next_run LIMIT 5")
     .bind(now()).all();
@@ -147,7 +184,7 @@ export async function workRoute(request,env,user,ctx,infer){
   if(path==='/v1/work'&&request.method==='POST'){
     const raw=await request.text();if(raw.length>12000)return fail('Too large',413);
     let b;try{b=JSON.parse(raw)}catch{return fail('Invalid JSON',400)}
-    if(!isId(b?.client_id)||!['research','browser','phone','admin'].includes(b?.kind)||
+    if(!isId(b?.client_id)||!['research','browser','phone','admin','document','image'].includes(b?.kind)||
       !maxText(b?.title,160)||!maxText(b?.request,3500))return fail('Invalid work request',400);
     const existing=await env.DB.prepare(
       'SELECT id,status FROM cloud_work_sessions WHERE account_id=? AND client_id=?').bind(user.id,b.client_id).first();
@@ -174,6 +211,20 @@ export async function workRoute(request,env,user,ctx,infer){
       'FROM cloud_work_sessions WHERE account_id=? ORDER BY updated_at DESC LIMIT 50').bind(user.id).all();
     return reply({work:rows.results||[]});
   }
+  const assetMatch=/^\/v1\/work\/([a-f0-9-]{36})\/assets\/([a-f0-9-]{36})$/.exec(path);
+  if(assetMatch&&request.method==='GET'){
+    const workId=assetMatch[1],assetId=assetMatch[2];
+    if(!isId(workId)||!isId(assetId))return fail('Invalid asset',400);
+    if(!env.A4_ASSETS)return fail('Asset storage not configured',503);
+    const asset=await env.DB.prepare(
+      'SELECT id,kind,mime,name,kv_key,size FROM cloud_work_assets WHERE id=? AND work_id=? AND account_id=?')
+      .bind(assetId,workId,user.id).first();
+    if(!asset)return fail('Asset not found',404);
+    const bytes=await env.A4_ASSETS.get(asset.kv_key,{type:'arrayBuffer'});
+    if(!bytes)return fail('Asset missing',404);
+    return new Response(bytes,{headers:{'content-type':asset.mime,'content-length':String(asset.size),
+      'content-disposition':'attachment; filename="'+asset.name.replace(/"/g,'')+'"','cache-control':'private, no-store'}});
+  }
   const m=/^\/v1\/work\/([a-f0-9-]{36})(\/message|\/cancel)?$/.exec(path);
   if(!m||!isId(m[1]))return fail('Not found',404);
   const row=await env.DB.prepare('SELECT * FROM cloud_work_sessions WHERE id=? AND account_id=?')
@@ -195,7 +246,10 @@ export async function workRoute(request,env,user,ctx,infer){
     return reply({id:m[1],status:'queued'});
   }
   if(m[2]||request.method!=='GET')return fail('Not found',404);
+  const assetRows=await env.DB.prepare(
+    'SELECT id,kind,mime,name,size,created_at AS createdAt FROM cloud_work_assets WHERE work_id=? ORDER BY created_at')
+    .bind(row.id).all();
   return reply({id:row.id,kind:row.kind,title:row.title,request:row.request,status:row.status,
     waitingFor:row.waiting_for,result:row.result,createdAt:row.created_at,updatedAt:row.updated_at,
-    events:await events(env,row.id)});
+    leaseUntil:row.lease_until,assets:assetRows.results||[],events:await events(env,row.id)});
 }

@@ -32,7 +32,7 @@ test('minute recovery trigger does not run older message retention or model main
  const pending=[];
  await worker.scheduled({cron:'* * * * *'},env,{waitUntil:p=>pending.push(p)});
  await Promise.all(pending);
- assert.equal(queries.length,3);
+ assert.equal(queries.length,4);
  assert.ok(queries.some(sql=>sql.includes('cloud_agent_jobs')));
  assert.ok(queries.some(sql=>sql.includes('cloud_work_sessions')));
 });
