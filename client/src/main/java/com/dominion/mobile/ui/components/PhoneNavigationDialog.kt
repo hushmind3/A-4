@@ -32,6 +32,8 @@ fun PhoneNavigationDialog(plan: PhoneNavigationPlan, onDismiss: () -> Unit,
                     Text((index + 1).toString() + ". " + when(step.action) {
                         "click" -> "선택: "
                         "search_text" -> "검색 입력: "
+                        "scroll_forward" -> "화면 앞으로 스크롤: "
+                        "scroll_backward" -> "화면 뒤로 스크롤: "
                         else -> "화면 확인: "
                     } + step.label + (step.value?.let { " → " + it } ?: ""))
                 }

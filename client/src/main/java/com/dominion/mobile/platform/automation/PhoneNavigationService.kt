@@ -109,10 +109,8 @@ class PhoneNavigationService : AccessibilityService() {
             !getSystemService(KeyguardManager::class.java).isKeyguardLocked
 
     private fun begin(plan: PhoneNavigationPlan): Boolean {
-        if (work?.isActive == true || !unlocked() || plan.app !in PhoneNavigationPlan.apps) return false
+        if (work?.isActive == true || !unlocked() || !PhoneNavigationPlan.valid(plan)) return false
         // No unreviewed background launch or arbitrary app package.
-        if (plan.steps.size !in 1..8 || plan.steps.last().action != "expect" ||
-            plan.steps.any { it.action != "expect" && it.label !in PhoneNavigationPlan.labels(plan.app,it.action) }) return false
         _status.value = "대상 앱 열기 요청"
         work = scope.launch {
             var completed = 0
@@ -179,14 +177,21 @@ class PhoneNavigationService : AccessibilityService() {
             }
             // Reject a password screen even within an allowed map app.
             check(nodes.none { it.isPassword })
+            val scrollAction = when (step.action) {
+                "scroll_forward" -> AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+                "scroll_backward" -> AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+                else -> null
+            }
             val matches = nodes.filter { node ->
                 node.packageName?.toString() == pkg && node.isVisibleToUser && node.isEnabled &&
-                    !node.isPassword && listOf(node.text,node.contentDescription,node.hintText).any {
+                    !node.isPassword && (scrollAction != null || listOf(node.text,node.contentDescription,node.hintText).any {
                         it?.toString()?.trim() == step.label
-                    } && when (step.action) {
+                    }) && when (step.action) {
                         "click" -> node.isClickable
                         "search_text" -> node.isEditable &&
                             node.actionList.any { it.id == AccessibilityNodeInfo.ACTION_SET_TEXT }
+                        "scroll_forward", "scroll_backward" -> node.isScrollable &&
+                            node.actionList.any { it.id == scrollAction }
                         "expect" -> true
                         else -> false
                     }
@@ -197,6 +202,7 @@ class PhoneNavigationService : AccessibilityService() {
                 "search_text" -> target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT,Bundle().apply {
                     putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,requireNotNull(step.value))
                 })
+                "scroll_forward", "scroll_backward" -> target.performAction(requireNotNull(scrollAction))
                 "expect" -> true
                 else -> false
             }

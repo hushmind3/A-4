@@ -43,7 +43,8 @@ object DeviceActions {
     fun openInstalledApp(context: Context, packageName: String): Boolean {
         require(packageName.matches(Regex("[a-zA-Z0-9_.]{1,200}")))
         val intent = context.packageManager.getLaunchIntentForPackage(packageName) ?: return false
-        return launch(context, intent)
+        // AccessibilityService is not an Activity; launch in its own task.
+        return launch(context, intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
     fun map(context: Context, query: String): Boolean {
