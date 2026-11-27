@@ -89,13 +89,13 @@ object KoreanErrands {
             "출발지·도착지와 표시된 이동 조건을 확인한다. 호출이나 결제는 사용자에게 넘긴다."),
         KoreanErrand("stay","NOL·여기어때 · 숙박","지역·숙박일·인원",setOf("com.cultsotry.yanolja.nativeapp","kr.goodchoice.abouthere"),setOf("NOL","야놀자","여기어때"),
             "지역·날짜·인원에 맞는 숙소와 객실 조건을 검색한다. 예약 확정은 사용자에게 넘긴다."),
-        KoreanErrand("finance","토스·은행 · 금융 앱 탐색","필요한 메뉴 또는 문의",setOf("viva.republica.toss"),emptySet(),
+        KoreanErrand("finance","토스·은행 · 금융 앱 탐색","필요한 메뉴 또는 문의",PrivateAccountRead.bankApps,emptySet(),
             "사용자가 선택한 금융 앱의 공개 메뉴·고객센터를 탐색한다. 계좌·인증·송금·결제는 사용자 직접 처리."),
         KoreanErrand("used","당근 · 중고거래","상품명·지역·희망 가격",setOf("com.towneers.www"),emptySet(),
             "상품 후보와 판매 조건을 탐색하고 문의할 내용을 준비한다. 메시지 발송은 사용자에게 넘긴다."),
         KoreanErrand("clinic","똑닥 · 진료 예약 준비","병원·진료 시간",setOf("com.bbros.sayup"),setOf("똑닥"),
             "병원과 예약 가능한 화면을 탐색한다. 의료 개인정보 입력 및 예약 확정은 사용자에게 넘긴다."),
-        KoreanErrand("telecom","SKT·KT·LG U+ · 고객센터","요금·서비스 문의",setOf("Com.sktelecom.minit","com.ktshow.cs","com.lguplus.mobile.cs"),emptySet(),
+        KoreanErrand("telecom","SKT·KT·LG U+ · 고객센터","요금·서비스 문의",PrivateAccountRead.carrierApps,emptySet(),
             "공개 고객센터와 요금 안내 메뉴를 탐색한다. 로그인이나 개인 청구내역 확인·변경은 사용자 직접 처리.")
     )
     fun request(id:String,pkg:String,label:String,details:String):String {

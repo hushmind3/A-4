@@ -48,6 +48,9 @@ fun PhoneNavigationDialog(plan: PhoneNavigationPlan, onDismiss: () -> Unit,
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("대상: " + (installed?.label ?: PhoneNavigationPlan.apps[plan.app] ?: plan.app))
                 Text(plan.app, style = MaterialTheme.typography.labelSmall)
+                replanContext?.privateRead?.let{scope->
+                    Text("기기 전용 개인 조회: "+scope.field+" · 모델 서버에 화면이나 조회값을 보내지 않습니다.")
+                }
                 replanContext?.transaction?.let{scope->
                     Text("실제 거래 대상: "+scope.target+" · "+scope.condition+" · 최대 "+scope.maxWon+"원")
                     Text("마지막 화면을 확인하고 승인하기 전에는 거래를 확정하지 않습니다.")

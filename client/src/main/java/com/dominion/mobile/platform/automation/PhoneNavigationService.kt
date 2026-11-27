@@ -145,6 +145,7 @@ class PhoneNavigationService : AccessibilityService() {
             var transactionAttempted=false
             var transactionVerified=false
             var resultVerified=false
+            var privateVerified=false
             var approvedResults=emptyList<String>()
             var feedback=""
             val verified=mutableListOf<String>()
@@ -172,6 +173,17 @@ class PhoneNavigationService : AccessibilityService() {
                     fun validRoom() {
                         if(replan!=null)check(container.engine===engine && container.repository===repo &&
                             repo.state.value.conversation(replan.roomId)?.sessionId==replan.sessionId)
+                    }
+                    val localScope=replan?.privateRead
+                    if(localScope!=null){
+                        check(recorded&&engine==null)
+                        val result=runPrivateAccountRead(plan.app,localScope,::validRoom)
+                        if(result!=null){
+                            verified.add(localScope.field+": "+result)
+                            privateVerified=true;endStatus="completed";completed++
+                            _status.value="기기 전용 조회 완료 · 선택한 항목 저장"
+                        }else _status.value="선택한 항목을 확인하지 못했습니다 · 직접 조회 필요"
+                        return@withTimeout
                     }
                     var activePlan=plan
                     while(true) {
@@ -453,7 +465,8 @@ class PhoneNavigationService : AccessibilityService() {
                 if(recorded&&replan!=null)withContext(NonCancellable){
                     val detail="실제 앱: "+plan.app+"\n"+_status.value+
                         "\n확인한 화면 문구: "+verified.distinct().joinToString(", ").ifBlank{"없음"}+
-                        (if(transactionVerified)"\n실제 앱의 새 완료 문구를 확인했습니다. 공급자 영수증·변경 조건은 별도 확인할 수 있습니다."
+                        (if(privateVerified)"\n선택한 항목의 실제 화면 수치만 기기에 저장했습니다. 외부 모델에 전송하지 않았습니다."
+                         else if(transactionVerified)"\n실제 앱의 새 완료 문구를 확인했습니다. 공급자 영수증·변경 조건은 별도 확인할 수 있습니다."
                          else if(transactionAttempted)"\n거래 요청 이후 완료 근거 없음. 중복 실행하지 마세요."
                          else if(resultVerified)"\n실제 화면에 있는 조회 결과만 기록했습니다. 거래·예약·결제는 수행하지 않았습니다."
                          else if(endStatus=="completed")"\n기기 화면에서 새 메시지를 확인했습니다. 서버 수신·읽음은 확인하지 않았습니다."
@@ -611,6 +624,53 @@ class PhoneNavigationService : AccessibilityService() {
                 .map{rect(it).toShortString()}.distinct().size
             return block(editor,sends.singleOrNull(),count)
         }finally{nodes.forEach{it.recycle()};while(queue.isNotEmpty())queue.removeFirst().recycle()}
+    }
+
+    private suspend fun runPrivateAccountRead(pkg:String,intent:com.dominion.mobile.data.PhonePrivateRead,
+        validRoom:()->Unit):String?{
+        intent.checked(pkg)
+        val tried=mutableSetOf<String>()
+        repeat(8){
+            validRoom()
+            val observation=runCatching{withTransactionNodes(pkg){nodes,lines->
+                if(com.dominion.mobile.data.PhoneTransactions.authScreen(lines))null
+                else {
+                    val result=com.dominion.mobile.data.PrivateAccountRead.extract(intent,lines)
+                    val menu=nodes.filter{it.isClickable&&!it.isEditable}.flatMap(::nodeNames)
+                        .firstOrNull{it in com.dominion.mobile.data.PrivateAccountRead.menus(intent.kind)&&it !in tried}
+                    result to menu
+                }
+            }}.getOrNull()
+            val result=observation?.first
+            if(result!=null){
+                // Show only the selected field, never a private screen dump.
+                approveStep(PhoneNavigationStep("조회 결과 기기에 저장",intent.field,result),pkg,1,1)
+                validRoom()
+                val fresh=runCatching{withTransactionNodes(pkg){_,lines->
+                    if(com.dominion.mobile.data.PhoneTransactions.authScreen(lines))null
+                    else com.dominion.mobile.data.PrivateAccountRead.extract(intent,lines)
+                }}.getOrNull()
+                if(fresh==result)return result
+                delay(250)
+            }else{
+                val menu=observation?.second
+                if(menu!=null){
+                    tried.add(menu)
+                    approveStep(PhoneNavigationStep("조회 메뉴 이동",menu),pkg,1,1)
+                    validRoom()
+                    withTransactionNodes(pkg){nodes,lines->
+                        check(!com.dominion.mobile.data.PhoneTransactions.authScreen(lines))
+                        nodes.singleOrNull{it.isClickable&&!it.isEditable&&menu in nodeNames(it)}
+                            ?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                    }
+                    delay(700)
+                }else{
+                    approveStep(PhoneNavigationStep("직접 로그인·조회 화면 이동 후 확인",intent.field),pkg,1,1)
+                    validRoom();delay(300)
+                }
+            }
+        }
+        return null
     }
 
     private fun nodeNames(node:AccessibilityNodeInfo)=listOfNotNull(node.text?.toString(),

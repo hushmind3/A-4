@@ -6,7 +6,7 @@ import com.dominion.mobile.data.remote.TaskReceipt
 /** Durable dependency chain over existing task records, not a second agent runtime.
  * A prior model answer is data, never authority to execute an external action. */
 internal object TaskHandoff {
-    fun eligible(task:TaskItem):Boolean=task.workflowId==null&&!task.done&&
+    fun eligible(task:TaskItem):Boolean=task.workflowId==null&&!task.done&&task.phonePrivateRead==null&&
         (task.engineJobId==null&&task.engineStatus==null ||
             task.phonePackage!=null&&task.engineStatus=="needs_review")
     fun ready(task:TaskItem):Boolean=task.workflowId!=null&&task.workflowState=="ready"

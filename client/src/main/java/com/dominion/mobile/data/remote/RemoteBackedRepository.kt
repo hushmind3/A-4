@@ -233,7 +233,15 @@ class RemoteBackedRepository(
                 val task=state.value.tasks.firstOrNull{it.id==candidate.id}?:continue
                 if(task.workflowState=="waiting"){
                     val previous=state.value.tasks.firstOrNull{it.id==task.workflowAfter&&it.workflowId==task.workflowId}
-                    if(previous?.workflowState!="verified")continue
+                    if(previous==null||previous.workflowState=="blocked"){
+                        taskLock.withLock{
+                            update{st->st.copy(tasks=st.tasks.map{if(it.id==task.id&&it.workflowState=="waiting")
+                                it.copy(workflowState="blocked")else it})}
+                            store.saveStateNow(state.value)
+                        }
+                        continue
+                    }
+                    if(previous.workflowState!="verified")continue
                     val proof=previous.workflowEvidence?.takeIf{it.isNotBlank()}?:continue
                     taskLock.withLock{
                         update{st->st.copy(tasks=st.tasks.map{
@@ -279,7 +287,8 @@ class RemoteBackedRepository(
 
     override suspend fun createPhoneErrand(title:String,characterId:String,request:String,pkg:String,
         kakaoMessage:com.dominion.mobile.data.KakaoMessageRequest?,publicRead:Boolean,
-        transaction:com.dominion.mobile.data.PhoneTransactionRequest?):String=taskLock.withLock{
+        transaction:com.dominion.mobile.data.PhoneTransactionRequest?,
+        privateRead:com.dominion.mobile.data.PhonePrivateRead?):String=taskLock.withLock{
         check(localExecution)
         require(title.isNotBlank()&&title.length<=160&&request.isNotBlank()&&request.length<=4000)
         require(com.dominion.mobile.data.PhoneNavigationPlan.eligiblePackage(pkg))
@@ -287,6 +296,7 @@ class RemoteBackedRepository(
         if(kakaoMessage!=null){require(pkg=="com.kakao.talk");kakaoMessage.checked()}
         if(publicRead)require(kakaoMessage==null&&transaction==null&&pkg in com.dominion.mobile.data.PhonePublicResult.packages)
         if(transaction!=null){require(kakaoMessage==null&&!publicRead);transaction.checked(pkg)}
+        if(privateRead!=null){require(kakaoMessage==null&&!publicRead&&transaction==null);privateRead.checked(pkg)}
         val taskId="phone-errand:"+java.util.UUID.randomUUID()
         val roomId=TaskDispatch.roomId(taskId)
         val nonce=TaskDispatch.messageNonce(taskId)
@@ -304,7 +314,7 @@ class RemoteBackedRepository(
             authorAgentId=characterId)
         val task=com.dominion.mobile.data.model.TaskItem(taskId,title,characterId,
             engineRoomId=roomId,engineSessionId=session,engineMessageId=nonce,engineJobId=job,
-            enginePrompt=request,engineStatus="needs_review",requestDetails=request,phonePackage=pkg,kakaoMessage=kakaoMessage,phonePublicRead=publicRead,phoneTransaction=transaction)
+            enginePrompt=request,engineStatus="needs_review",requestDetails=request,phonePackage=pkg,kakaoMessage=kakaoMessage,phonePublicRead=publicRead,phoneTransaction=transaction,phonePrivateRead=privateRead)
         update{st->
             check(st.character(characterId)!=null)
             st.copy(tasks=listOf(task)+st.tasks,conversations=listOf(com.dominion.mobile.data.model.Conversation(
@@ -321,9 +331,9 @@ class RemoteBackedRepository(
             val task=state.value.tasks.firstOrNull{it.phonePackage==context.app&&it.engineRoomId==context.roomId&&
                 it.engineSessionId==context.sessionId}?:return@withLock false
             require(status in setOf("running","paused","failed","cancelled","completed"))
-            check(task.kakaoMessage==context.kakaoMessage&&task.phonePublicRead==context.publicRead&&task.phoneTransaction==context.transaction)
+            check(task.kakaoMessage==context.kakaoMessage&&task.phonePublicRead==context.publicRead&&task.phoneTransaction==context.transaction&&task.phonePrivateRead==context.privateRead)
             if(task.workflowId!=null)check(task.workflowState in setOf("ready","running")){"선행 업무의 실행 근거가 필요합니다"}
-            if(status=="completed")check(task.kakaoMessage!=null||task.phonePublicRead||task.phoneTransaction!=null)
+            if(status=="completed")check(task.kakaoMessage!=null||task.phonePublicRead||task.phoneTransaction!=null||task.phonePrivateRead!=null)
             val room=state.value.conversation(context.roomId)?:return@withLock false
             check(room.sessionId==context.sessionId && task.enginePrompt==context.initialRequest)
             val owner=room.messages.single{it.id==task.engineMessageId}
@@ -699,6 +709,7 @@ class RemoteBackedRepository(
     override suspend fun replanPhoneControls(context:com.dominion.mobile.data.PhoneReplanContext,
         controls:List<String>,results:List<String>,feedback:String):com.dominion.mobile.data.PhoneNavigationPlan? {
         check(localExecution){"PC mode uses explicit screenshot replanning"}
+        check(context.privateRead==null){"Private account lookup stays on-device"}
         val room=state.value.conversation(context.roomId)
         check(room?.sessionId==context.sessionId)
         require(com.dominion.mobile.data.PhoneNavigationPlan.eligiblePackage(context.app))

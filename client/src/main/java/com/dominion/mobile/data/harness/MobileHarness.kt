@@ -213,7 +213,9 @@ internal class MobileHarness(
     }
     private fun history(room:Conversation,owner:Message,system:String):List<CloudChatMessage>{
         val result=mutableListOf(CloudChatMessage("system",system.take(6000)))
+        val privateRoom=state().tasks.any{it.engineRoomId==room.id&&it.phonePrivateRead!=null}
         val previous=room.messages.takeWhile{it.id!=owner.id}.filter{
+            (!privateRoom||!it.id.startsWith("phone-receipt:"))&&
             it.status==MessageStatus.SENT&&it.sender in setOf(MessageSender.USER,MessageSender.ASSISTANT)&&it.text.isNotBlank()
         }.takeLast(6)
         result.addAll(previous.map{CloudChatMessage(if(it.sender==MessageSender.USER)"user" else "assistant",it.text.take(900))})
@@ -228,6 +230,9 @@ internal class MobileHarness(
         try{
             val room=requireNotNull(state().conversation(roomId));session=requireNotNull(room.sessionId)
             val expected=session
+            check(state().tasks.none{it.engineRoomId==roomId&&it.phonePrivateRead!=null}){
+                "개인 조회 결과는 기기 전용입니다. 일반 대화는 다른 대화방을 사용하세요."
+            }
             val owner=room.messages.single{it.id==message.id&&it.sender==MessageSender.USER}
             check(owner.status==MessageStatus.SENDING&&owner.attachmentIds.orEmpty().size<=3)
             check(room.messages.none{it.replyTo==owner.id&&it.sender==MessageSender.ASSISTANT})

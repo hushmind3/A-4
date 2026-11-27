@@ -44,12 +44,14 @@ object PhonePublicResult {
 /** Bound one user-approved device task to one existing DOMINION room. */
 data class PhoneReplanContext(val roomId:String,val sessionId:String,val app:String,
     val initialMessageId:String,val initialRequest:String,val kakaoMessage:KakaoMessageRequest?=null,
-    val publicRead:Boolean=false,val transaction:PhoneTransactionRequest?=null) {
+    val publicRead:Boolean=false,val transaction:PhoneTransactionRequest?=null,
+    val privateRead:PhonePrivateRead?=null) {
     init { require(roomId.isNotBlank() && sessionId.isNotBlank() && PhoneNavigationPlan.eligiblePackage(app) &&
         initialMessageId.isNotBlank() && initialRequest.isNotBlank() && initialRequest.length<=4000)
         if(kakaoMessage!=null){require(app=="com.kakao.talk");kakaoMessage.checked()}
         if(publicRead)require(kakaoMessage==null&&transaction==null&&app in PhonePublicResult.packages)
         if(transaction!=null){require(kakaoMessage==null&&!publicRead);transaction.checked(app)}
+        if(privateRead!=null){require(kakaoMessage==null&&!publicRead&&transaction==null);privateRead.checked(app)}
     }
 
 }

@@ -429,7 +429,8 @@ fun ChatRoomScreen(
                             remember(entry.message.id,entry.message.text){com.dominion.mobile.data.PhoneNavigationPlan.fromMessage(entry.message.text)!=null}){
                             val owner=conversation.messages.firstOrNull{it.id==entry.message.replyTo}
                             val phoneTask=state.tasks.firstOrNull{it.engineRoomId==conversationId&&it.phonePackage!=null}
-                            if(phoneTask==null||owner?.jobStatus=="needs_review"){
+                            if(phoneTask==null||owner?.jobStatus=="needs_review"&&
+                                (phoneTask.workflowId==null||phoneTask.workflowState=="ready")){
                                 androidx.compose.material3.OutlinedButton(onClick={phonePlanMessage=entry.message},
                                     modifier=Modifier.padding(start=40.dp,bottom=8.dp)){Text("앱 업무 실행")}
                             }
@@ -735,7 +736,7 @@ fun ChatRoomScreen(
                     val task=state.tasks.firstOrNull{it.engineRoomId==conversationId&&it.engineMessageId==owner.id&&
                         it.phonePackage==plan.app}
                     com.dominion.mobile.data.PhoneReplanContext(conversationId,session,plan.app,message.id,owner.text.take(4000),
-                        task?.kakaoMessage,task?.phonePublicRead==true,task?.phoneTransaction)
+                        task?.kakaoMessage,task?.phonePublicRead==true,task?.phoneTransaction,task?.phonePrivateRead)
                 }
             },
             onDismiss = { phonePlanMessage = null },
