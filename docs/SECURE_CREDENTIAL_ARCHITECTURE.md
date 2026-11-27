@@ -43,7 +43,7 @@ Apache-2.0 permits adaptation subject to its terms and correct notices; this doc
 - cloud-relay/agent_jobs.js encrypts D1 task data using a **server-configured** AGENT_ENCRYPTION_KEY, not a user-owned or attested key.
 - No deployed confidential computing executor, verified remote attestation or restricted per-provider token delegation.
 - Current server jobs are **read-only** research tasks with a narrow allowlist; no external account writes, credentials or payments.
-- Source-only Worker changes require deployment, D1 migration, secrets, runtime and account-isolation tests before becoming usable.
+- Worker job/voice changes, D1 migration, server-held encryption key and recovery trigger were deployed on 2026-11-27; live signed-account isolation and runtime verification remain outstanding. This does not deploy confidential credential delegation.
 
 ## Implementation order
 

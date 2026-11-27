@@ -24,7 +24,7 @@ free inference quota. A PC with local models is an OPTIONAL execution node.
 - Current main-path speech: microphone WAV (up to 20 seconds) -> DOMINION
   Cloud STT -> Cloud model/harness -> Cloud TTS MP3 -> device playback.
   No large local speech model is required. This is turn-based, not full duplex.
-  Cloud speech endpoints are still source-only until deployment and provider configuration.
+  Cloud speech endpoints are deployed as of 2026-11-27; Korean TTS provider configuration and live signed-account tests remain outstanding.
 - WorkManager drives scheduled notifications and bounded AI submissions with no
   desktop gate; background execution follows OS network/energy constraints.
 - Account-scoped local databases are derived from the Google-linked DOMINION
@@ -35,8 +35,7 @@ free inference quota. A PC with local models is an OPTIONAL execution node.
 
 ## Missing, in progress, or requiring real-device verification
 
-- Actual DOMINION Cloud Worker deployment, D1 migration, encrypted-job key,
-  Cron scheduling and Korean speech provider configuration
+- Live DOMINION Cloud signed-account/Android roundtrip and Korean speech provider configuration (Worker deployment, D1 migration, encrypted-job key and Cron configuration are applied)
 - Full DOMINION Rust harness parity, long-range autonomous plan/verify/retry,
   recovery of running jobs after process termination, and post-approval steps
 - Independent realtime voice/video calls with interruption and AI participant

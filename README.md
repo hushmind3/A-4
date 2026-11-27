@@ -19,7 +19,7 @@ Implemented in Android source: independent cloud model requests, on-device tool/
 
 Implemented in the cloud-relay source overlay: account-scoped speech endpoints, separate speech quotas, encrypted D1 job checkpoints, bounded read-only research tool loop, cron-based retry/resume code and user-scoped job routes.
 
-**Not yet activated in the existing production Cloudflare Worker:** these source additions need review and integration into its actual deployed source, D1 job migration, server secret configuration, a cron schedule and cloud TTS provider credentials. The overlay must not replace the existing production Worker without preserving all current bindings and login/relay endpoints.
+**Deployed to the existing production Cloudflare Worker (2026-11-27):** live Worker version 61dbc468-2b36-4d9a-bb3e-cd4370160bf6, built from ef1c2a5fc3f315bf1e4057d991ef666e6c8af221. D1 migration 0004, the server-held job encryption secret and dedicated one-minute recovery trigger are configured. Existing login, model and relay bindings were retained. Korean TTS provider configuration and actual signed-account end-to-end verification remain outstanding. See [deployment record](cloud-relay/README.md).
 
 **Not yet finished:** realtime full-duplex speech and interruption, general browser/account automation, full external service OAuth permission delegation, user-key-controlled encrypted cloud memory, robust cloud push to Android, and verified live service operation.
 
