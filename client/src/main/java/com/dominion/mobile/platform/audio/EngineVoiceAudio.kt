@@ -128,8 +128,8 @@ object EngineVoiceAudio {
     }
 
     suspend fun play(context: Context, bytes: ByteArray, communication: Boolean = false,
-        existingCallFocus: Boolean = false, onSpeechLevel: ((Float) -> Unit)? = null,
-        onPositionMs: ((Int) -> Unit)? = null) {
+        existingCallFocus: Boolean = false, onPositionMs: ((Int) -> Unit)? = null,
+        onSpeechLevel: ((Float) -> Unit)? = null) {
         require(!existingCallFocus || communication)
         require(WaveAudio.isWave(bytes))
         val envelope = if (onSpeechLevel != null) withContext(Dispatchers.Default) {

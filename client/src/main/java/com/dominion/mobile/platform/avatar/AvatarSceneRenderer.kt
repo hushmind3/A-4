@@ -200,7 +200,8 @@ internal class AvatarSceneRenderer(private val ar: Boolean, shape: CharacterShap
             Matrix.multiplyMM(mv,0,view,0,model,0)
             Matrix.multiplyMM(mvp,0,projection,0,mv,0)
             val pose = if (faceMode == "voice") alignedPose else null
-            val target = pose?.shape?.let { visemeVertices[it] } ?: mouthVertices
+            val target = pose?.shape?.let { visemeVertices[it] } ?: mouthVertices ?:
+                visemeVertices["a"] ?: visemeVertices.entries.firstOrNull { it.key != "closed" }?.value
             val weight = if (faceMode == "voice") pose?.openness ?: voiceLevel else previewLevel
             drawMesh(vertices, mesh.size/6, model, mvp, color, target, weight, rig, rigWeights)
             if (!imported) drawFace()

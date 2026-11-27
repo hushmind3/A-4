@@ -10,6 +10,12 @@ internal class MobileExtensionRepository(private val api: DominionApi,
     private val save: suspend (MobileJournal) -> Unit) {
     private val gate = Mutex()
     private suspend fun owner(feature: String): String = api.mobileCapabilities().requireFeature(feature)
+    private suspend fun receiptOwner(kind: MobileAction): String {
+        val caps = api.mobileCapabilities()
+        val feature = if (kind == MobileAction.ACCOUNT_DELETE &&
+            "account_delete" !in caps.features.orEmpty()) "account_delete_receipts" else kind.feature
+        return caps.requireFeature(feature)
+    }
     suspend fun peers(): List<MobilePeer> {
         val account = owner("friends")
         return api.mobilePeers().verified(account)
@@ -52,9 +58,9 @@ internal class MobileExtensionRepository(private val api: DominionApi,
         val current = load()
         val entry = current.entries.single { it.intent.nonce == nonce }
         val kind = MobileAction.entries.single { it.wire == entry.intent.action }
-        check(owner(kind.feature) == entry.intent.accountId)
+        check(receiptOwner(kind) == entry.intent.accountId)
         val response = api.mobileOperation(nonce)
-        check(!kind.review || entry.decisionSent || response.status != "completed") { "Unreviewed mutation" }
+        check(!kind.review || entry.decisionAllowed == true || response.status != "completed") { "Unreviewed mutation" }
         val next = entry.merge(response)
         save(update(current, next))
         next
@@ -71,10 +77,12 @@ internal class MobileExtensionRepository(private val api: DominionApi,
             review.digest == digest && review.expiresAt > System.currentTimeMillis())
         // Fresh authentication must occur on the server; local biometric is not a substitute.
         check(!allow || !review.requiresFreshAuth) { "Complete server authentication and refresh review" }
-        val reserved = update(current, live.copy(decisionSent = true))
+        val sent = live.copy(decisionSent = true, decisionAllowed = allow)
+        val reserved = update(current, sent)
         save(reserved)
-        val next = live.copy(decisionSent = true).merge(
-            api.decideMobileOperation(nonce, MobileReviewDecision(digest, allow)))
+        val response = api.decideMobileOperation(nonce, MobileReviewDecision(digest, allow))
+        check(allow || response.status != "completed") { "Denied operation completed" }
+        val next = sent.merge(response)
         save(update(reserved, next))
         next
     }

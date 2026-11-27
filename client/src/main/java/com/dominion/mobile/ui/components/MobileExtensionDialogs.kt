@@ -87,9 +87,13 @@ fun MobileOperationsDialog(vm: AppViewModel, action: MobileAction, title: String
     suspend fun reload() {
         caps = null; entries = emptyList()
         val current = vm.mobileCapabilities()
-        current.requireFeature(action.feature)
+        val feature = if (action == MobileAction.ACCOUNT_DELETE &&
+            action.feature !in current.features.orEmpty()) "account_delete_receipts" else action.feature
+        val owner = current.requireFeature(feature)
+        val rows = vm.mobileJournal().filter { it.intent.action == action.wire }
+        check(vm.mobileCapabilities().requireFeature(feature) == owner)
         caps = current
-        entries = vm.mobileJournal().filter { it.intent.action == action.wire }
+        entries = rows.filter { it.intent.accountId == owner }
     }
     fun runOperation(block: suspend () -> Unit) {
         if (busy) return
@@ -105,6 +109,7 @@ fun MobileOperationsDialog(vm: AppViewModel, action: MobileAction, title: String
     }
     LaunchedEffect(vm, action) { runOperation {} }
     val owner = caps?.accountId
+    val canSubmit = action.feature in caps?.features.orEmpty()
     val actualTarget = if (action == MobileAction.ACCOUNT_DELETE) owner else target
     AlertDialog(onDismissRequest = { if (!busy) onDismiss() }, title = { Text(title) },
         text = {
@@ -112,13 +117,14 @@ fun MobileOperationsDialog(vm: AppViewModel, action: MobileAction, title: String
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (owner == null) Text("연결된 본체가 이 기능을 지원하고 실제 계정을 확인해야 활성화됩니다.")
                 else Text("서버 계정: " + owner)
+                if (owner != null && !canSubmit) Text("삭제 접수 기록 조회 전용 세션입니다.")
                 if (action == MobileAction.ACCOUNT_DELETE)
                     Text("삭제 요청은 서버의 대상·범위·본인 인증 검토를 거칩니다. 로컬 앱 초기화와는 별도입니다.")
                 else Text("기관·요청 내용을 서버에 전달해 검토안을 받습니다. 승인 없이 신청·결제 완료로 표시하지 않습니다.")
                 text?.let { Text(it.take(1200), style = MaterialTheme.typography.bodySmall) }
                 TextButton(enabled = !busy, onClick = { runOperation {} }) { Text("연결·지원 기능 다시 확인") }
                 Row {
-                    Checkbox(checked, { checked = it }, enabled = owner != null && !busy)
+                    Checkbox(checked, { checked = it }, enabled = owner != null && canSubmit && !busy)
                     Text("대상과 서버 요청 내용 확인", modifier = Modifier.padding(top = 12.dp))
                 }
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -127,7 +133,7 @@ fun MobileOperationsDialog(vm: AppViewModel, action: MobileAction, title: String
                     { reviewed = it })
             }
         },
-        confirmButton = { TextButton(enabled = checked && !busy && actualTarget != null && owner != null &&
+        confirmButton = { TextButton(enabled = checked && !busy && canSubmit && actualTarget != null && owner != null &&
             entries.none { it.intent.target == actualTarget && it.receipt?.terminal() != true },
             onClick = { runOperation { vm.beginMobileOperation(action, requireNotNull(actualTarget), text); checked = false } }) {
             Text("서버 검토 요청")
@@ -156,14 +162,20 @@ fun ServerFriendsDialog(vm: AppViewModel, onDismiss: () -> Unit) {
     suspend fun reload() {
         caps = null; peers = emptyList(); entries = emptyList(); messages = emptyList()
         val current = vm.mobileCapabilities()
-        current.requireFeature("friends")
+        val owner = current.requireFeature("friends")
+        val directory = vm.mobilePeers()
+        val rows = vm.mobileJournal().filter { it.intent.action.startsWith("friend.") || it.intent.action == "peer.message" }
+        check(vm.mobileCapabilities().requireFeature("friends") == owner)
         caps = current
-        peers = vm.mobilePeers()
-        entries = vm.mobileJournal().filter { it.intent.action.startsWith("friend.") || it.intent.action == "peer.message" }
+        peers = directory
+        entries = rows.filter { it.intent.accountId == owner }
         val active = peer
         if (active != null && "peer_messages" in current.features.orEmpty() &&
-            peers.any { it.id == active && it.relationship == "friend" }) messages = vm.mobilePeerHistory(active)
-        else peer = null
+            peers.any { it.id == active && it.relationship == "friend" }) {
+            val history = vm.mobilePeerHistory(active)
+            check(vm.mobileCapabilities().requireFeature("peer_messages") == owner)
+            messages = history
+        } else peer = null
     }
     fun runOperation(block: suspend () -> Unit) {
         if (busy) return
@@ -186,7 +198,9 @@ fun ServerFriendsDialog(vm: AppViewModel, onDismiss: () -> Unit) {
             try {
                 val current = vm.mobileCapabilities()
                 check(current.requireFeature("peer_messages") == caps?.accountId)
-                messages = vm.mobilePeerHistory(id)
+                val history = vm.mobilePeerHistory(id)
+                check(vm.mobileCapabilities().requireFeature("peer_messages") == caps?.accountId)
+                messages = history
             } catch (e: CancellationException) { throw e }
             catch (_: Exception) { error = "메시지 동기화 중단 · 다시 조회하세요."; break }
         }

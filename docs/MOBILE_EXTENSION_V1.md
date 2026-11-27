@@ -22,3 +22,9 @@ Android persists the operation before network writes in an engine-scoped encrypt
 ## Real-time media (proposed)
 
 Capabilities additionally advertise `realtime_audio` and optionally `realtime_video`. POST /v1/mobile/realtime/calls accepts {accountId,roomId,sessionId,callId,video}; returns the same IDs plus agentIdentity, videoAllowed and media:{room,token,url,expires_at}. The engine must verify current native room ownership/session, create a private media room restricted to the authenticated mobile user and specific agent, and join the AI participant before mobile publication. The agent streams STT/model/TTS or multimodal inference through the existing DOMINION harness, persists each finalized turn and job in that native room, and honors tool approvals. A signed media token alone does not prove inference is operational. Android checks the returned binding and exact participant identity, waits before publication, and stops on participant/session mismatch. The existing call and turn-based assistant modes remain available separately. This client contract has not been implemented on DOMINION itself.
+
+## Aligned speech (proposed)
+
+`aligned_speech` advertises POST /v1/mobile/voice/aligned with {accountId,text}. Return {accountId,wavBase64,cues:[{startMs,endMs,viseme,openness}]}. WAV must be actual PCM16 audio; cue timestamps must be ordered, non-overlapping, and within measured audio duration. Supported labels a/e/i/o/u/closed, openness 0..1. The server must derive alignment from the synthesized audio, not guess a timeline. Android drives authored targets by MediaPlayer position. When the capability is absent, existing Piper WAV amplitude animation remains available.
+
+After account deletion the server may advertise only `account_delete_receipts` in an authenticated, receipt-only capability response retaining the prior opaque account ID. This must authorize only the deletion receipt lookup, not account reactivation or new operations.

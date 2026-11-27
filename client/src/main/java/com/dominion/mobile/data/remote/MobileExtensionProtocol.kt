@@ -105,7 +105,7 @@ data class MobileReceipt(val accountId: String? = null, val nonce: String? = nul
 }
 data class MobileReviewDecision(val digest: String, val allow: Boolean)
 data class MobileJournalEntry(val intent: MobileIntent, val receipt: MobileReceipt? = null,
-    val decisionSent: Boolean = false) {
+    val decisionSent: Boolean = false, val decisionAllowed: Boolean? = null) {
     fun merge(next: MobileReceipt): MobileJournalEntry {
         next.verified(intent)
         val old = receipt
@@ -114,9 +114,10 @@ data class MobileJournalEntry(val intent: MobileIntent, val receipt: MobileRecei
             return this
         }
         if (old?.status == "running") check(next.status !in setOf("accepted","review"))
+        val changedReview = next.status == "review" && old?.review?.digest != next.review?.digest
         return copy(receipt = next,
-            decisionSent = if (next.status == "review" && old?.review?.digest != next.review?.digest) false
-                else decisionSent)
+            decisionSent = if (changedReview) false else decisionSent,
+            decisionAllowed = if (changedReview) null else decisionAllowed)
     }
 }
 data class MobileJournal(val entries: List<MobileJournalEntry> = emptyList())
