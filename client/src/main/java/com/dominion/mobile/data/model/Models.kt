@@ -16,9 +16,9 @@ enum class ThemeMode { SYSTEM, LIGHT, DARK }
 enum class TabId(val ko: String, val en: String) {
     CHATS("채팅", "Chats"),
     EXPLORE("탐색", "Explore"),
-    FRIENDS("친구", "Friends"),
+    FRIENDS("연락처", "Contacts"),
     ARCHIVE("보관함", "Archive"),
-    PROFILE("프로필", "Profile");
+    PROFILE("나의 비서", "Assistant");
 
     fun label(lang: Lang) = if (lang == Lang.KO) ko else en
 }
@@ -384,7 +384,7 @@ data class SettingsState(
     val hideContent: Boolean = false,
     val reduceMotion: Boolean = false,
     val guideDismissed: Boolean = false,
-    val tabOrder: List<TabId> = listOf(TabId.CHATS, TabId.EXPLORE, TabId.FRIENDS, TabId.ARCHIVE, TabId.PROFILE),
+    val tabOrder: List<TabId> = listOf(TabId.CHATS, TabId.FRIENDS, TabId.EXPLORE, TabId.ARCHIVE, TabId.PROFILE),
     val blockedUserIds: List<String> = emptyList(),
     val legalVersion: String = "2026.11",
     val mobileModel:String?=null

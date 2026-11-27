@@ -117,7 +117,8 @@ fun MainScreen(
                     onSettings = { go(Routes.SETTINGS) },
                     onInvite = { go(Routes.INVITE) },
                     onEditProfile = { go(Routes.EDIT_PROFILE) },
-                    onDeleteConversation = { deleteTarget = it }
+                    onDeleteConversation = { deleteTarget = it },
+                    onSearch = { go(Routes.SEARCH) }
                 )
             }
         }
@@ -272,7 +273,7 @@ private fun BottomBar(
             Modifier.fillMaxWidth().height(58.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            state.settings.tabOrder.forEach { tab ->
+            listOf(TabId.CHATS,TabId.EXPLORE,TabId.ARCHIVE,TabId.PROFILE).forEach { tab ->
                 val selected = state.currentTab == tab
                 Column(
                     Modifier
@@ -322,7 +323,8 @@ private fun DrawerContent(
     onSettings: () -> Unit,
     onInvite: () -> Unit,
     onEditProfile: () -> Unit,
-    onDeleteConversation: (Conversation) -> Unit
+    onDeleteConversation: (Conversation) -> Unit,
+    onSearch: () -> Unit
 ) {
     val p = LocalDominionPalette.current
     val lang = LocalLang.current
@@ -359,7 +361,7 @@ private fun DrawerContent(
         }
         Hairline()
 
-        TabId.entries.forEach { tab ->
+        listOf(TabId.CHATS,TabId.FRIENDS,TabId.EXPLORE,TabId.ARCHIVE,TabId.PROFILE).forEach { tab ->
             DrawerTabRow(
                 tab = tab,
                 selected = state.currentTab == tab,
@@ -372,6 +374,7 @@ private fun DrawerContent(
             )
         }
 
+        DrawerSmallRow(Glyph.SEARCH, tr(lang,"메시지 검색","Search messages"), onSearch)
         Spacer(Modifier.height(10.dp))
         Hairline()
         Row(
@@ -427,6 +430,29 @@ private fun DrawerContent(
             }
         }
 
+        val taskRooms=state.conversations.filter{it.kind==ConversationKind.TASK &&
+            (it.id.startsWith("phone-call:")||it.id.startsWith("work:"))}.take(12)
+        if(taskRooms.isNotEmpty()){
+            Spacer(Modifier.height(8.dp)); Hairline()
+            Text(tr(lang,"추가 대화 · 업무/통화","Additional · work/calls"),
+                style=MaterialTheme.typography.labelMedium,color=p.textTertiary,
+                modifier=Modifier.padding(horizontal=20.dp,vertical=10.dp))
+            taskRooms.forEach{conv->
+                Row(Modifier.fillMaxWidth().clickable{onOpenChat(conv.id)}
+                    .padding(horizontal=20.dp,vertical=9.dp),
+                    verticalAlignment=Alignment.CenterVertically){
+                    GlyphIcon(if(conv.id.startsWith("phone-call:"))Glyph.PHONE else Glyph.TASK,
+                        p.textSecondary,size=17.dp)
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)){
+                        Text(conv.title(state.characters),style=MaterialTheme.typography.bodyMedium,
+                            color=p.textPrimary,maxLines=1,overflow=TextOverflow.Ellipsis)
+                        Text(if(conv.id.startsWith("phone-call:"))"비서의 외부 통화" else "백그라운드 업무",
+                            style=MaterialTheme.typography.labelSmall,color=p.textTertiary)
+                    }
+                }
+            }
+        }
         Spacer(Modifier.height(14.dp))
         Hairline()
         DrawerSmallRow(Glyph.GIFT, tr(lang, "친구 초대", "Invite friends"), onInvite)

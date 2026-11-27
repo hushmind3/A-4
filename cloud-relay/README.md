@@ -85,3 +85,16 @@ Live checks after deployment:
 - `/v1/push/config` returned `Push not configured`; no Firebase Android/FCM config is present.
 
 The temporary test account and its work/messenger/browser rows were deleted. Live external phone, LiveKit voice, FCM delivery and Browser Rendering remain blocked until their operator credentials/bindings are configured and tested. Work scheduling fields (`scheduled_at`, `repeat`, `condition`, `deadline`, `attempts`, `next_run`) are deployed in the work-session API; document/image generation and arbitrary service adapters are not yet implemented.
+
+### Browser Rendering activation and generic actions (2026-11-27)
+
+The production Worker now has `env.BROWSER` Browser Rendering binding. Version **6bf07eda-f630-492c-9c4b-6ef04775a653** adds:
+
+- `POST /v1/browser/act` with bounded `fill`, `select`, `click`, `submit` and `read` actions against a public HTTPS page.
+- generic public-host validation instead of a government-only allowlist.
+- per-account cookies restored before navigation and re-exported after actions.
+- `POST /v1/browser/read` authenticated rendering.
+
+Live checks: a temporary signed account saved a cookie, read `https://www.gov.kr/` (page title `메인 | 정부24`, actual rendered text returned), and executed the generic action endpoint. The temporary account and browser row were deleted. Some sites apply bot/access blocking; the response reflects the actual blocked page rather than claiming success. No payment/identity bypass is implemented.
+
+This is a general browser executor, but a service-specific planner/verifier is still required to reliably complete every reservation/application.
