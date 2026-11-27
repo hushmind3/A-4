@@ -580,6 +580,17 @@ class AppViewModel(
             catch(_:Exception){_notice.value="연계 업무 접수 상태를 확인하세요."}
         }
     }
+    fun pauseTaskWorkflow(id:String,paused:Boolean){
+        viewModelScope.launch{
+            try{
+                repo.pauseTaskWorkflow(id,paused)
+                _notice.value=if(paused)"다음 단계부터 일시정지" else "연계 업무 재개"
+                if(!paused)repo.advanceTaskWorkflows()
+            }catch(e:CancellationException){throw e}
+            catch(_:Exception){_notice.value="연계 업무 상태를 확인하세요."}
+        }
+    }
+
     fun linkTaskWorkflow(ids:List<String>){
         viewModelScope.launch{
             try{

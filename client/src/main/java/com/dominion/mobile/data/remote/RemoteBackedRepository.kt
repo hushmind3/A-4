@@ -332,14 +332,56 @@ class RemoteBackedRepository(
         store.saveStateNow(state.value)
     }
 
-    /** Advance at most four eligible stages per foreground/background tick.
+    /** Pause at stage boundaries; an already launched external operation is
+     * not cancelled or replayed. Its existing receipt can still be refreshed. */
+    override suspend fun pauseTaskWorkflow(id:String,paused:Boolean):Unit=taskLock.withLock{
+        check(localExecution)
+        require(state.value.tasks.any{it.workflowId==id})
+        update{st->st.copy(tasks=st.tasks.map{row->
+            if(row.workflowId==id)row.copy(workflowPaused=paused)else row
+        })}
+        store.saveStateNow(state.value)
+    }
+
+    /** Only a confirmed terminal read-only cloud failure can be retried.
+     * Preserve the old job and receipt; give the next attempt a new stable ID.
+     * The transaction and notification-response paths are never auto-replayed. */
+    private suspend fun retryWorkflowRead(task:com.dominion.mobile.data.model.TaskItem,receipt:TaskReceipt):Boolean=taskLock.withLock{
+        val current=state.value.tasks.singleOrNull{it.id==task.id}?:return@withLock false
+        if(current.workflowPaused||current.workflowId==null||current.workflowAttempt>=1||
+            current.phonePackage!=null||current.engineJobId?.startsWith("cloud:")!=true||
+            current.engineJobId!=receipt.jobId||receipt.status!="failed"||
+            current.workflowState !in setOf("ready","running"))return@withLock false
+        val nextId="workflow-retry:"+java.util.UUID.nameUUIDFromBytes((current.id+":"+receipt.jobId).toByteArray(Charsets.UTF_8))
+        val next=current.copy(id=nextId,createdAt=System.currentTimeMillis(),done=false,
+            engineRoomId=null,engineSessionId=null,engineMessageId=null,engineJobId=null,
+            engineStatus=null,enginePrompt=null,engineLanguage=null,workflowAttempt=current.workflowAttempt+1,
+            workflowNotBefore=System.currentTimeMillis()+60_000L,workflowState="ready",
+            requestDetails=(current.requestDetails.orEmpty()+"\n이전 공개 조사 실행이 실패했습니다. 다른 공개 출처 또는 조회 방식을 사용하세요.").take(3000))
+        update{st->
+            check(st.tasks.single{it.id==current.id}==current&&st.tasks.none{it.id==nextId})
+            st.copy(tasks=listOf(next)+st.tasks.map{row->
+                when{
+                    row.id==current.id->row.copy(workflowState="superseded")
+                    row.workflowId==current.workflowId&&row.workflowAfter==current.id->row.copy(workflowAfter=nextId)
+                    else->row
+                }
+            })
+        }
+        store.saveStateNow(state.value)
+        true
+    }
+
+    /** Advance a bounded set of eligible stages per foreground/background tick.
      * Never launch Android external actions in a background worker. */
     override suspend fun advanceTaskWorkflows(){
         if(!localExecution||!workflowLock.tryLock())return
         try{
-            val candidates=state.value.tasks.filter{it.workflowId!=null&&it.workflowState in setOf("ready","waiting","running")}.take(12)
+            val candidates=state.value.tasks.filter{it.workflowId!=null&&!it.workflowPaused&&
+                (it.workflowNotBefore?:0)<=System.currentTimeMillis()&&it.workflowState in setOf("ready","waiting","running")}.take(12)
             for(candidate in candidates){
                 val task=state.value.tasks.firstOrNull{it.id==candidate.id}?:continue
+                if(task.workflowPaused)continue
                 if(task.workflowState=="waiting"){
                     val previous=state.value.tasks.firstOrNull{it.id==task.workflowAfter&&it.workflowId==task.workflowId}
                     if(previous==null||previous.workflowState=="blocked"){
@@ -354,14 +396,17 @@ class RemoteBackedRepository(
                     val proof=previous.workflowEvidence?.takeIf{it.isNotBlank()}?:continue
                     taskLock.withLock{
                         update{st->st.copy(tasks=st.tasks.map{
-                            if(it.id==task.id&&it.workflowState=="waiting")it.copy(workflowState="ready",workflowEvidence=proof)else it
+                            if(it.id==task.id&&it.workflowState=="waiting"&&!it.workflowPaused)it.copy(workflowState="ready",workflowEvidence=proof)else it
                         })}
                         store.saveStateNow(state.value)
                     }
                 }
                 val current=state.value.tasks.firstOrNull{it.id==task.id}?:continue
+                if(current.workflowPaused||(current.workflowNotBefore?:0)>System.currentTimeMillis())continue
                 if(current.workflowState in setOf("ready","running")&&current.phonePackage==null&&current.engineJobId==null){
-                    submitTask(current.id)
+                    try{submitTask(current.id)}
+                    catch(e:CancellationException){throw e}
+                    catch(_:Exception){continue}
                 }else if(current.engineJobId!=null&&current.engineStatus in setOf("done","completed","failed","cancelled","paused","interrupted")){
                     if(current.engineStatus=="completed"&&current.kakaoMessage?.waitForReply==true&&
                         current.replyReviewedAt==null&&(current.replyCandidate!=null||
@@ -370,6 +415,7 @@ class RemoteBackedRepository(
                         current.negotiationResolution==null&&(current.replyCandidate!=null||
                             (current.replyWatchUntil?:0)>System.currentTimeMillis()))continue
                     val receipt=taskReceipt(current.id)
+                    if(retryWorkflowRead(current,receipt))continue
                     val record=state.value.mobileActions.orEmpty().singleOrNull{
                         it.id=="phone-errand-execution:"+current.engineMessageId&&it.roomId==current.engineRoomId&&
                             it.session==current.engineSessionId&&it.status=="completed"
@@ -447,7 +493,10 @@ class RemoteBackedRepository(
                 it.engineSessionId==context.sessionId}?:return@withLock false
             require(status in setOf("running","paused","failed","cancelled","completed"))
             check(task.kakaoMessage==context.kakaoMessage&&task.phonePublicRead==context.publicRead&&task.phoneTransaction==context.transaction&&task.phonePrivateRead==context.privateRead)
-            if(task.workflowId!=null)check(task.workflowState in setOf("ready","running")){"선행 업무의 실행 근거가 필요합니다"}
+            if(task.workflowId!=null){
+                check(task.workflowState in setOf("ready","running")){"선행 업무의 실행 근거가 필요합니다"}
+                if(status=="running")check(!task.workflowPaused){"연계 업무 일시정지"}
+            }
             if(status=="completed")check(task.kakaoMessage!=null||task.phonePublicRead||task.phoneTransaction!=null||task.phonePrivateRead!=null)
             val room=state.value.conversation(context.roomId)?:return@withLock false
             check(room.sessionId==context.sessionId && task.enginePrompt==context.initialRequest)
@@ -660,6 +709,7 @@ class RemoteBackedRepository(
     override suspend fun submitTask(id: String) = taskLock.withLock {
         var task = state.value.tasks.firstOrNull { it.id == id } ?: error("Task not found")
         if(task.workflowId!=null){
+            check(!task.workflowPaused&&(task.workflowNotBefore?:0)<=System.currentTimeMillis()){"연계 업무 대기 중"}
             check(task.workflowState in setOf("ready","running")){"선행 작업 확인 필요"}
             if(task.phonePackage==null&&task.engineJobId==null&&task.workflowState=="ready"){
                 task=task.copy(workflowState="running")

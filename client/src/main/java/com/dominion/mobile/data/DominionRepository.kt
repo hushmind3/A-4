@@ -134,6 +134,7 @@ interface DominionRepository {
         approvedExternal:Set<Int> = emptySet()):Unit = error("Workflow planner unavailable")
     suspend fun linkTaskWorkflow(ids:List<String>):Unit = error("Workflow unavailable")
     suspend fun advanceTaskWorkflows():Unit = Unit
+    suspend fun pauseTaskWorkflow(id:String,paused:Boolean):Unit = error("Workflow control unavailable")
     suspend fun submitTask(id: String): Unit = error("Engine not connected")
     suspend fun dispatchScheduledTask(id: String, occurrence: Long): Unit = error("Engine not connected")
     suspend fun refreshTask(id: String): Unit = error("Engine not connected")

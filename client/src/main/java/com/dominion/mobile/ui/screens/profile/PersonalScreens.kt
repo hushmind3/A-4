@@ -317,6 +317,7 @@ fun TasksScreen(
                     onOpenChat = { task.engineRoomId?.let(onOpenChat) },
                     onReceipt = { receiptTarget = task.id },
                     onFollowup = { followupTarget=task.id },
+                    onPauseWorkflow = { task.workflowId?.let{vm.pauseTaskWorkflow(it,!task.workflowPaused)} },
                     busy = task.id in busyTasks
                 )
             }
@@ -347,7 +348,7 @@ fun TasksScreen(
         AlertDialog(onDismissRequest={if(!busy)showAutoWorkflow=false},title={Text("복합 업무 자동 분해")},
             text={Column{
                 AppTextField(goal,{goal=it.take(1500);preview=null;finalIds=emptyList();approvedExternal=emptySet()},label="전체 업무 목표",singleLine=false,maxLines=4)
-                Text("AI가 조사부터 주문·예약·발송까지 필요한 업무를 제안합니다. 생성된 외부 업무의 대상·조건·금액·메시지를 검토하세요. 실제 실행 직전 별도 승인합니다.")
+                Text("AI가 조사부터 주문·예약·발송까지 필요한 업무를 제안합니다. 공개 조사 실패는 다른 방법으로 최대 1회 자동 재시도합니다. 외부 업무는 자동 재실행하지 않으며 실제 실행 직전 별도 승인합니다.")
                 TextButton(enabled=!busy&&goal.trim().length>=3,onClick={
                     scope.launch{
                         busy=true;error=""
@@ -587,6 +588,7 @@ private fun TaskCard(
     onOpenChat: () -> Unit,
     onReceipt: () -> Unit,
     onFollowup:()->Unit,
+    onPauseWorkflow:()->Unit,
     busy: Boolean
 ) {
     val p = LocalDominionPalette.current
@@ -630,8 +632,14 @@ private fun TaskCard(
                 "running"->"실행 중"
                 "verified"->"근거 확인 · 다음 단계 전달"
                 "blocked"->"실행 근거 부족 · 연계 중단"
+                "superseded"->"후속 시도·협상 단계로 인계"
                 else->status
             },style=MaterialTheme.typography.labelSmall,color=p.textSecondary)
+        }
+        if(task.workflowId!=null&&task.workflowState in setOf("waiting","ready","running")){
+            if(task.workflowPaused)Text("연계 일시정지 · 이미 실행된 작업은 결과 확인만 계속",style=MaterialTheme.typography.labelSmall)
+            if(task.workflowAttempt>0)Text("공개 조사 복구 시도 "+task.workflowAttempt+"/1",style=MaterialTheme.typography.labelSmall)
+            TextButton(enabled=!busy,onClick=onPauseWorkflow){Text(if(task.workflowPaused)"연계 재개" else "다음 단계부터 일시정지")}
         }
         task.replyWatchUntil?.let{until->
             Text(if(until>System.currentTimeMillis())"지정 대화방 답변 알림 대기 중 (최대 48시간)" else "답변 대기 기간 종료",
@@ -656,7 +664,7 @@ private fun TaskCard(
             Text(label + " · " + tr(lang, "마지막 조회 상태", "Last known status"), color = p.textSecondary)
         }
         Row {
-            TextButton(enabled = !busy&&task.workflowState !in setOf("waiting","blocked","verified"), onClick = onDispatch) {
+            TextButton(enabled = !busy&&!task.workflowPaused&&(task.workflowNotBefore?:0)<=System.currentTimeMillis()&&task.workflowState !in setOf("waiting","blocked","verified","superseded"), onClick = onDispatch) {
                 Text(if (busy) tr(lang, "확인 중…", "Checking…")
                     else if (task.engineJobId != null) tr(lang, "상태 확인", "Check status")
                     else if (task.engineRoomId != null) tr(lang, "접수 재확인", "Recheck submission")

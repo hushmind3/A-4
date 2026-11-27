@@ -10,7 +10,8 @@ internal object TaskHandoff {
         task.phoneTransaction?.let{PhoneTransactions.deviceOnly(it.kind)}!=true&&
         (task.engineJobId==null&&task.engineStatus==null ||
             task.phonePackage!=null&&task.engineStatus=="needs_review")
-    fun ready(task:TaskItem):Boolean=task.workflowId!=null&&task.workflowState=="ready"
+    fun ready(task:TaskItem):Boolean=task.workflowId!=null&&!task.workflowPaused&&task.workflowState=="ready"&&
+        (task.workflowNotBefore?:0)<=System.currentTimeMillis()
     fun evidence(task:TaskItem,receipt:TaskReceipt,phoneRecord:String?):String?{
         if(receipt.jobId!=task.engineJobId||receipt.status !in setOf("done","completed"))return null
         if(task.kakaoMessage?.waitForReply==true&&task.replyReviewedAt==null)return null

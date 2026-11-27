@@ -430,7 +430,7 @@ fun ChatRoomScreen(
                             val owner=conversation.messages.firstOrNull{it.id==entry.message.replyTo}
                             val phoneTask=state.tasks.firstOrNull{it.engineRoomId==conversationId&&it.phonePackage!=null}
                             if(phoneTask==null||owner?.jobStatus=="needs_review"&&
-                                (phoneTask.workflowId==null||phoneTask.workflowState=="ready")){
+                                (phoneTask.workflowId==null||com.dominion.mobile.data.TaskHandoff.ready(phoneTask))){
                                 androidx.compose.material3.OutlinedButton(onClick={phonePlanMessage=entry.message},
                                     modifier=Modifier.padding(start=40.dp,bottom=8.dp)){Text("앱 업무 실행")}
                             }

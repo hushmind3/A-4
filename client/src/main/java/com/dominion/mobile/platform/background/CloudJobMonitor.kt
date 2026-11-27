@@ -81,6 +81,10 @@ class CloudJobWorker(context:Context,parameters:WorkerParameters):CoroutineWorke
             catch(e:CancellationException){throw e}
             catch(_:Exception){transientFailure=true}
         }
+        if(container.repository===repo&&container.cloudAccount.savedAccountId()==account){
+            repo.state.value.tasks.filter{it.phonePackage!=null&&com.dominion.mobile.data.TaskHandoff.ready(it)&&
+                it.engineStatus=="needs_review"}.take(8).forEach{notifyOnce(account,it.id,"needs_review")}
+        }
         return if(transientFailure)Result.retry() else Result.success()
     }
 
@@ -102,6 +106,7 @@ class CloudJobWorker(context:Context,parameters:WorkerParameters):CoroutineWorke
         val title=when(status){
             "done"->"DOMINION 클라우드 작업 완료"
             "failed"->"DOMINION 클라우드 작업 실패"
+            "needs_review"->"DOMINION 다음 앱 업무 실행 가능"
             else->"DOMINION 클라우드 작업 중단"
         }
         val privateContent=settings.hideContent||!settings.messagePreview
@@ -110,7 +115,8 @@ class CloudJobWorker(context:Context,parameters:WorkerParameters):CoroutineWorke
             Intent(applicationContext,MainActivity::class.java).apply{
                 flags=Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             },PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val message=if(privateContent)"작업 상태가 갱신되었습니다." else "앱에서 작업 결과와 상태를 확인하세요."
+        val message=if(privateContent)"작업 상태가 갱신되었습니다." else if(status=="needs_review")
+            "선행 작업 확인 완료. 앱에서 다음 실행을 검토하세요." else "앱에서 작업 결과와 상태를 확인하세요."
         val notification=NotificationCompat.Builder(applicationContext,channel)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(if(privateContent)"DOMINION" else title)
