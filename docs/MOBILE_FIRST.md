@@ -21,16 +21,22 @@ free inference quota. A PC with local models is an OPTIONAL execution node.
   backed authenticated file storage. Text documents may be sent to the language
   model. Selected photos can be read by bundled Korean/Latin on-device OCR;
   ONLY recognized text is passed to text inference. This is not full visual AI.
-- Device speech recognition, Cloud model chat, and Android TTS in explicit turns.
-  It is not a full-duplex realtime phone or video call.
+- Current main-path speech: microphone WAV (up to 20 seconds) -> DOMINION
+  Cloud STT -> Cloud model/harness -> Cloud TTS MP3 -> device playback.
+  No large local speech model is required. This is turn-based, not full duplex.
+  Cloud speech endpoints are still source-only until deployment and provider configuration.
 - WorkManager drives scheduled notifications and bounded AI submissions with no
   desktop gate; background execution follows OS network/energy constraints.
 - Account-scoped local databases are derived from the Google-linked DOMINION
-  account. App pairing tokens and file vault are encrypted. Room conversation
-  rows are not yet encrypted as a whole SQLite database.
+  account. App pairing tokens, vault and the JSON payload of conversations,
+  memories and related local rows are encrypted with Android Keystore-backed
+  AES-GCM. This is application-level row encryption, not a fully encrypted
+  SQLite page/WAL/backups guarantee.
 
 ## Missing, in progress, or requiring real-device verification
 
+- Actual DOMINION Cloud Worker deployment, D1 migration, encrypted-job key,
+  Cron scheduling and Korean speech provider configuration
 - Full DOMINION Rust harness parity, long-range autonomous plan/verify/retry,
   recovery of running jobs after process termination, and post-approval steps
 - Independent realtime voice/video calls with interruption and AI participant
@@ -41,3 +47,9 @@ free inference quota. A PC with local models is an OPTIONAL execution node.
 Do not regress to PC-as-gateway. Do not represent draft intents, OCR or model
 text as completion of an external transaction. This replaces the obsolete
 single-tool description from the original mobile-first implementation.
+
+Cloud jobs: when configured, account-specific read-only research tasks can run
+on the server, with bounded model steps and encrypted checkpoints. A mobile
+WorkManager watcher periodically refreshes task status after the app exits,
+but does not supply realtime push or external account automation. The Cloud
+login state must be validated against the server before marking Connected.

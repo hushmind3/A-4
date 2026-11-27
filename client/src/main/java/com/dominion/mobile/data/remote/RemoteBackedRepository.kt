@@ -101,7 +101,11 @@ class RemoteBackedRepository(
                 .map { it.copy(connected = false, lastUsed = null) })
     })
     override val state: StateFlow<AppState> = _state.asStateFlow()
-    private val _connection = MutableStateFlow(if (localExecution) ConnectionState.CONNECTED else if (endpoint == null) ConnectionState.AUTH_REQUIRED else ConnectionState.CONNECTING)
+    private val _connection = MutableStateFlow(
+        if(endpoint!=null)ConnectionState.CONNECTING
+        else if(mobileCloud?.savedAccountId()!=null)ConnectionState.CONNECTING
+        else ConnectionState.AUTH_REQUIRED
+    )
     override val connection = _connection.asStateFlow()
     private val refreshLock = Mutex()
 
@@ -1191,7 +1195,23 @@ class RemoteBackedRepository(
     }
 
     override suspend fun refresh() {
-        if (endpoint == null) { _connection.value = if(localExecution)ConnectionState.CONNECTED else ConnectionState.AUTH_REQUIRED; return }
+        if(endpoint==null){
+            val cloud=mobileCloud
+            if(cloud?.savedAccountId()==null){
+                _connection.value=ConnectionState.AUTH_REQUIRED
+                return
+            }
+            _connection.value=ConnectionState.CONNECTING
+            try{
+                val result=cloud.refresh()
+                _connection.value=if(result.status=="approved" &&
+                    result.accountId==cloud.savedAccountId())ConnectionState.CONNECTED
+                    else ConnectionState.AUTH_REQUIRED
+            }catch(e:CancellationException){throw e}
+            catch(_:IOException){_connection.value=ConnectionState.OFFLINE}
+            catch(_:Exception){_connection.value=ConnectionState.UNAVAILABLE}
+            return
+        }
         if (!refreshLock.tryLock()) return
         try {
             if (_connection.value != ConnectionState.CONNECTED) {
@@ -1256,7 +1276,8 @@ class RemoteBackedRepository(
     }
 
     override fun reset() {
-        _connection.value = if(localExecution)ConnectionState.CONNECTED else ConnectionState.CONNECTING
+        _connection.value=if(endpoint!=null || mobileCloud?.savedAccountId()!=null)
+            ConnectionState.CONNECTING else ConnectionState.AUTH_REQUIRED
         store.clearState()
         _state.value = emptyRemoteState()
     }
