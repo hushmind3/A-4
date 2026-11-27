@@ -6,6 +6,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.ResponseBody
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
@@ -55,6 +58,10 @@ data class CloudModels(val data: List<CloudModel>)
 private data class PairRequest(val app_name: String, val token_hash: String)
 private data class PairResponse(val id: String, val expires_in: Int, val status: String, val verification_uri: String)
 private data class DisconnectResponse(val status: String)
+data class CloudVoiceCapabilities(val stt:Boolean=false, val tts_en:Boolean=false,
+    val tts_ko:Boolean=false,val mode:String="cloud_only",val max_audio_seconds:Int=20)
+data class CloudTranscript(val text:String,val language:String,val remaining:Int)
+private data class CloudSpeechText(val text:String,val language:String)
 private interface CloudApi {
     @POST("v1/apps/start") suspend fun start(@Body request: PairRequest): PairResponse
     @GET("v1/apps/status") suspend fun status(@Header("Authorization") auth: String): CloudStatus
@@ -63,6 +70,13 @@ private interface CloudApi {
     @GET("v1/models") suspend fun models(@Header("Authorization") auth: String): CloudModels
     @POST("v1/chat/completions") suspend fun complete(@Header("Authorization") auth:String,
         @Body request:CloudCompletionRequest):CloudCompletionResponse
+    @GET("v1/voice/capabilities") suspend fun voiceCapabilities(@Header("Authorization") auth:String):CloudVoiceCapabilities
+    @POST("v1/voice/transcriptions") suspend fun transcribeCloud(
+        @Header("Authorization") auth:String,@Header("x-dominion-language") language:String,
+        @Body body:okhttp3.RequestBody):CloudTranscript
+    @retrofit2.http.Streaming
+    @POST("v1/voice/speech") suspend fun synthesizeCloud(
+        @Header("Authorization") auth:String,@Body body:CloudSpeechText):ResponseBody
     @POST("v1/apps/disconnect") suspend fun disconnect(@Header("Authorization") auth: String, @Body body: Map<String, String>): DisconnectResponse
 }
 
@@ -218,6 +232,52 @@ class CloudAccountRepository(context: Context) {
             val request=CloudCompletionRequest(model,messages,max_tokens=maxTokens).validated()
             api.complete("Bearer "+pair.token,request).verified(model)
         }}
+
+    /** The phone transmits only bounded microphone PCM. STT/TTS models run in
+     * DOMINION Cloud and cannot receive the device pairing token from callers. */
+    suspend fun mobileVoiceCapabilities():CloudVoiceCapabilities=withContext(Dispatchers.IO){
+        lock.withLock{
+            val pair=if(savedAccountId()==null)approved().first
+                else requireNotNull(loadPairing()){"DOMINION Cloud login required"}
+            api.voiceCapabilities("Bearer "+pair.token)
+        }
+    }
+
+    suspend fun transcribeForMobile(wav:ByteArray,language:String):String=withContext(Dispatchers.IO){
+        require(com.dominion.mobile.data.WaveAudio.isWave(wav)&&wav.size in 8044..640044)
+        require(language in setOf("ko","en"))
+        lock.withLock{
+            val pair=if(savedAccountId()==null)approved().first
+                else requireNotNull(loadPairing()){"DOMINION Cloud login required"}
+            val result=api.transcribeCloud("Bearer "+pair.token,language,
+                wav.toRequestBody("audio/wav".toMediaType()))
+            result.text.trim().also{require(it.isNotBlank()&&it.length<=5000)}
+        }
+    }
+
+    suspend fun speakForMobile(text:String,language:String):ByteArray=withContext(Dispatchers.IO){
+        require(text.isNotBlank()&&text.length<=700&&language in setOf("ko","en"))
+        lock.withLock{
+            val pair=if(savedAccountId()==null)approved().first
+                else requireNotNull(loadPairing()){"DOMINION Cloud login required"}
+            val response=api.synthesizeCloud("Bearer "+pair.token,CloudSpeechText(text,language))
+            response.use{body->
+                val length=body.contentLength()
+                require(length<0||length in 64..3000000){"Cloud voice audio too large"}
+                body.byteStream().use{input->
+                    val output=java.io.ByteArrayOutputStream()
+                    val buffer=ByteArray(8192)
+                    while(true){
+                        val n=input.read(buffer)
+                        if(n<0)break
+                        require(output.size()+n<=3000000){"Cloud voice audio too large"}
+                        output.write(buffer,0,n)
+                    }
+                    output.toByteArray().also{require(it.size>=64)}
+                }
+            }
+        }
+    }
 
     suspend fun registerEngineModel(model:String,connection:com.dominion.mobile.data.local.EngineConnection,
         stillSelected:()->Boolean):String = withContext(Dispatchers.IO) { lock.withLock {

@@ -1,152 +1,161 @@
 package com.dominion.mobile.ui.components
 
-import android.app.Activity
-import android.content.Intent
-import android.os.Handler
-import android.os.Looper
-import android.speech.RecognizerIntent
-import android.speech.tts.TextToSpeech
-import android.speech.tts.UtteranceProgressListener
+import android.Manifest
+import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import com.dominion.mobile.DominionApplication
 import com.dominion.mobile.data.model.Lang
 import com.dominion.mobile.data.model.MessageSender
 import com.dominion.mobile.data.model.MessageStatus
+import com.dominion.mobile.platform.audio.EngineVoiceAudio
+import com.dominion.mobile.platform.audio.CloudVoicePlayback
 import com.dominion.mobile.ui.AppViewModel
-import java.util.Locale
-import java.util.UUID
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicBoolean
 
-/** Mobile-only voice turns: Android STT -> normal DOMINION mobile job -> Android TTS.
- * No PC, engine Whisper/Piper or mobile realtime server is required. This is
- * explicit turn-taking, not a low-latency full-duplex voice/video call.
- */
+/** No on-device speech model: 16 kHz mic WAV -> Cloud STT -> existing
+ * mobile message/harness/approval -> Cloud TTS MP3 -> hardware playback.
+ * Recording is explicitly user-started and never persists on-device or cloud.
+ * This is turn-based voice, not a full duplex WebSocket session. */
 @Composable
 fun MobileVoiceConversationDialog(vm:AppViewModel,roomId:String,onDismiss:()->Unit){
     val context=LocalContext.current
+    val cloud=remember(context){(context.applicationContext as DominionApplication).container.cloudAccount}
     val state by vm.state.collectAsState()
     val room=state.conversation(roomId)
     val originalSession=remember(roomId){room?.sessionId}
-    val language=if(state.settings.lang==Lang.KO)Locale.KOREAN else Locale.US
+    val language=if(state.settings.lang==Lang.KO)"ko" else "en"
+    val scope=rememberCoroutineScope()
+    val stopRecording=remember{AtomicBoolean(false)}
+    var recording by remember(roomId){mutableStateOf(false)}
     var recognized by remember(roomId){mutableStateOf("")}
     var answer by remember(roomId){mutableStateOf("")}
-    var phase by remember(roomId){mutableStateOf("마이크를 눌러 대화하세요")}
+    var phase by remember(roomId){mutableStateOf("마이크를 눌러 클라우드 음성 대화를 시작하세요")}
     var waiting by remember(roomId){mutableStateOf<String?>(null)}
-    var listening by remember(roomId){mutableStateOf(false)}
-    var ttsReady by remember{mutableStateOf(false)}
-    var tts by remember{mutableStateOf<TextToSpeech?>(null)}
-    var playing by remember{mutableStateOf<String?>(null)}
-    val handler=remember{Handler(Looper.getMainLooper())}
+    var recordingJob by remember{mutableStateOf<Job?>(null)}
+    var speakingJob by remember{mutableStateOf<Job?>(null)}
+    var checked by remember{mutableStateOf(false)}
+    var voiceCapabilities by remember{mutableStateOf<com.dominion.mobile.data.remote.CloudVoiceCapabilities?>(null)}
 
-    DisposableEffect(context){
-        var disposed=false
-        val engine=TextToSpeech(context.applicationContext){code->
-            handler.post{if(!disposed)ttsReady=code==TextToSpeech.SUCCESS}
-        }
-        engine.setOnUtteranceProgressListener(object:UtteranceProgressListener(){
-            override fun onStart(id:String){handler.post{if(!disposed&&playing==id)phase="음성 답변 재생 중"}}
-            override fun onDone(id:String){handler.post{if(!disposed&&playing==id){playing=null;phase="답변 완료 · 마이크를 눌러 계속"}}}
-            override fun onError(id:String){handler.post{if(!disposed&&playing==id){playing=null;phase="기기 음성 출력 실패"}}}
-        })
-        tts=engine
-        onDispose{
-            disposed=true
-            engine.stop()
-            engine.shutdown()
-        }
-    }
-
-    fun speak(text:String){
-        val engine=tts
-        if(!ttsReady||engine==null){phase="답변 완료 · 기기 음성 합성 사용 불가";return}
-        val availability=engine.setLanguage(language)
-        if(availability==TextToSpeech.LANG_MISSING_DATA||availability==TextToSpeech.LANG_NOT_SUPPORTED){
-            phase="답변 완료 · 기기에서 해당 언어 음성을 지원하지 않습니다"
-            return
-        }
-        val id="mobile-voice-"+UUID.randomUUID()
-        playing=id
-        val result=engine.speak(text.take(minOf(3000,TextToSpeech.getMaxSpeechInputLength())),
-            TextToSpeech.QUEUE_FLUSH,null,id)
-        if(result!=TextToSpeech.SUCCESS){playing=null;phase="기기 음성 합성 요청 실패"}
-        else phase="음성 답변 준비 중"
-    }
-
-    val recognize=rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()){result->
-        listening=false
-        val phrase=if(result.resultCode==Activity.RESULT_OK)
-            result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.trim()
-        else null
-        if(phrase.isNullOrBlank()){
-            phase="인식된 음성이 없습니다. 다시 말씀해 주세요"
-        }else if(room?.sessionId!=originalSession || originalSession.isNullOrBlank()){
-            phase="대화 세션이 변경되었습니다. 대화방을 다시 열어 주세요"
-        }else{
-            recognized=phrase
-            answer=""
-            val id=vm.sendMessage(roomId,phrase)
-            if(id==null)phase="메시지 접수 실패 · 대화방에서 확인해 주세요"
-            else{waiting=id;phase="도미니온 클라우드 작업 처리 중"}
+    fun record(){
+        if(recording||waiting!=null||room?.sessionId!=originalSession||originalSession.isNullOrBlank())return
+        speakingJob?.cancel()
+        stopRecording.set(false)
+        recording=true
+        phase="🎙 듣는 중 · 말씀이 끝나면 자동 인식합니다"
+        recordingJob=scope.launch{
+            try{
+                val wav=EngineVoiceAudio.record(context,stopRecording,autoEndpoint=true)
+                phase="클라우드에서 음성 인식 중"
+                val transcript=cloud.transcribeForMobile(wav,language)
+                if(room?.sessionId!=originalSession)error("대화방 세션 변경")
+                recognized=transcript
+                answer=""
+                val messageId=vm.sendMessage(roomId,transcript)
+                if(messageId==null)error("대화방 작업 접수 실패")
+                waiting=messageId
+                phase="도미니온이 음성 지시를 처리 중"
+            }catch(cancelled:CancellationException){throw cancelled}
+            catch(e:Exception){phase="클라우드 음성 처리 실패 · "+(e.message?:"연결을 확인해 주세요")}
+            finally{recording=false;recordingJob=null;stopRecording.set(true)}
         }
     }
-
-    fun listen(){
-        if(waiting!=null||listening||room?.sessionId!=originalSession||originalSession.isNullOrBlank())return
-        tts?.stop()
-        playing=null
-        listening=true
-        phase="기기 음성 인식 열기"
-        runCatching{
-            recognize.launch(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply{
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE,if(state.settings.lang==Lang.KO)"ko-KR" else "en-US")
-                putExtra(RecognizerIntent.EXTRA_PROMPT,"도미니온에게 말씀해 주세요")
-            })
-        }.onFailure{listening=false;phase="기기 음성 인식 서비스를 열 수 없습니다"}
+    val micPermission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()){
+        if(it)record() else phase="마이크 권한이 필요합니다"
     }
-
+    LaunchedEffect(roomId){
+        try{
+            voiceCapabilities=cloud.mobileVoiceCapabilities()
+            checked=true
+        }catch(cancelled:CancellationException){throw cancelled}
+        catch(_:Exception){phase="클라우드 연결을 확인해 주세요";checked=true}
+    }
     LaunchedEffect(room?.messages,waiting){
         val id=waiting?:return@LaunchedEffect
-        if(room==null || room.sessionId!=originalSession){waiting=null;phase="대화 세션 변경으로 중지";return@LaunchedEffect}
+        if(room?.sessionId!=originalSession){
+            waiting=null;phase="대화 세션 변경으로 중지";return@LaunchedEffect
+        }
         val owner=room.messages.firstOrNull{it.id==id}
-        if(owner?.status==MessageStatus.FAILED || owner?.jobStatus in setOf("cancelled","failed","interrupted")){
-            waiting=null;phase="작업 실패 · 대화방에서 확인해 주세요";return@LaunchedEffect
+        if(owner?.status==MessageStatus.FAILED||owner?.jobStatus in setOf("cancelled","failed","interrupted")){
+            waiting=null;phase="작업 실패 · 대화 기록에서 확인해 주세요";return@LaunchedEffect
         }
         val reply=room.messages.firstOrNull{it.replyTo==id&&it.sender==MessageSender.ASSISTANT}
         if(reply!=null){
             waiting=null
             answer=reply.text
             if(owner?.jobStatus=="needs_review"){
-                phase="기기 작업 승인 필요 · 대화방의 도구 실행에서 검토해 주세요"
-            }else speak(reply.text)
+                phase="도구 실행 승인 필요 · 대화방에서 검토해 주세요"
+            }else{
+                speakingJob?.cancel()
+                speakingJob=scope.launch{
+                    try{
+                        phase="클라우드에서 답변 음성을 생성 중"
+                        val audio=cloud.speakForMobile(reply.text.take(700),language)
+                        phase="🔊 클라우드 음성 답변 재생 중"
+                        CloudVoicePlayback.play(context,audio)
+                        phase="답변 완료 · 마이크를 눌러 이어서 말씀하세요"
+                    }catch(cancelled:CancellationException){throw cancelled}
+                    catch(e:Exception){
+                        phase="텍스트 답변 완료 · 클라우드 음성 출력을 확인해 주세요"
+                    }finally{speakingJob=null}
+                }
+            }
+        }
+    }
+    DisposableEffect(roomId){
+        onDispose{
+            stopRecording.set(true)
+            recordingJob?.cancel()
+            speakingJob?.cancel()
         }
     }
 
     AlertDialog(
-        onDismissRequest={tts?.stop();onDismiss()},
-        title={Text("도미니온 · 기기 음성 대화")},
+        onDismissRequest={stopRecording.set(true);recordingJob?.cancel();speakingJob?.cancel();onDismiss()},
+        title={Text("도미니온 · 클라우드 음성 비서")},
         text={
-            Column(verticalArrangement=Arrangement.spacedBy(12.dp)){
+            Column(verticalArrangement=Arrangement.spacedBy(10.dp)){
                 Text(phase,style=MaterialTheme.typography.titleSmall)
+                if(checked&&voiceCapabilities?.stt==false)
+                    Text("클라우드 음성 인식이 아직 설정되지 않았습니다.",
+                        color=MaterialTheme.colorScheme.error)
+                if(checked&&voiceCapabilities?.let{if(language=="ko")!it.tts_ko else !it.tts_en}==true)
+                    Text("이 언어의 서버 음성 합성이 아직 연결되지 않았습니다. 텍스트 답변은 유지됩니다.",
+                        style=MaterialTheme.typography.bodySmall)
                 if(recognized.isNotBlank())Text("나: "+recognized)
-                if(answer.isNotBlank())Text("도미니온: "+answer.take(2400))
-                Text("기기 음성 인식과 음성 합성을 사용합니다. 모델과 작업 도구는 모바일 클라우드 연결을 사용합니다.",
+                if(answer.isNotBlank())Text("도미니온: "+answer.take(1800))
+                Text("음성 인식·합성은 서버에서 실행합니다. 휴대폰에는 음성 AI 모델을 설치하지 않습니다.",
                     style=MaterialTheme.typography.bodySmall)
             }
         },
         confirmButton={
-            TextButton(enabled=waiting==null&&!listening&&room?.sessionId==originalSession,
-                onClick={listen()}){Text("🎙 말하기")}
+            if(recording)TextButton(onClick={stopRecording.set(true);phase="발화 마무리 중"}){Text("발화 끝내기")}
+            else TextButton(
+                enabled=waiting==null && room?.sessionId==originalSession && voiceCapabilities?.stt==true,
+                onClick={
+                    if(ContextCompat.checkSelfPermission(context,Manifest.permission.RECORD_AUDIO)==
+                        PackageManager.PERMISSION_GRANTED)record()
+                    else micPermission.launch(Manifest.permission.RECORD_AUDIO)
+                }){Text("🎙 말하기")}
         },
         dismissButton={
             Row{
-                if(playing!=null)TextButton(onClick={tts?.stop();playing=null;phase="음성 중단"}){Text("읽기 중단")}
-                TextButton(onClick={tts?.stop();onDismiss()}){Text("닫기")}
+                if(speakingJob?.isActive==true)TextButton(onClick={
+                    speakingJob?.cancel();speakingJob=null;phase="음성 재생 중단"
+                }){Text("읽기 중단")}
+                TextButton(onClick={
+                    stopRecording.set(true)
+                    recordingJob?.cancel();speakingJob?.cancel();onDismiss()
+                }){Text("닫기")}
             }
         }
     )
