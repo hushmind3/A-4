@@ -15,7 +15,7 @@ class RemotePcm(seconds: Int = 30, private val endpoint: SpeechEndpoint? = null)
     private var window = 0
     private var peak = 0
     private var voiced = 0
-    var failed = false
+    @Volatile var failed = false
         private set
 
     @Synchronized fun accept(data: ByteBuffer?, bits: Int, sampleRate: Int, channelCount: Int, frames: Int) {

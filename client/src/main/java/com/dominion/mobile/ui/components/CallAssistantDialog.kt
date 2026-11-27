@@ -30,6 +30,9 @@ fun CallAssistantDialog(vm: AppViewModel, callId: String, roomId: String,
     val media by CallForegroundService.mediaState.collectAsState()
     var consent by remember { mutableStateOf(false) }
     var vision by remember { mutableStateOf(false) }
+    var autoBargeIn by remember { mutableStateOf(false) }
+    var reviewText by remember { mutableStateOf("") }
+    var speechReview by remember { mutableStateOf<CompletableDeferred<String?>?>(null) }
     var busy by remember { mutableStateOf(false) }
     var phase by remember { mutableStateOf("준비") }
     var transcript by remember { mutableStateOf("") }
@@ -59,6 +62,7 @@ fun CallAssistantDialog(vm: AppViewModel, callId: String, roomId: String,
         if (!consent || busy || work?.isActive == true) return
         busy = true; error = ""
         val useVision = vision
+        val useBargeIn = autoBargeIn
         work = scope.launch {
             try {
                 val capabilities = vm.voiceStatus()
@@ -78,24 +82,40 @@ fun CallAssistantDialog(vm: AppViewModel, callId: String, roomId: String,
                         }
                     }
                     try {
+                        var interruptedWave: ByteArray? = null
+                        fun microphone(): LocalAudioTrack =
+                            CallForegroundService.mediaState.value.room?.localParticipant
+                                ?.getTrackPublication(Track.Source.MICROPHONE)
+                                ?.takeUnless { it.muted }?.track as? LocalAudioTrack
+                                ?: error("Local microphone unavailable")
+                        fun sameTrack(track: LocalAudioTrack) = valid(expected) &&
+                            CallForegroundService.mediaState.value.room?.localParticipant
+                                ?.getTrackPublication(Track.Source.MICROPHONE)
+                                ?.takeUnless { it.muted }?.track === track
                         while (isActive) {
                             check(valid(expected))
                             if (pending == null) {
-                                val track = CallForegroundService.mediaState.value.room?.localParticipant
-                                    ?.getTrackPublication(Track.Source.MICROPHONE)
-                                    ?.takeUnless { it.muted }?.track as? LocalAudioTrack
-                                    ?: error("Local microphone unavailable")
+                                val track = microphone()
                                 stopCapture.set(false)
                                 phase = "듣는 중"
-                                val wav = RemoteSpeechCapture.capture(track, stopCapture, valid = {
-                                    valid(expected) && CallForegroundService.mediaState.value.room?.localParticipant
-                                        ?.getTrackPublication(Track.Source.MICROPHONE)
-                                        ?.takeUnless { it.muted }?.track === track
-                                }, onProgress = {}, autoEndpoint = true)
+                                val interruption = interruptedWave
+                                interruptedWave = null
+                                val wav = interruption ?: RemoteSpeechCapture.capture(track, stopCapture,
+                                    valid = { sameTrack(track) }, onProgress = {}, autoEndpoint = true)
                                 check(valid(expected))
                                 phase = "본체 음성 인식 중"
                                 transcript = vm.transcribeCallVoice(callId, roomId, expected, wav)
                                 check(valid(expected))
+                                if (interruption != null) {
+                                    phase = "끼어들기 발화 확인"
+                                    reviewText = transcript
+                                    val review = CompletableDeferred<String?>()
+                                    speechReview = review
+                                    val confirmed = try { review.await() } finally { speechReview = null }
+                                    if (confirmed.isNullOrBlank()) continue
+                                    transcript = confirmed
+                                    check(valid(expected))
+                                }
                                 val nonce = if (useVision) {
                                     val video = requireNotNull(CallForegroundService.mediaState.value.localVideo)
                                     val frame = CallFrameCapture.capture(video)
@@ -130,7 +150,17 @@ fun CallAssistantDialog(vm: AppViewModel, callId: String, roomId: String,
                                         check(valid(expected))
                                         val speech = vm.synthesizeCallVoice(callId, roomId, expected, chunk)
                                         check(valid(expected))
-                                        EngineVoiceAudio.play(context, speech, communication = true,
+                                        if (useBargeIn) {
+                                            val track = microphone()
+                                            stopCapture.set(false)
+                                            val interrupted = RemoteSpeechCapture.playWithBargeIn(track, stopCapture,
+                                                valid = { sameTrack(track) },
+                                                onBargeIn = { phase = "끼어들기 감지 · 듣는 중" }) {
+                                                EngineVoiceAudio.play(context, speech, communication = true,
+                                                    existingCallFocus = true, onSpeechLevel = onSpeechLevel)
+                                            }
+                                            if (interrupted != null) { interruptedWave = interrupted; break }
+                                        } else EngineVoiceAudio.play(context, speech, communication = true,
                                             existingCallFocus = true, onSpeechLevel = onSpeechLevel)
                                     }
                                 }
@@ -138,8 +168,8 @@ fun CallAssistantDialog(vm: AppViewModel, callId: String, roomId: String,
                                 try { reader.join() } finally { playback = null }
                                 if (skipSpeech) phase = "응답 읽기 중단 · 다음 발화"
                                 pending = null
-                                // No microphone sink during playback; allow output tail to decay.
-                                delay(400)
+                                // Allow output tail to decay before the next capture.
+                                if (interruptedWave == null) delay(400)
                                 break
                             }
                         }
@@ -149,7 +179,7 @@ fun CallAssistantDialog(vm: AppViewModel, callId: String, roomId: String,
             catch (e: TimeoutCancellationException) { error = "대화 동기화 시간 초과" }
             catch (e: CancellationException) { phase = "일시정지 · 접수한 작업은 유지"; throw e }
             catch (_: Exception) { error = "통화·본체·음성 또는 작업 상태 변경 · 대화에서 확인하세요." }
-            finally { busy = false; onSpeechLevel(0f) }
+            finally { speechReview?.cancel(); speechReview = null; busy = false; onSpeechLevel(0f) }
         }
     }
 
@@ -168,7 +198,22 @@ fun CallAssistantDialog(vm: AppViewModel, callId: String, roomId: String,
                     Checkbox(vision, { vision = it }, enabled = !busy && media.localVideo != null)
                     Text("각 발화에 현재 내 카메라 이미지 첨부", modifier = Modifier.padding(top = 12.dp))
                 }
+                Row {
+                    Checkbox(autoBargeIn, { autoBargeIn = it }, enabled = !busy)
+                    Text("재생 중 발화 감지로 응답 끊기 · 전사 확인 후 전송",
+                        modifier = Modifier.padding(top = 12.dp))
+                }
+                if (autoBargeIn) Text("스피커 반향이 감지될 수 있어 끼어들기 발화는 전송 전 확인합니다.",
+                    style = MaterialTheme.typography.bodySmall)
                 Text(phase)
+                speechReview?.let { review ->
+                    OutlinedTextField(reviewText, { reviewText = it.take(32000) },
+                        label = { Text("끼어들기 발화 확인") }, maxLines = 3)
+                    Row {
+                        TextButton(enabled = reviewText.isNotBlank(), onClick = { review.complete(reviewText.trim()) }) { Text("전송") }
+                        TextButton(onClick = { review.complete(null) }) { Text("취소") }
+                    }
+                }
                 if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
                 if (transcript.isNotBlank()) Text("나: " + transcript.take(900))
                 if (answer.isNotBlank()) Text("AI: " + answer.take(1400))
@@ -177,7 +222,7 @@ fun CallAssistantDialog(vm: AppViewModel, callId: String, roomId: String,
                     Text("이미 접수된 요청은 재전송하지 않고 다시 조회합니다.")
                     TextButton(onClick = { pending = null }) { Text("기존 작업은 채팅에 두고 새 발화") }
                 }
-                if (busy && phase == "듣는 중") TextButton(onClick = { stopCapture.set(true) }) { Text("발화 종료") }
+                if (busy && phase in setOf("듣는 중", "끼어들기 감지 · 듣는 중")) TextButton(onClick = { stopCapture.set(true) }) { Text("발화 종료") }
                 if (busy && playback != null) TextButton(onClick = {
                     skipSpeech = true; playback?.cancel()
                 }) { Text("응답 끊고 다음 발화") }
