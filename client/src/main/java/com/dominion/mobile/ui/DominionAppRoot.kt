@@ -164,7 +164,8 @@ fun DominionAppRoot(vm: AppViewModel) {
             composable(Routes.ONBOARDING) {
                 com.dominion.mobile.ui.screens.onboarding.OnboardingScreen(
                     state = state, vm = vm, onDone = { nav.popBackStack() },
-                    onCloudAccount = { nav.navigate(Routes.CLOUD_ACCOUNT) })
+                    onCloudAccount = { nav.navigate(Routes.CLOUD_ACCOUNT) },
+                    onImportContact = { nav.navigate(Routes.ADD_FRIEND) { launchSingleTop = true } })
             }
             composable(Routes.KOREAN_SERVICES) {
                 com.dominion.mobile.ui.screens.explore.KoreanServicesScreen(state, vm,

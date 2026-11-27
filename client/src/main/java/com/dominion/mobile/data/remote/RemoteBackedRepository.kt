@@ -187,9 +187,10 @@ class RemoteBackedRepository(
     override suspend fun recordObservedJob(roomId: String, jobId: String, job: EngineJob) {
         check(job.belongsToRoom(roomId, jobId))
         taskLock.withLock {
-            update { current -> applyObservedJob(current, roomId, jobId, job) }
-            // Flush the queued latest snapshot before the worker stops monitoring.
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { store.flush() }
+            _state.update { current -> applyObservedJob(current, roomId, jobId, job) }
+            // Unlike an asynchronous enqueue, a failed database write is reported
+            // to the worker so it can retry instead of losing the terminal receipt.
+            store.saveStateNow(state.value)
         }
     }
 

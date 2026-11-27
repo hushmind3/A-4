@@ -78,7 +78,8 @@ fun OnboardingScreen(
     state: AppState,
     vm: AppViewModel,
     onDone: () -> Unit,
-    onCloudAccount: () -> Unit
+    onCloudAccount: () -> Unit,
+    onImportContact: () -> Unit
 ) {
     val p = LocalDominionPalette.current
     val lang = LocalLang.current
@@ -198,8 +199,8 @@ fun OnboardingScreen(
                         )
                         else -> ContactsStep(
                             characterName = characterName,
-                            contactsAllowed = false,
-                            onAllow = { context.toast(tr(lang, "주소록 친구 찾기는 아직 연결되지 않았습니다.", "Contact matching is not connected.")) }
+                            localContactCount = state.friends.count { it.localContact && (it.phone != null || it.email != null) },
+                            onImportContact = onImportContact
                         )
                     }
                     Spacer(Modifier.height(28.dp))
@@ -827,14 +828,14 @@ private fun CustomizeStep(
 @Composable
 private fun ContactsStep(
     characterName: String,
-    contactsAllowed: Boolean,
-    onAllow: (Boolean) -> Unit
+    localContactCount: Int,
+    onImportContact: () -> Unit
 ) {
     val p = LocalDominionPalette.current
     val lang = LocalLang.current
     StepHeader(
         tr(lang, "친구와 도미니온을 나눠보세요", "Share Dominions with friends"),
-        tr(lang, "주소록에서 이미 도미니온을 쓰는 친구를 찾아드려요.", "Find friends already using Dominion.")
+        tr(lang, "주소록에서 친구를 선택하거나 연락처 QR을 읽어 추가하세요.", "Select friends from contacts or scan a contact QR.")
     )
     Row(
         Modifier.fillMaxWidth().padding(vertical = 12.dp),
@@ -851,15 +852,16 @@ private fun ContactsStep(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(if (contactsAllowed) p.selected else p.cardSoft)
-            .clickable { onAllow(!contactsAllowed) }
+            .background(if (localContactCount > 0) p.selected else p.cardSoft)
+            .clickable(onClick = onImportContact)
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        CheckCircle(contactsAllowed)
+        CheckCircle(localContactCount > 0)
         Spacer(Modifier.width(10.dp))
         Text(
-            tr(lang, "주소록에서 친구를 찾도록 허용", "Allow finding friends in contacts"),
+            if (localContactCount > 0) tr(lang, "저장된 연락처 ${localContactCount}명 · 더 추가", "${localContactCount} saved contacts · add more")
+            else tr(lang, "주소록·QR에서 연락처 추가", "Add from contacts or QR"),
             style = MaterialTheme.typography.bodyMedium,
             color = p.textPrimary
         )
@@ -867,7 +869,7 @@ private fun ContactsStep(
     Spacer(Modifier.height(14.dp))
     Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(p.cardSoft).padding(14.dp)) {
         Text(
-            tr(lang, "현재 주소록 연결은 지원되지 않으며 연락처를 수집하지 않습니다.", "Contact matching is not connected; contacts are not collected."),
+            tr(lang, "선택한 연락처만 기기에 저장합니다. 서버 계정 검색 및 친구 요청은 별도의 본체 연동이 필요합니다.", "Only selected contacts are saved locally. Server account discovery and friend requests require engine integration."),
             style = MaterialTheme.typography.bodySmall,
             color = p.textTertiary
         )
