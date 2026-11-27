@@ -184,6 +184,7 @@ class PhoneNavigationService : AccessibilityService() {
                         check(recorded&&engine==null)
                         var review:com.dominion.mobile.data.PhoneTransactions.Review?=null
                         val tried=mutableSetOf<String>()
+                        var amountEntered=false
                         for(i in 0 until 8){
                             validRoom()
                             val view=runCatching{withTransactionNodes(plan.app){nodes,lines->
@@ -197,6 +198,38 @@ class PhoneNavigationService : AccessibilityService() {
                             }}.getOrNull()
                             review=view?.first
                             if(review!=null)break
+                            // Assist the non-secret amount entry only in the
+                            // uniquely identified, already selected destination.
+                            if(!amountEntered&&localTransaction.kind in setOf("finance","finance_bill")){
+                                val field=runCatching{withTransactionNodes(plan.app){nodes,lines->
+                                    if(!com.dominion.mobile.data.PhoneTransactions.selectedDestination(localTransaction,lines))null
+                                    else nodes.filter{n->n.isEditable&&!n.isPassword&&n.isEnabled&&
+                                        n.text?.toString().orEmpty().trim().let{it.isEmpty()||it==n.hintText?.toString()}&&
+                                        n.actionList.any{it.id==AccessibilityNodeInfo.ACTION_SET_TEXT}}
+                                        .mapNotNull{n->listOfNotNull(n.hintText?.toString(),n.contentDescription?.toString())
+                                            .firstOrNull{com.dominion.mobile.data.PhoneTransactions.amountField(localTransaction.kind,it)}}
+                                        .singleOrNull()
+                                }}.getOrNull()
+                                if(field!=null){
+                                    approveStep(PhoneNavigationStep("기기 전용 금액 입력",field,
+                                        localTransaction.target+" · "+localTransaction.maxWon+"원"),plan.app,1,1)
+                                    validRoom()
+                                    amountEntered=true
+                                    withTransactionNodes(plan.app){nodes,lines->
+                                        check(com.dominion.mobile.data.PhoneTransactions.selectedDestination(localTransaction,lines))
+                                        val input=nodes.singleOrNull{n->n.isEditable&&!n.isPassword&&n.isEnabled&&
+                                            n.text?.toString().orEmpty().trim().let{it.isEmpty()||it==n.hintText?.toString()}&&
+                                            field in listOfNotNull(n.hintText?.toString(),n.contentDescription?.toString())&&
+                                            n.actionList.any{it.id==AccessibilityNodeInfo.ACTION_SET_TEXT}}
+                                            ?:return@withTransactionNodes false
+                                        input.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT,Bundle().apply{
+                                            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,localTransaction.maxWon.toString())
+                                        })
+                                    }
+                                    delay(500)
+                                    continue
+                                }
+                            }
                             val menu=view?.second
                             if(menu!=null){
                                 tried.add(menu)
@@ -204,6 +237,7 @@ class PhoneNavigationService : AccessibilityService() {
                                 validRoom()
                                 withTransactionNodes(plan.app){nodes,lines->
                                     check(!com.dominion.mobile.data.PhoneTransactions.authScreen(lines))
+                                    check(!com.dominion.mobile.data.PhoneTransactions.anyFinalAction(menu))
                                     nodes.singleOrNull{it.isClickable&&!it.isEditable&&menu in nodeNames(it)}
                                         ?.performAction(AccessibilityNodeInfo.ACTION_CLICK)
                                 }

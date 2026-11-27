@@ -64,7 +64,28 @@ object PhoneTransactions {
     fun canAdvance(label:String)=label in nextLabels
     fun localMenus(kind:String)=when(kind){
         "telecom"->setOf("요금제","요금제 조회","요금제 변경","요금제 목록","부가서비스","부가서비스 조회","MY","전체메뉴")
+        // Navigation only: no credentials, destination account selection,
+        // authentication, or final action can be inferred from a menu name.
+        "finance"->setOf("전체메뉴","이체 메뉴","송금 메뉴","이체 서비스","계좌이체 메뉴","이체/출금","이체/송금")
+        "finance_bill"->setOf("전체메뉴","공과금","공과금 메뉴","공과금 조회","공과금 조회/납부","지로","세금/공과금")
         else->emptySet()
+    }
+    /** Only pre-authentication amount entry after the user selected the
+     * official recipient/bill. Existing or ambiguous amounts are not replaced. */
+    fun amountField(kind:String,hint:String):Boolean=when(kind){
+        "finance"->hint in setOf("이체 금액","이체금액","송금 금액","송금금액","보낼 금액","이체할 금액")
+        "finance_bill"->hint in setOf("납부 금액","납부금액","납부할 금액","총 납부금액")
+        else->false
+    }
+    fun selectedDestination(request:PhoneTransactionRequest,lines:List<String>):Boolean{
+        if(request.kind !in setOf("finance","finance_bill")||authScreen(lines)||receipt(request.kind,lines).isNotEmpty())return false
+        val target=if(request.kind=="finance")listOf("받는 분: ","받는 분 ","수취인: ","수취인 ")
+            else listOf("납부처: ","납부처 ")
+        val matchingTarget=lines.any{it.trim()==request.target||target.any{prefix->it.trim()==prefix+request.target}}
+        val masked=Regex("[*＊•●Xx]{2,}[ -]*"+Regex.escape(request.condition)+"(?![0-9])")
+        val prefix=if(request.kind=="finance")listOf("계좌","받는 계좌","수취 계좌")
+            else listOf("납부자번호","전자납부번호","고지서번호","고객번호")
+        return matchingTarget&&lines.any{line->prefix.any{line.startsWith(it)}&&masked.containsMatchIn(line)}
     }
     fun localFinal(kind:String,labels:List<String>)=labels.distinct().filter{finalAction(kind,it)}.singleOrNull()
     fun isSearchField(label:String)=label in setOf("검색","Search","검색어 입력","검색어를 입력하세요","통합 검색",

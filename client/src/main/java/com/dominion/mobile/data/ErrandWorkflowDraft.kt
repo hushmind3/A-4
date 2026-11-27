@@ -92,6 +92,28 @@ internal object ExecutionExperience{
             "${it.key.first} failed -> ${it.key.second}: ${it.value.first}/${it.value.second} successful fallback observations"
         }
     }
+    /** Adapt the actual recovery action, not just the prompt. Only equivalent
+     * read-only URL tools are interchangeable; never synthesize new queries or
+     * copy old arguments into a new task. Host-local evidence is weighted more. */
+    fun urlFallback(state:AppState,failed:String,url:String,available:Set<String>):String?{
+        val compatible=setOf("web.read","browser.read")
+        if(failed !in compatible)return null
+        val host=runCatching{java.net.URI(url).host?.lowercase(java.util.Locale.ROOT)}.getOrNull()?:return null
+        val history=state.mobileActions.orEmpty().takeLast(100)
+        fun score(tool:String):Double{
+            var success=1.0
+            var total=2.0
+            history.filter{it.tool==tool&&it.status in setOf("completed","failed")}.forEach{row->
+                val oldHost=runCatching{java.net.URI(row.args["url"].asString).host?.lowercase(java.util.Locale.ROOT)}.getOrNull()
+                val weight=if(oldHost==host)3.0 else 1.0
+                total+=weight
+                if(row.status=="completed")success+=weight
+            }
+            return success/total
+        }
+        return (compatible-failed).filter{it in available}.maxByOrNull(::score)?.takeIf{score(it)>=0.25}
+    }
+
     fun app(state:AppState,pkg:String):String{
         val rows=state.tasks.filter{it.phonePackage==pkg&&it.phonePrivateRead==null&&
             it.engineStatus in setOf("completed","failed","paused","cancelled")}.sortedByDescending{it.createdAt}.take(20)
