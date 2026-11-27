@@ -48,7 +48,7 @@ fun QuickAssistantScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
             }
         }
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if(!vm.localExecution)Button(modifier = Modifier.fillMaxWidth(), enabled = state.conversation(selected) != null && state.call == null,
+            Button(modifier = Modifier.fillMaxWidth(), enabled = state.conversation(selected) != null && state.call == null,
                 onClick = { voice = selected }) { Text("음성 대화") }
             OutlinedButton(modifier = Modifier.fillMaxWidth(), enabled = state.conversation(selected) != null,
                 onClick = {
@@ -59,6 +59,7 @@ fun QuickAssistantScreen(state: AppState, vm: AppViewModel, onBack: () -> Unit,
         }
     }
     voice?.let { roomId ->
-        key(roomId) { VoiceConversationDialog(vm, roomId, onDismiss = { voice = null }) }
+        key(roomId) { if(vm.localExecution)MobileVoiceConversationDialog(vm,roomId,onDismiss={voice=null})
+            else VoiceConversationDialog(vm, roomId, onDismiss = { voice = null }) }
     }
 }

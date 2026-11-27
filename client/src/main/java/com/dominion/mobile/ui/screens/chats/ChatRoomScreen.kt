@@ -585,6 +585,11 @@ fun ChatRoomScreen(
     if (voiceChoice) {
         AppBottomSheet(onDismiss = { voiceChoice = false }) {
             SheetTitle(tr(lang, "음성 입력", "Voice input"))
+            if(vm.localExecution)SheetRow(tr(lang,"기기 음성 대화 · 클라우드 비서","Device voice chat · cloud assistant"),Glyph.MIC){
+                voiceChoice=false
+                if(state.call==null)voiceConversation=true
+                else context.toast(tr(lang,"통화 종료 후 사용하세요.","End the call first."))
+            }
             if(!vm.localExecution)SheetRow(tr(lang, "연속 음성 대화", "Continuous voice conversation"), Glyph.MIC) {
                 voiceChoice = false
                 if (state.call == null) voiceConversation = true
@@ -602,8 +607,12 @@ fun ChatRoomScreen(
             }
         }
     }
-    if (voiceConversation) com.dominion.mobile.ui.components.VoiceConversationDialog(
-        vm, conversationId, onDismiss = { voiceConversation = false })
+    if (voiceConversation) {
+        if(vm.localExecution)com.dominion.mobile.ui.components.MobileVoiceConversationDialog(
+            vm,conversationId,onDismiss={voiceConversation=false})
+        else com.dominion.mobile.ui.components.VoiceConversationDialog(
+            vm,conversationId,onDismiss={voiceConversation=false})
+    }
     if (voiceInput) com.dominion.mobile.ui.components.EngineVoiceInputDialog(vm,
         onDismiss = { voiceInput = false },
         onTranscript = { spoken ->
