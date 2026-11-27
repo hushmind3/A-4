@@ -449,7 +449,7 @@ class AppViewModel(
 
     // -------------------------------------------------------------------- calls
 
-    fun startCall(conversationId: String, video: Boolean): Boolean {
+    fun startCall(conversationId: String, video: Boolean, realtimeAgent: Boolean = false): Boolean {
         val snapshot = repo.state.value
         val conversation = snapshot.conversation(conversationId) ?: return false
         if (repo.connection.value != com.dominion.mobile.data.ConnectionState.CONNECTED ||
@@ -457,7 +457,7 @@ class AppViewModel(
         mutate { it.copy(call = CallSession(
             conversationId = conversationId,
             characterId = conversation.characterId,
-            video = false, requestVideo = video
+            video = false, requestVideo = video, realtimeAgent = realtimeAgent
         )) }
         return true
     }

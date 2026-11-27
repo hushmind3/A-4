@@ -55,6 +55,9 @@ class CallForegroundService : Service() {
     private var cameraBusy = false
     private var mediaError: String? = null
     private var cameraActive = false
+    private var agentIdentity: String? = null
+    private var agentVideoAllowed = false
+    private var agentRoomSession: String? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -105,7 +108,15 @@ class CallForegroundService : Service() {
         phase(CallPhase.CONNECTING)
         job = scope.launch {
             try {
-                val credentials = withTimeout(30_000) { repo.requestVoiceCall(call.conversationId, call.requestVideo) }
+                val credentials = withTimeout(30_000) {
+                    if (call.realtimeAgent) {
+                        val grant = repo.requestRealtimeCall(call.conversationId, call.sessionId, call.requestVideo)
+                        agentIdentity = requireNotNull(grant.agentIdentity)
+                        agentVideoAllowed = grant.videoAllowed
+                        agentRoomSession = grant.sessionId
+                        requireNotNull(grant.media)
+                    } else repo.requestVoiceCall(call.conversationId, call.requestVideo)
+                }
                 val media = LiveKit.create(applicationContext)
                 room = media
                 coroutineScope {
@@ -116,7 +127,9 @@ class CallForegroundService : Service() {
                                 is RoomEvent.Reconnected,
                                 is RoomEvent.ParticipantConnected,
                                 is RoomEvent.ParticipantDisconnected -> {
-                                    if (repo.state.value.call?.phase != CallPhase.CONNECTING) peerState(media)
+                                    if (agentIdentity != null && !agentMembership(media, requirePresent = ready)) {
+                                        fail("Realtime AI participant changed; media stopped")
+                                    } else if (repo.state.value.call?.phase != CallPhase.CONNECTING) peerState(media)
                                 }
                                 is RoomEvent.Disconnected, is RoomEvent.FailedToConnect ->
                                     fail("Media connection closed")
@@ -130,12 +143,28 @@ class CallForegroundService : Service() {
                         }
                     }
                     withTimeout(35_000) { media.connect(credentials.url, credentials.token) }
+                    if (agentIdentity != null) {
+                        // No microphone or camera publication until the authorized agent joins.
+                        withTimeout(25_000L) {
+                            while (!agentMembership(media, requirePresent = true)) {
+                                check(agentMembership(media, requirePresent = false)) { "Unexpected media participant" }
+                                check(repo.state.value.call?.sessionId == call.sessionId)
+                                delay(100)
+                            }
+                        }
+                    }
                     check(media.localParticipant.setMicrophoneEnabled(true)) { "Microphone publish failed" }
                     ready = true
                     peerState(media)
                     if (call.requestVideo) applyCamera(true)
                     launch {
                         while (isActive) {
+                            if (agentIdentity != null) {
+                                check(agentMembership(media, requirePresent = true)) { "Realtime agent left" }
+                                check(repo.state.value.conversation(call.conversationId)?.sessionId == agentRoomSession) {
+                                    "Native room changed"
+                                }
+                            }
                             publishMedia(media)
                             delay(250)
                         }
@@ -185,6 +214,9 @@ class CallForegroundService : Service() {
         try {
             if (enable) {
                 check(hasCameraPermission()) { "카메라 권한이 필요합니다." }
+                if (agentIdentity != null) check(agentVideoAllowed && agentMembership(media, true)) {
+                    "Realtime agent video not authorized"
+                }
                 // Called only after explicit UI request; Android enforces while-in-use permission.
                 foreground(true)
                 check(media.localParticipant.setCameraEnabled(true)) { "카메라 영상 송출 실패" }
@@ -228,6 +260,7 @@ class CallForegroundService : Service() {
         mediaError = null
         publishMedia(media)
         try {
+            if (enable && agentIdentity != null) check(agentVideoAllowed && agentMembership(media, true))
             val params = if (enable) ScreenCaptureParams(requireNotNull(permissionData),
                 notificationId = 4302, notification = screenNotification(), onStop = {
                     scope.launch { if (room === media) publishMedia(media) }
@@ -286,7 +319,17 @@ class CallForegroundService : Service() {
                 ?.takeUnless { it.muted }?.track as? VideoTrack, remoteAudioLevel = remoteLevel)
     }
 
+    private fun agentMembership(media: Room, requirePresent: Boolean): Boolean {
+        val agent = agentIdentity ?: return true
+        val peers = media.remoteParticipants.values.map { it.identity?.value.orEmpty() }
+        return com.dominion.mobile.data.remote.RealtimeCallGrant.matchesParticipants(agent, peers, requirePresent)
+    }
+
     private fun peerState(media: Room) {
+        if (agentIdentity != null && !agentMembership(media, requirePresent = true)) {
+            fail("Realtime AI participant missing or unauthorized")
+            return
+        }
         phase(if (media.remoteParticipants.isEmpty()) CallPhase.WAITING_PEER else CallPhase.PEER_PRESENT)
     }
 

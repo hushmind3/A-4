@@ -35,6 +35,9 @@ interface DominionRepository {
     suspend fun transcribeVoice(wav: ByteArray): String = error("Engine not connected")
     suspend fun synthesizeVoice(text: String): ByteArray = error("Engine not connected")
 
+    suspend fun requestRealtimeCall(conversationId: String, callId: String, video: Boolean):
+        com.dominion.mobile.data.remote.RealtimeCallGrant = error("Realtime agent unavailable")
+
     suspend fun requestVoiceCall(conversationId: String, video: Boolean = false): com.dominion.mobile.data.remote.CallTokenResponse =
         error("Voice calls require a connected server")
 

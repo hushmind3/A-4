@@ -146,6 +146,7 @@ fun ChatRoomScreen(
     var voiceConversation by remember(conversationId, conversation.sessionId) { mutableStateOf(false) }
     var speakText by remember(conversationId, conversation.sessionId) { mutableStateOf<String?>(null) }
     var showMenu by remember { mutableStateOf(false) }
+    var realtimeChoice by remember { mutableStateOf(false) }
     var messageMenu by remember { mutableStateOf<Message?>(null) }
     var miniAppMessage by remember(conversationId, conversation.sessionId) { mutableStateOf<Message?>(null) }
     var createMiniApp by remember(conversationId, conversation.sessionId) { mutableStateOf(false) }
@@ -660,6 +661,7 @@ fun ChatRoomScreen(
     if (showMenu) {
         AppBottomSheet(onDismiss = { showMenu = false }) {
             SheetTitle(conversation.title(state.characters), character.tagline)
+            SheetRow("실시간 본체 AI 통화", Glyph.PHONE) { showMenu = false; realtimeChoice = true }
             SheetRow(tr(lang, "대화방 정보", "Room info"), Glyph.PERSON) { showMenu = false; onRoomInfo() }
             SheetRow(tr(lang, "대화 검색", "Search chat"), Glyph.SEARCH) { showMenu = false; onSearch() }
             SheetRow(
@@ -678,6 +680,13 @@ fun ChatRoomScreen(
             }
         }
     }
+
+    if (realtimeChoice) com.dominion.mobile.ui.components.RealtimeCallDialog(vm,
+        onStart = { video ->
+            realtimeChoice = false
+            if (vm.startCall(conversationId, video, realtimeAgent = true)) onStartCall(video)
+            else context.toast("현재 본체 연결 또는 통화 상태를 확인하세요.")
+        }, onDismiss = { realtimeChoice = false })
 
     if (createPhonePlan) com.dominion.mobile.ui.components.PhonePlanRequestDialog(
         onConfirm = { request ->

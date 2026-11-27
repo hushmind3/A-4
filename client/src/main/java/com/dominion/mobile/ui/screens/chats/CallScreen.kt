@@ -148,7 +148,8 @@ fun CallScreen(
         CallPhase.PERMISSION -> tr(lang, "마이크 권한 확인", "Microphone permission")
         CallPhase.CONNECTING -> tr(lang, "음성 서버 연결 중", "Connecting to voice server")
         CallPhase.WAITING_PEER -> tr(lang, "음성 서버 연결됨 · 상대 대기 중", "Media connected · waiting for peer")
-        CallPhase.PEER_PRESENT -> tr(lang, "상대 접속 · 음성 세션", "Peer joined · voice session")
+        CallPhase.PEER_PRESENT -> if (call.realtimeAgent) "본체 AI 실시간 연결"
+            else tr(lang, "상대 접속 · 음성 세션", "Peer joined · voice session")
         CallPhase.RECONNECTING -> tr(lang, "재연결 중", "Reconnecting")
         CallPhase.FAILED -> tr(lang, "음성 연결 실패", "Voice connection failed")
     }
@@ -330,7 +331,7 @@ fun CallScreen(
 
             if (mediaReady && media.error != null) Text(media.error.orEmpty(), color = Color(0xFFFFB4AB), modifier = Modifier.padding(8.dp))
             if (mediaReady) {
-                if (media.room?.remoteParticipants?.isNotEmpty() == true) {
+                if (!call.realtimeAgent && media.room?.remoteParticipants?.isNotEmpty() == true) {
                     androidx.compose.material3.TextButton(onClick = { remoteTranscript = true }) {
                         Text("상대 음성 전사", color = Color.White)
                     }
@@ -347,7 +348,7 @@ fun CallScreen(
                         color = if (media.sharingScreen) Color(0xFFFFC46B) else Color.White)
                 }
                 if (media.remoteScreen != null) Text("상대 화면 수신 중", color = Color.White.copy(alpha = 0.85f))
-                if (media.localVideo != null || media.localScreen != null) {
+                if (!call.realtimeAgent && (media.localVideo != null || media.localScreen != null)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
                         if (media.localVideo != null) androidx.compose.material3.TextButton(onClick = { frameSource = "camera" }) {
                             Text("카메라 AI 분석", color = Color.White)
@@ -363,7 +364,7 @@ fun CallScreen(
                     androidx.compose.material3.TextButton(onClick = { requestInstruction = true }) {
                         Text(tr(lang, "작업 요청", "Assign work"), color = Color.White)
                     }
-                    if (mediaReady && !call.muted) androidx.compose.material3.TextButton(onClick = { localCommand = true }) {
+                    if (!call.realtimeAgent && mediaReady && !call.muted) androidx.compose.material3.TextButton(onClick = { localCommand = true }) {
                         Text("음성 명령", color = Color.White)
                     }
                     androidx.compose.material3.TextButton(onClick = {
@@ -374,11 +375,11 @@ fun CallScreen(
                         Text("업무 기록", color = Color.White)
                     }
                 }
-                if (mediaReady && !call.muted && media.room?.remoteParticipants?.isEmpty() == true)
+                if (!call.realtimeAgent && mediaReady && !call.muted && media.room?.remoteParticipants?.isEmpty() == true)
                     androidx.compose.material3.TextButton(onClick = { continuousAssistant = true }) {
                         Text("연속 AI 음성·영상 대화", color = Color.White)
                     }
-                if (mediaReady && lastInstruction != null) androidx.compose.material3.TextButton(
+                if (!call.realtimeAgent && mediaReady && lastInstruction != null) androidx.compose.material3.TextButton(
                     onClick = { readResult = true }) {
                     Text("업무 결과 음성 듣기", color = Color.White)
                 }

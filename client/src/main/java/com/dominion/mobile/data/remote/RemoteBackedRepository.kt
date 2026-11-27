@@ -555,6 +555,21 @@ class RemoteBackedRepository(
         }
     }
 
+    override suspend fun requestRealtimeCall(conversationId: String, callId: String, video: Boolean): RealtimeCallGrant {
+        val capabilities = api.mobileCapabilities()
+        val account = capabilities.requireFeature("realtime_audio")
+        if (video) check(capabilities.requireFeature("realtime_video") == account)
+        val snapshot = api.roomExecution(conversationId)
+        check(snapshot.room?.id == conversationId)
+        val session = requireNotNull(snapshot.sessionId)
+        val request = RealtimeCallRequest(account, conversationId, session, callId, video)
+        val grant = api.openRealtimeCall(request).verified(request)
+        val confirmed = api.roomExecution(conversationId)
+        check(confirmed.room?.id == conversationId && confirmed.sessionId == session)
+        check(state.value.call?.sessionId == callId)
+        return grant
+    }
+
     override suspend fun requestVoiceCall(conversationId: String, video: Boolean): CallTokenResponse =
         requireNotNull(api.startCall(conversationId, StartCallRequest(video = video)).data) {
             "Server did not issue a call session"

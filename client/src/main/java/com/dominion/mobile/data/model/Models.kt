@@ -382,7 +382,8 @@ data class CallSession(
     val sessionId: String = java.util.UUID.randomUUID().toString(),
     val requestVideo: Boolean = false,
     val connectedAt: Long? = null,
-    val hadVideo: Boolean = false
+    val hadVideo: Boolean = false,
+    val realtimeAgent: Boolean = false
 )
 
 data class AppState(

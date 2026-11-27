@@ -42,6 +42,8 @@ data class NotificationDto(
 /** Existing DOMINION mobile and native engine contracts. */
 interface DominionApi {
     // Negotiated extension contract. Existing engines may respond 404; no fallback to demo data.
+    @POST("v1/mobile/realtime/calls")
+    suspend fun openRealtimeCall(@Body request: RealtimeCallRequest): RealtimeCallGrant
     @GET("v1/mobile/capabilities")
     suspend fun mobileCapabilities(): MobileCapabilities
     @GET("v1/mobile/peers")
