@@ -184,6 +184,23 @@ class AppViewModel(
         return repo.synthesizeVoice(text)
     }
 
+    suspend fun sendCallFrame(callId: String, roomId: String, expectedRoomSession: String,
+        prompt: String, jpeg: ByteArray): String {
+        fun verify() {
+            val call = state.value.call
+            check(call?.sessionId == callId && call.conversationId == roomId)
+            check(state.value.conversation(roomId)?.sessionId == expectedRoomSession)
+        }
+        require(prompt.isNotBlank() && prompt.length <= 4000)
+        verify()
+        val file = repo.uploadAttachment(roomId, "call-frame-" + java.util.UUID.randomUUID() + ".jpg", "image/jpeg", jpeg)
+        check(file.supportedForModel == "image" && file.roomId == roomId)
+        verify()
+        return requireNotNull(sendMessage(roomId, prompt,
+            MessageCard(CardKind.IMAGE, file.name ?: "call-frame.jpg", "통화 프레임", "${file.size} bytes"),
+            listOf(requireNotNull(file.id))))
+    }
+
     suspend fun sendAttachment(roomId: String, text: String,
         name: String, mimeType: String, bytes: ByteArray) {
         val file = repo.uploadAttachment(roomId, name, mimeType, bytes)

@@ -162,6 +162,7 @@ fun CallScreen(
     }
 
     var requestInstruction by remember(call.sessionId) { mutableStateOf(false) }
+    var frameSource by remember(call.sessionId) { mutableStateOf<String?>(null) }
     var lastInstruction by remember(call.sessionId) { mutableStateOf<String?>(null) }
     val instruction = state.conversation(call.conversationId)?.messages?.firstOrNull {
         it.id == lastInstruction || (lastInstruction != null && it.clientMessageId == lastInstruction)
@@ -332,6 +333,16 @@ fun CallScreen(
                         color = if (media.sharingScreen) Color(0xFFFFC46B) else Color.White)
                 }
                 if (media.remoteScreen != null) Text("상대 화면 수신 중", color = Color.White.copy(alpha = 0.85f))
+                if (media.localVideo != null || media.localScreen != null) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                        if (media.localVideo != null) androidx.compose.material3.TextButton(onClick = { frameSource = "camera" }) {
+                            Text("카메라 AI 분석", color = Color.White)
+                        }
+                        if (media.localScreen != null) androidx.compose.material3.TextButton(onClick = { frameSource = "screen" }) {
+                            Text("공유 화면 AI 분석", color = Color.White)
+                        }
+                    }
+                }
             }
             if (call.phase in setOf(CallPhase.WAITING_PEER, CallPhase.PEER_PRESENT, CallPhase.RECONNECTING)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
@@ -410,6 +421,11 @@ fun CallScreen(
                 }
             }
         }
+    }
+    frameSource?.let { source ->
+        com.dominion.mobile.ui.components.CallFrameDialog(vm, call.sessionId, call.conversationId, source,
+            onDismiss = { frameSource = null },
+            onSubmitted = { id -> lastInstruction = id; frameSource = null })
     }
     if (confirmScreenShare) androidx.compose.material3.AlertDialog(
         onDismissRequest = { confirmScreenShare = false },
