@@ -213,9 +213,8 @@ internal class MobileHarness(
     }
     private fun history(room:Conversation,owner:Message,system:String):List<CloudChatMessage>{
         val result=mutableListOf(CloudChatMessage("system",system.take(6000)))
-        val privateRoom=state().tasks.any{it.engineRoomId==room.id&&it.phonePrivateRead!=null}
         val previous=room.messages.takeWhile{it.id!=owner.id}.filter{
-            (!privateRoom||!it.id.startsWith("phone-receipt:"))&&
+            !it.id.startsWith("phone-receipt:")&&
             it.status==MessageStatus.SENT&&it.sender in setOf(MessageSender.USER,MessageSender.ASSISTANT)&&it.text.isNotBlank()
         }.takeLast(6)
         result.addAll(previous.map{CloudChatMessage(if(it.sender==MessageSender.USER)"user" else "assistant",it.text.take(900))})

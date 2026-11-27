@@ -560,6 +560,12 @@ class AppViewModel(
         dispatchTask(task.id, onAccepted)
     }
 
+    suspend fun confirmErrandReply(id:String,observedAt:Long){
+        repo.confirmMessageReply(id,observedAt)
+    }
+    suspend fun draftErrandReply(id:String,observedAt:Long,goal:String):String =
+        repo.draftMessageReply(id,observedAt,goal)
+
     fun linkTaskWorkflow(ids:List<String>){
         viewModelScope.launch{
             try{

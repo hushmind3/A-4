@@ -46,6 +46,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -268,6 +269,7 @@ fun TasksScreen(
     var deleteTarget by remember { mutableStateOf<String?>(null) }
     val busyTasks by vm.taskBusy.collectAsStateWithLifecycle()
     var receiptTarget by remember { mutableStateOf<String?>(null) }
+    var followupTarget by remember { mutableStateOf<String?>(null) }
     val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     LaunchedEffect(owner, vm) {
         owner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
@@ -310,6 +312,7 @@ fun TasksScreen(
                     onDispatch = { vm.dispatchTask(task.id) },
                     onOpenChat = { task.engineRoomId?.let(onOpenChat) },
                     onReceipt = { receiptTarget = task.id },
+                    onFollowup = { followupTarget=task.id },
                     busy = task.id in busyTasks
                 )
             }
@@ -349,6 +352,12 @@ fun TasksScreen(
             confirmButton={TextButton(enabled=selected.size in 2..4,onClick={vm.linkTaskWorkflow(selected);showWorkflow=false}){Text("연계 실행 등록")}},
             dismissButton={TextButton(onClick={showWorkflow=false}){Text("취소")}})
     }
+    followupTarget?.let{id->
+        val task=state.tasks.firstOrNull{it.id==id}
+        if(task!=null&&task.replyCandidate!=null&&task.replyCandidateAt!=null&&task.kakaoMessage!=null){
+            ErrandFollowupDialog(task,vm,onDismiss={followupTarget=null},onOpenChat=onOpenChat)
+        }
+    }
     receiptTarget?.let { id ->
         com.dominion.mobile.ui.components.TaskReceiptDialog(vm, id,
             onDismiss = { receiptTarget = null })
@@ -379,6 +388,60 @@ fun TasksScreen(
 }
 
 @Composable
+private fun ErrandFollowupDialog(task:TaskItem,vm:AppViewModel,onDismiss:()->Unit,onOpenChat:(String)->Unit){
+    val original=requireNotNull(task.kakaoMessage)
+    val observedAt=requireNotNull(task.replyCandidateAt)
+    val scope=androidx.compose.runtime.rememberCoroutineScope()
+    var confirmed by remember(task.id,observedAt){mutableStateOf(task.replyReviewedAt!=null)}
+    var goal by remember{mutableStateOf("")}
+    var draft by remember{mutableStateOf("")}
+    var busy by remember{mutableStateOf(false)}
+    var error by remember{mutableStateOf("")}
+    AlertDialog(onDismissRequest={if(!busy)onDismiss()},title={Text("답변 확인 및 후속 업무")},
+        text={
+            Column{
+                Text("대화방: "+original.recipient)
+                original.listing?.let{Text("상품: "+it)}
+                Text("알림 후보: "+task.replyCandidate.orEmpty().take(500))
+                if(!confirmed){
+                    Text("실제 앱 대화와 일치하는지 확인하세요. 확인 후 연결한 다음 업무가 진행됩니다.")
+                    TextButton(enabled=!busy,onClick={
+                        scope.launch{
+                            busy=true
+                            try{vm.confirmErrandReply(task.id,observedAt);confirmed=true;error=""}
+                            catch(e:kotlinx.coroutines.CancellationException){throw e}
+                            catch(_:Exception){error="답변 확인 실패"}
+                            finally{busy=false}
+                        }
+                    }){Text("실제 대화 확인 완료")}
+                }else{
+                    AppTextField(goal,{goal=it.take(500)},label="다음 응답 목표",placeholder="약속 시간을 확정해 주세요",singleLine=false,maxLines=3)
+                    TextButton(enabled=!busy&&goal.isNotBlank(),onClick={
+                        scope.launch{
+                            busy=true
+                            try{draft=vm.draftErrandReply(task.id,observedAt,goal);error=""}
+                            catch(e:kotlinx.coroutines.CancellationException){throw e}
+                            catch(_:Exception){error="AI 초안 생성 실패. 직접 작성할 수 있습니다."}
+                            finally{busy=false}
+                        }
+                    }){Text("선택한 메시지를 AI에 보내 답장 초안 생성")}
+                    AppTextField(draft,{draft=it.take(500)},label="실제 보낼 답장",singleLine=false,maxLines=5)
+                    Text("발송 업무 등록 후 기존 화면·대상 검증과 최종 승인을 다시 진행합니다.")
+                }
+                if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error)
+            }
+        },
+        confirmButton={TextButton(enabled=confirmed&&!busy&&draft.isNotBlank(),onClick={
+            val next=original.copy(body=draft.trim()).checked()
+            val request="지정 앱 대화방: "+next.recipient+
+                (next.listing?.let{"\n거래 상품: "+it}?:"")+"\n사용자가 지정한 후속 메시지를 실제 대화방 확인 후 발송"
+            vm.createPrivateErrand("후속 답장 · "+next.recipient,task.characterId,request,next.app,onOpenChat,next)
+            onDismiss()
+        }){Text("후속 발송 업무 등록")}},
+        dismissButton={TextButton(enabled=!busy,onClick=onDismiss){Text("닫기")}})
+}
+
+@Composable
 private fun TaskCard(
     state: AppState,
     task: TaskItem,
@@ -388,6 +451,7 @@ private fun TaskCard(
     onDispatch: () -> Unit,
     onOpenChat: () -> Unit,
     onReceipt: () -> Unit,
+    onFollowup:()->Unit,
     busy: Boolean
 ) {
     val p = LocalDominionPalette.current
@@ -442,6 +506,7 @@ private fun TaskCard(
             Text("답변 알림 후보 · 대화방에서 확인 필요",style=MaterialTheme.typography.labelSmall,color=p.textSecondary)
             if(state.settings.hideContent||!state.settings.messagePreview)Text("알림 내용은 숨김 설정에 따라 표시하지 않습니다.")
             else Text(it.take(500),style=MaterialTheme.typography.bodySmall,color=p.textPrimary)
+            TextButton(onClick=onFollowup){Text(if(task.replyReviewedAt==null)"답변 확인·후속 업무" else "후속 답장 작성")}
         }
         task.engineStatus?.let { status ->
             val label = when (status) {
